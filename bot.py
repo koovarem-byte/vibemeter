@@ -1,37 +1,77 @@
 import asyncio
-import logging
+import os
 
+from aiohttp import web
 from aiogram import Bot, Dispatcher
-from aiogram.client.default import DefaultBotProperties
-from aiogram.enums import ParseMode
 
 from config import BOT_TOKEN
 from database import init_db
 from handlers import router
 
 
-async def main():
+# =========================
+# HTTP SERVER FOR RENDER
+# =========================
 
-    logging.basicConfig(
-        level=logging.INFO
+async def health(request):
+    return web.Response(text="OK")
+
+
+async def start_web_server():
+    app = web.Application()
+
+    app.router.add_get("/", health)
+    app.router.add_get("/health", health)
+
+    port = int(os.getenv("PORT", "10000"))
+
+    runner = web.AppRunner(app)
+    await runner.setup()
+
+    site = web.TCPSite(
+        runner,
+        host="0.0.0.0",
+        port=port,
     )
 
-    await init_db()
+    await site.start()
 
-    bot = Bot(
-        token=BOT_TOKEN,
-        default=DefaultBotProperties(
-            parse_mode=ParseMode.HTML
-        )
-    )
+    print(f"HTTP server started on port {port}")
 
+    return runner
+
+
+# =========================
+# TELEGRAM BOT
+# =========================
+
+async def start_bot():
+    bot = Bot(token=BOT_TOKEN)
     dp = Dispatcher()
 
     dp.include_router(router)
 
-    print("💜 VibeMeter запущен")
+    await init_db()
 
-    await dp.start_polling(bot)
+    print("Bot started")
+
+    try:
+        await dp.start_polling(bot)
+    finally:
+        await bot.session.close()
+
+
+# =========================
+# MAIN
+# =========================
+
+async def main():
+    web_runner = await start_web_server()
+
+    try:
+        await start_bot()
+    finally:
+        await web_runner.cleanup()
 
 
 if __name__ == "__main__":
