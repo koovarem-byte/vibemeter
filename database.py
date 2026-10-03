@@ -1,6 +1,10 @@
 import aiosqlite
+import os
 
-DB_PATH = "/var/data/vibemeter.db"
+DB_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "vibemeter.db",
+)
 
 
 async def init_db():
