@@ -2,7 +2,9 @@ import asyncio
 import os
 
 from aiohttp import web
+
 from aiogram import Bot, Dispatcher
+from aiogram.client.default import DefaultBotProperties
 
 from config import BOT_TOKEN
 from database import init_db
@@ -10,7 +12,7 @@ from handlers import router
 
 
 # =========================
-# HTTP SERVER FOR RENDER
+# HEALTH SERVER FOR RENDER
 # =========================
 
 async def health(request):
@@ -46,7 +48,13 @@ async def start_web_server():
 # =========================
 
 async def start_bot():
-    bot = Bot(token=BOT_TOKEN)
+    bot = Bot(
+        token=BOT_TOKEN,
+        default=DefaultBotProperties(
+            parse_mode="HTML"
+        )
+    )
+
     dp = Dispatcher()
 
     dp.include_router(router)
