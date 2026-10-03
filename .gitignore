@@ -1,0 +1,7 @@
+.venv/
+.venv313/
+pycache/
+*.pyc
+.env
+.idea/
+vibemeter.db
