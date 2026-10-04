@@ -166,7 +166,8 @@ async def update_user(
     interests: str | None = None,
     description: str | None = None,
     photo_id: str | None = None,
-        search_gender: str | None = None,
+    gender: str | None = None,
+    search_gender: str | None = None,
 ):
     fields = []
     values = []
@@ -179,6 +180,7 @@ async def update_user(
         "interests": interests,
         "description": description,
         "photo_id": photo_id,
+        "gender": gender,
         "search_gender": search_gender,
     }
 
@@ -203,8 +205,7 @@ async def update_user(
         )
 
         await db.commit()
-
-
+        
 async def delete_user(telegram_id: int):
     async with aiosqlite.connect(DB_PATH) as db:
 
