@@ -1,5 +1,6 @@
-import aiosqlite
 import os
+import aiosqlite
+
 
 DB_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
@@ -9,6 +10,7 @@ DB_PATH = os.path.join(
 
 async def init_db():
     async with aiosqlite.connect(DB_PATH) as db:
+
         await db.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 telegram_id INTEGER PRIMARY KEY,
@@ -97,22 +99,26 @@ async def init_db():
         await db.commit()
 
 
+# =========================================================
+# USERS
+# =========================================================
+
 async def get_user(telegram_id: int):
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
 
         cursor = await db.execute(
             "SELECT * FROM users WHERE telegram_id = ?",
-            (telegram_id,)
+            (telegram_id,),
         )
 
         return await cursor.fetchone()
 
 
 async def create_user(
-        telegram_id: int,
-        username: str = None,
-        full_name: str = None
+    telegram_id: int,
+    username: str | None = None,
+    full_name: str | None = None,
 ):
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
@@ -127,53 +133,40 @@ async def create_user(
             (
                 telegram_id,
                 username,
-                full_name
-            )
+                full_name,
+            ),
         )
 
         await db.commit()
 
 
 async def update_user(
-        telegram_id: int,
-        username: str = None,
-        full_name: str = None,
-        age: int = None,
-        city: str = None,
-        interests: str = None,
-        description: str = None,
-        photo_id: str = None
+    telegram_id: int,
+    username: str | None = None,
+    full_name: str | None = None,
+    age: int | None = None,
+    city: str | None = None,
+    interests: str | None = None,
+    description: str | None = None,
+    photo_id: str | None = None,
 ):
     fields = []
     values = []
 
-    if username is not None:
-        fields.append("username = ?")
-        values.append(username)
+    data = {
+        "username": username,
+        "full_name": full_name,
+        "age": age,
+        "city": city,
+        "interests": interests,
+        "description": description,
+        "photo_id": photo_id,
+    }
 
-    if full_name is not None:
-        fields.append("full_name = ?")
-        values.append(full_name)
-
-    if age is not None:
-        fields.append("age = ?")
-        values.append(age)
-
-    if city is not None:
-        fields.append("city = ?")
-        values.append(city)
-
-    if interests is not None:
-        fields.append("interests = ?")
-        values.append(interests)
-
-    if description is not None:
-        fields.append("description = ?")
-        values.append(description)
-
-    if photo_id is not None:
-        fields.append("photo_id = ?")
-        values.append(photo_id)
+    for field, value in data.items():
+        if value is not None:
+            fields.append(f"{field} = ?")
+            values.append(value)
 
     if not fields:
         return
@@ -187,11 +180,60 @@ async def update_user(
             SET {", ".join(fields)}
             WHERE telegram_id = ?
             """,
-            values
+            values,
         )
 
         await db.commit()
 
+
+async def delete_user(telegram_id: int):
+    async with aiosqlite.connect(DB_PATH) as db:
+
+        await db.execute(
+            "DELETE FROM likes WHERE from_user = ? OR to_user = ?",
+            (telegram_id, telegram_id),
+        )
+
+        await db.execute(
+            "DELETE FROM skips WHERE from_user = ? OR to_user = ?",
+            (telegram_id, telegram_id),
+        )
+
+        await db.execute(
+            "DELETE FROM blocks WHERE from_user = ? OR to_user = ?",
+            (telegram_id, telegram_id),
+        )
+
+        await db.execute(
+            "DELETE FROM questions WHERE from_user = ? OR to_user = ?",
+            (telegram_id, telegram_id),
+        )
+
+        await db.execute(
+            "DELETE FROM game_answers WHERE user_id = ?",
+            (telegram_id,),
+        )
+
+        await db.execute(
+            """
+            DELETE FROM games
+            WHERE user_one = ?
+            OR user_two = ?
+            """,
+            (telegram_id, telegram_id),
+        )
+
+        await db.execute(
+            "DELETE FROM users WHERE telegram_id = ?",
+            (telegram_id,),
+        )
+
+        await db.commit()
+
+
+# =========================================================
+# LIKES
+# =========================================================
 
 async def add_like(from_user: int, to_user: int):
     async with aiosqlite.connect(DB_PATH) as db:
@@ -203,36 +245,13 @@ async def add_like(from_user: int, to_user: int):
             )
             VALUES (?, ?)
             """,
-            (
-                from_user,
-                to_user
-            )
+            (from_user, to_user),
         )
 
         await db.commit()
 
 
-async def has_like(
-    from_user: int,
-    to_user: int,
-):
-    async with aiosqlite.connect(DB_PATH) as db:
-        cursor = await db.execute(
-            """
-            SELECT 1
-            FROM likes
-            WHERE from_user = ?
-            AND to_user = ?
-            """,
-            (
-                from_user,
-                to_user,
-            ),
-        )
-
-        return await cursor.fetchone() is not None
-
-async def is_liked(from_user: int, to_user: int):
+async def has_like(from_user: int, to_user: int):
     async with aiosqlite.connect(DB_PATH) as db:
         cursor = await db.execute(
             """
@@ -242,14 +261,19 @@ async def is_liked(from_user: int, to_user: int):
             AND to_user = ?
             LIMIT 1
             """,
-            (
-                from_user,
-                to_user
-            )
+            (from_user, to_user),
         )
 
         return await cursor.fetchone() is not None
 
+
+async def is_liked(from_user: int, to_user: int):
+    return await has_like(from_user, to_user)
+
+
+# =========================================================
+# SKIPS
+# =========================================================
 
 async def add_skip(from_user: int, to_user: int):
     async with aiosqlite.connect(DB_PATH) as db:
@@ -261,17 +285,19 @@ async def add_skip(from_user: int, to_user: int):
             )
             VALUES (?, ?)
             """,
-            (
-                from_user,
-                to_user
-            )
+            (from_user, to_user),
         )
 
         await db.commit()
 
 
+# =========================================================
+# BLOCKS
+# =========================================================
+
 async def add_block(from_user: int, to_user: int):
     async with aiosqlite.connect(DB_PATH) as db:
+
         await db.execute(
             """
             INSERT OR IGNORE INTO blocks (
@@ -280,10 +306,7 @@ async def add_block(from_user: int, to_user: int):
             )
             VALUES (?, ?)
             """,
-            (
-                from_user,
-                to_user
-            )
+            (from_user, to_user),
         )
 
         await db.execute(
@@ -298,8 +321,8 @@ async def add_block(from_user: int, to_user: int):
                 from_user,
                 to_user,
                 to_user,
-                from_user
-            )
+                from_user,
+            ),
         )
 
         await db.commit()
@@ -315,14 +338,15 @@ async def is_blocked(from_user: int, to_user: int):
             AND to_user = ?
             LIMIT 1
             """,
-            (
-                from_user,
-                to_user
-            )
+            (from_user, to_user),
         )
 
         return await cursor.fetchone() is not None
 
+
+# =========================================================
+# CANDIDATES
+# =========================================================
 
 async def get_candidates(user_id: int):
     async with aiosqlite.connect(DB_PATH) as db:
@@ -334,66 +358,74 @@ async def get_candidates(user_id: int):
             FROM users
             WHERE telegram_id = ?
             """,
-            (user_id,)
+            (user_id,),
         )
-    current_user = await cursor.fetchone()
 
-    if not current_user or current_user["age"] is None:
-        return []
+        current_user = await cursor.fetchone()
 
-    if current_user["age"] < 18:
-        age_condition = "u.age BETWEEN 16 AND 17"
-    else:
-        age_condition = "u.age >= 18"
+        if not current_user or current_user["age"] is None:
+            return []
 
-    cursor = await db.execute(
-        f"""
-                SELECT u.*
-                FROM users u
-                WHERE u.telegram_id != ?
-                AND u.age IS NOT NULL
-                AND {age_condition}
+        if current_user["age"] < 18:
+            age_condition = "u.age BETWEEN 16 AND 17"
+        else:
+            age_condition = "u.age >= 18"
 
-                AND NOT EXISTS (
-                    SELECT 1
-                    FROM likes l
-                    WHERE
-                        (l.from_user = ? AND l.to_user = u.telegram_id)
-                        OR
-                        (l.from_user = u.telegram_id AND l.to_user = ?)
-                )
+        cursor = await db.execute(
+            f"""
+            SELECT u.*
+            FROM users u
 
-                AND NOT EXISTS (
-                    SELECT 1
-                    FROM skips s
-                    WHERE
-                        s.from_user = ?
-                        AND s.to_user = u.telegram_id
-                )
+            WHERE u.telegram_id != ?
 
-                AND NOT EXISTS (
-                    SELECT 1
-                    FROM blocks b
-                    WHERE
-                        (b.from_user = ? AND b.to_user = u.telegram_id)
-                        OR
-                        (b.from_user = u.telegram_id AND b.to_user = ?)
-                )
+            AND u.age IS NOT NULL
 
-                ORDER BY RANDOM()
-                """,
-        (
-            user_id,
-            user_id,
-            user_id,
-            user_id,
-            user_id,
-            user_id
+            AND u.photo_id IS NOT NULL
+
+            AND {age_condition}
+
+            AND NOT EXISTS (
+                SELECT 1
+                FROM likes l
+                WHERE
+                    l.from_user = ?
+                    AND l.to_user = u.telegram_id
+            )
+
+            AND NOT EXISTS (
+                SELECT 1
+                FROM skips s
+                WHERE
+                    s.from_user = ?
+                    AND s.to_user = u.telegram_id
+            )
+
+            AND NOT EXISTS (
+                SELECT 1
+                FROM blocks b
+                WHERE
+                    (b.from_user = ? AND b.to_user = u.telegram_id)
+                    OR
+                    (b.from_user = u.telegram_id AND b.to_user = ?)
+            )
+
+            ORDER BY RANDOM()
+            """,
+            (
+                user_id,
+                user_id,
+                user_id,
+                user_id,
+                user_id,
+            ),
         )
-    )
 
-    return await cursor.fetchall()
+        return await cursor.fetchall()
 
+
+# =========================================================
+# INCOMING LIKES
+# =========================================================
 
 async def get_incoming_likes(user_id: int):
     async with aiosqlite.connect(DB_PATH) as db:
@@ -403,9 +435,19 @@ async def get_incoming_likes(user_id: int):
             """
             SELECT u.*
             FROM users u
+
             INNER JOIN likes l
                 ON l.from_user = u.telegram_id
+
             WHERE l.to_user = ?
+
+            AND NOT EXISTS (
+                SELECT 1
+                FROM likes reverse_like
+                WHERE
+                    reverse_like.from_user = ?
+                    AND reverse_like.to_user = u.telegram_id
+            )
 
             AND NOT EXISTS (
                 SELECT 1
@@ -421,17 +463,22 @@ async def get_incoming_likes(user_id: int):
             (
                 user_id,
                 user_id,
-                user_id
-            )
+                user_id,
+                user_id,
+            ),
         )
 
         return await cursor.fetchall()
 
 
+# =========================================================
+# QUESTIONS
+# =========================================================
+
 async def add_question(
-        from_user: int,
-        to_user: int,
-        text: str
+    from_user: int,
+    to_user: int,
+    text: str,
 ):
     async with aiosqlite.connect(DB_PATH) as db:
         cursor = await db.execute(
@@ -446,8 +493,8 @@ async def add_question(
             (
                 from_user,
                 to_user,
-                text
-            )
+                text,
+            ),
         )
 
         await db.commit()
@@ -465,15 +512,15 @@ async def get_question(question_id: int):
             FROM questions
             WHERE id = ?
             """,
-            (question_id,)
+            (question_id,),
         )
 
         return await cursor.fetchone()
 
 
 async def answer_question(
-        question_id: int,
-        answer: str
+    question_id: int,
+    answer: str,
 ):
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
@@ -487,8 +534,8 @@ async def answer_question(
             """,
             (
                 answer,
-                question_id
-            )
+                question_id,
+            ),
         )
 
         await db.commit()
@@ -506,16 +553,20 @@ async def get_pending_questions(user_id: int):
             AND answered = 0
             ORDER BY created_at DESC
             """,
-            (user_id,)
+            (user_id,),
         )
 
         return await cursor.fetchall()
 
 
+# =========================================================
+# GAMES
+# =========================================================
+
 async def create_game(
     user_one: int,
     user_two: int,
-    questions_json: str
+    questions_json: str,
 ):
     async with aiosqlite.connect(DB_PATH) as db:
         cursor = await db.execute(
@@ -533,8 +584,8 @@ async def create_game(
             (
                 user_one,
                 user_two,
-                questions_json
-            )
+                questions_json,
+            ),
         )
 
         await db.commit()
@@ -552,7 +603,7 @@ async def get_game(game_id: int):
             FROM games
             WHERE id = ?
             """,
-            (game_id,)
+            (game_id,),
         )
 
         return await cursor.fetchone()
@@ -562,10 +613,9 @@ async def add_game_answer(
     game_id: int,
     user_id: int,
     question_index: int,
-    answer: str
+    answer: str,
 ):
     async with aiosqlite.connect(DB_PATH) as db:
-
         try:
             await db.execute(
                 """
@@ -581,8 +631,8 @@ async def add_game_answer(
                     game_id,
                     user_id,
                     question_index,
-                    answer
-                )
+                    answer,
+                ),
             )
 
             await db.commit()
@@ -595,7 +645,7 @@ async def add_game_answer(
 
 async def get_game_answers(
     game_id: int,
-    user_id: int
+    user_id: int,
 ):
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
@@ -610,8 +660,8 @@ async def get_game_answers(
             """,
             (
                 game_id,
-                user_id
-            )
+                user_id,
+            ),
         )
 
         return await cursor.fetchall()
@@ -625,11 +675,15 @@ async def finish_game(game_id: int):
             SET status = 'finished'
             WHERE id = ?
             """,
-            (game_id,)
+            (game_id,),
         )
 
         await db.commit()
 
+
+# =========================================================
+# STATISTICS
+# =========================================================
 
 async def get_stats(user_id: int):
     async with aiosqlite.connect(DB_PATH) as db:
@@ -640,7 +694,7 @@ async def get_stats(user_id: int):
             FROM likes
             WHERE from_user = ?
             """,
-            (user_id,)
+            (user_id,),
         )
 
         likes_sent = (await cursor.fetchone())[0]
@@ -651,7 +705,7 @@ async def get_stats(user_id: int):
             FROM likes
             WHERE to_user = ?
             """,
-            (user_id,)
+            (user_id,),
         )
 
         likes_received = (await cursor.fetchone())[0]
@@ -662,7 +716,7 @@ async def get_stats(user_id: int):
             FROM skips
             WHERE from_user = ?
             """,
-            (user_id,)
+            (user_id,),
         )
 
         skips = (await cursor.fetchone())[0]
@@ -673,7 +727,7 @@ async def get_stats(user_id: int):
             FROM blocks
             WHERE from_user = ?
             """,
-            (user_id,)
+            (user_id,),
         )
 
         blocks = (await cursor.fetchone())[0]
@@ -684,15 +738,35 @@ async def get_stats(user_id: int):
             FROM questions
             WHERE to_user = ?
             """,
-            (user_id,)
+            (user_id,),
         )
 
         questions_received = (await cursor.fetchone())[0]
+
+        cursor = await db.execute(
+            """
+            SELECT COUNT(*)
+            FROM likes
+            WHERE from_user = ?
+            AND to_user IN (
+                SELECT from_user
+                FROM likes
+                WHERE to_user = ?
+            )
+            """,
+            (
+                user_id,
+                user_id,
+            ),
+        )
+
+        mutual_likes = (await cursor.fetchone())[0]
 
         return {
             "likes_sent": likes_sent,
             "likes_received": likes_received,
             "skips": skips,
             "blocks": blocks,
-            "questions_received": questions_received
+            "questions_received": questions_received,
+            "mutual_likes": mutual_likes,
         }

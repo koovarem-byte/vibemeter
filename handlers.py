@@ -1,3 +1,6 @@
+import html
+import random
+
 from aiogram import Router, F
 from aiogram.fsm.context import FSMContext
 from aiogram.types import (
@@ -17,11 +20,6 @@ from database import (
     add_skip,
     add_block,
     get_incoming_likes,
-    add_question,
-    get_question,
-    answer_question,
-    get_pending_questions,
-    get_stats,
 )
 
 from keyboards import (
@@ -29,29 +27,19 @@ from keyboards import (
     after_profile,
     profile_actions,
     incoming_actions,
+    mutual_actions,
+    conversation_topics,
+    settings_keyboard,
+    stats_keyboard,
+    game_actions,
+    game_keyboard,
+    game_result_actions,
+    back_keyboard,
 )
 
-from states import (
-    ProfileState,
-    QuestionState,
-    GameState,
-)
-
-from questions import (
-    send_question,
-    submit_answer,
-)
-
-from games import (
-    start_game,
-    get_current_question,
-    save_answer,
-    get_progress,
-    complete_game,
-    get_result_text,
-)
-
+from states import ProfileState
 from utils import (
+    normalize_interests,
     get_common_interests,
     format_common_interests,
     valid_name,
@@ -60,10 +48,23 @@ from utils import (
     valid_description,
 )
 
+from questions import send_question, submit_answer
+
+from games import (
+    start_game,
+    get_current_question,
+    save_answer,
+    complete_game,
+    get_result_text,
+)
+
 
 router = Router()
 
+# Временные данные активных просмотров
 current_profile = {}
+
+# Очередь для вайб-игры
 waiting_players = []
 
 
@@ -71,60 +72,178 @@ waiting_players = []
 # ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
 # =========================================================
 
-async def show_next_profile(
-    message: Message,
-    user_id: int,
-):
-    candidates = await get_candidates(user_id)
+def esc(value):
+    """Безопасный вывод пользовательского текста в HTML."""
+    if value is None:
+        return ""
+    return html.escape(str(value))
 
-    if not candidates:
-        await message.answer(
-            "<b>🔎 Пока никого нового нет</b>\n\n"
-            "Попробуй зайти чуть позже.",
-        )
-        return
 
-    person = candidates[0]
+def calculate_vibe(first, second):
+    """
+    Примерный процент вайба.
+    Это не научный тест — просто оценка по общим интересам и городу.
+    """
 
-    current_profile[user_id] = person["telegram_id"]
+    first_interests = normalize_interests(first["interests"] or "")
+    second_interests = normalize_interests(second["interests"] or "")
 
-    current_user = await get_user(user_id)
-
-    common = []
-
-    if current_user:
-        common = get_common_interests(
-            current_user["interests"] or "",
-            person["interests"] or "",
-        )
-
-    text = (
-        f"<b>👤 {person['full_name'] or 'Без имени'}</b>\n\n"
-        f"<b>Возраст:</b> {person['age']}\n"
-        f"<b>Город:</b> {person['city'] or 'не указан'}\n\n"
-        f"<b>Интересы:</b>\n"
-        f"{person['interests'] or 'не указаны'}\n\n"
-        f"<b>О себе:</b>\n"
-        f"{person['description'] or 'ничего не рассказал'}"
+    common = get_common_interests(
+        first_interests,
+        second_interests,
     )
 
+    score = 40
+
+    score += min(len(common) * 10, 40)
+
+    if (
+        first["city"]
+        and second["city"]
+        and first["city"].strip().lower()
+        == second["city"].strip().lower()
+    ):
+        score += 15
+
+    if score > 95:
+        score = 95
+
+    return score, common
+
+
+def profile_text(person, vibe=None, common=None):
+    """Красиво формирует карточку пользователя."""
+
+    text = "<b>👤 Профиль</b>\n\n"
+
+    text += f"<b>{esc(person['full_name'])}</b>"
+
+    if person["age"]:
+        text += f", {person['age']}"
+
+    if person["city"]:
+        text += f"\n📍 {esc(person['city'])}"
+
+    if vibe is not None:
+        text += f"\n\n🔥 <b>{vibe}% ВАЙБА</b>"
+
     if common:
-        text += (
-            "\n\n"
-            "<b>🔥 Общие интересы:</b>\n"
-            f"{format_common_interests(common)}"
-        )
+        text += "\n\n💜 <b>Общие интересы:</b>\n"
+        text += esc(format_common_interests(common))
+
+    if person["interests"]:
+        text += "\n\n🎯 <b>Интересы:</b>\n"
+        text += esc(person["interests"])
+
+    if person["description"]:
+        text += "\n\n💬 <b>О себе:</b>\n"
+        text += esc(person["description"])
+
+    return text
+
+
+async def send_profile(message, person, viewer_id):
+    """Показывает карточку найденного пользователя."""
+
+    vibe, common = calculate_vibe(
+        await get_user(viewer_id),
+        person,
+    )
+
+    current_profile[viewer_id] = person["telegram_id"]
+
+    text = profile_text(
+        person,
+        vibe=vibe,
+        common=common,
+    )
+
+    keyboard = profile_actions(person["telegram_id"])
 
     if person["photo_id"]:
         await message.answer_photo(
-            person["photo_id"],
+            photo=person["photo_id"],
             caption=text,
-            reply_markup=profile_actions(),
+            reply_markup=keyboard,
         )
     else:
         await message.answer(
             text,
-            reply_markup=profile_actions(),
+            reply_markup=keyboard,
+        )
+
+
+async def show_next_profile(message, user_id):
+    """Показывает следующего кандидата."""
+
+    candidates = await get_candidates(user_id)
+
+    if not candidates:
+        current_profile.pop(user_id, None)
+
+        await message.answer(
+            "<b>🔎 Пока больше никого нет</b>\n\n"
+            "Ты посмотрел всех подходящих пользователей.\n\n"
+            "Загляни позже — новые профили будут появляться.",
+            reply_markup=main_menu(),
+        )
+        return
+# Чтобы не показывать один и тот же профиль несколько раз подряд
+    person = random.choice(candidates)
+
+    await send_profile(
+        message,
+        person,
+        user_id,
+    )
+
+
+async def finish_profile(state: FSMContext, user_id: int):
+    """Получает готовый профиль и показывает его."""
+
+    user = await get_user(user_id)
+
+    await state.clear()
+
+    await user_profile_message(
+        None,
+        user,
+        user_id,
+    )
+
+
+async def user_profile_message(message, user, user_id):
+    """Показывает собственный профиль."""
+
+    if not user:
+        return
+
+    text = "<b>👤 МОЙ ПРОФИЛЬ</b>\n\n"
+
+    text += f"<b>{esc(user['full_name'])}</b>"
+
+    if user["age"]:
+        text += f", {user['age']}"
+
+    if user["city"]:
+        text += f"\n📍 {esc(user['city'])}"
+
+    if user["interests"]:
+        text += f"\n\n🎯 <b>Интересы:</b>\n{esc(user['interests'])}"
+
+    if user["description"]:
+        text += f"\n\n💬 <b>О себе:</b>\n{esc(user['description'])}"
+
+    if user["photo_id"]:
+        await message.answer_photo(
+            photo=user["photo_id"],
+            caption=text,
+            reply_markup=after_profile(),
+        )
+    else:
+        await message.answer(
+            text,
+            reply_markup=after_profile(),
         )
 
 
@@ -133,53 +252,33 @@ async def show_next_profile(
 # =========================================================
 
 @router.message(F.text == "/start")
-async def start_handler(
-    message: Message,
-    state: FSMContext,
-):
+async def start_handler(message: Message, state: FSMContext):
     user = await get_user(message.from_user.id)
 
-    if not user:
-        await create_user(
-            telegram_id=message.from_user.id,
-            username=message.from_user.username,
-            full_name=message.from_user.full_name,
-        )
-
+    if user:
         await message.answer(
-            "<b>👋 Добро пожаловать в Вайбометр</b>\n\n"
-            "Здесь можно находить людей с похожими интересами,\n"
-            "смотреть профили и играть в вайб-игры.\n\n"
-            "Давай создадим профиль."
+            "<b>🔥 С возвращением в Вайбометр</b>\n\n"
+            "Найди людей с похожими интересами, "
+            "смотри профили и проверяй совместимость.",
+            reply_markup=main_menu(),
         )
-
-        await message.answer(
-            "Как тебя зовут?"
-        )
-
-        await state.set_state(
-            ProfileState.name
-        )
-
         return
 
-    if not user["age"]:
-        await message.answer(
-            "<b>Давай закончим создание профиля.</b>\n\n"
-            "Как тебя зовут?"
-        )
-
-        await state.set_state(
-            ProfileState.name
-        )
-
-        return
+    await create_user(
+        telegram_id=message.from_user.id,
+        username=message.from_user.username,
+        full_name=message.from_user.full_name,
+    )
 
     await message.answer(
-        "<b>С возвращением 👋</b>\n\n"
-        "Что делаем?",
-        reply_markup=main_menu(),
+        "<b>🔥 Добро пожаловать в Вайбометр</b>\n\n"
+        "Здесь можно находить новых знакомых "
+        "по интересам и общему вайбу.\n\n"
+        "Сначала давай создадим твой профиль.\n\n"
+        "<b>Как тебя зовут?</b>"
     )
+
+    await state.set_state(ProfileState.name)
 
 
 # =========================================================
@@ -187,122 +286,100 @@ async def start_handler(
 # =========================================================
 
 @router.message(ProfileState.name)
-async def profile_name(
-    message: Message,
-    state: FSMContext,
-):
-    name = (message.text or "").strip()
+async def profile_name(message: Message, state: FSMContext):
+    name = message.text.strip()
 
     if not valid_name(name):
         await message.answer(
-            "Имя должно быть от 2 до 50 символов."
+            "❌ Имя должно быть от 2 до 50 символов.\n\n"
+            "Попробуй ещё раз:"
         )
         return
 
-    await state.update_data(
-        name=name
-    )
+    await state.update_data(name=name)
 
     await message.answer(
-        "Сколько тебе лет?"
+        "<b>Сколько тебе лет?</b>"
     )
 
-    await state.set_state(
-        ProfileState.age
-    )
+    await state.set_state(ProfileState.age)
 
 
 @router.message(ProfileState.age)
-async def profile_age(
-    message: Message,
-    state: FSMContext,
-):
-    age = (message.text or "").strip()
+async def profile_age(message: Message, state: FSMContext):
+    try:
+        age = int(message.text.strip())
+    except ValueError:
+        await message.answer(
+            "❌ Напиши возраст числом."
+        )
+        return
 
     if not valid_age(age):
         await message.answer(
-            "Укажи возраст числом от 16 до 99."
+            "❌ Укажи корректный возраст."
         )
         return
 
-    await state.update_data(
-        age=int(age)
-    )
+    await state.update_data(age=age)
 
     await message.answer(
-        "Из какого ты города?"
+        "<b>В каком городе ты находишься?</b>"
     )
 
-    await state.set_state(
-        ProfileState.city
-    )
+    await state.set_state(ProfileState.city)
 
 
 @router.message(ProfileState.city)
-async def profile_city(
-    message: Message,
-    state: FSMContext,
-):
-    city = (message.text or "").strip()
+async def profile_city(message: Message, state: FSMContext):
+    city = message.text.strip()
 
     if not valid_city(city):
         await message.answer(
-            "Напиши нормальное название города."
+            "❌ Название города выглядит некорректно.\n\n"
+            "Попробуй ещё раз:"
         )
         return
 
-    await state.update_data(
-        city=city
-    )
+    await state.update_data(city=city)
 
     await message.answer(
-        "Напиши несколько своих интересов.\n\n"
+        "<b>Напиши свои интересы.</b>\n\n"
         "Например:\n"
-        "баскетбол, музыка, игры, кино"
+        "баскетбол, музыка, игры, фильмы"
     )
 
-    await state.set_state(
-        ProfileState.interests
-    )
-
+    await state.set_state(ProfileState.interests)
 
 @router.message(ProfileState.interests)
-async def profile_interests(
-    message: Message,
-    state: FSMContext,
-):
-    interests = (message.text or "").strip()
+async def profile_interests(message: Message, state: FSMContext):
+    interests = normalize_interests(message.text)
 
     if not interests:
         await message.answer(
-            "Напиши хотя бы один интерес."
+            "❌ Напиши хотя бы один интерес."
         )
         return
 
     await state.update_data(
-        interests=interests
+        interests=", ".join(interests)
     )
 
     await message.answer(
-        "Расскажи немного о себе.\n\n"
-        "До 500 символов."
+        "<b>Расскажи немного о себе.</b>\n\n"
+        "Можно написать пару предложений."
     )
 
-    await state.set_state(
-        ProfileState.description
-    )
+    await state.set_state(ProfileState.description)
 
 
 @router.message(ProfileState.description)
-async def profile_description(
-    message: Message,
-    state: FSMContext,
-):
-    description = (message.text or "").strip()
+async def profile_description(message: Message, state: FSMContext):
+    description = message.text.strip()
 
     if not valid_description(description):
         await message.answer(
-            "Описание должно быть от 1 до 500 символов."
+            "❌ Максимум 500 символов."
         )
         return
 
@@ -311,627 +388,653 @@ async def profile_description(
     )
 
     await message.answer(
-        "Теперь отправь свою фотографию 📸"
+        "<b>📸 Теперь отправь свою фотографию.</b>\n\n"
+        "Она будет отображаться в твоей карточке."
     )
 
-    await state.set_state(
-        ProfileState.photo
-    )
+    await state.set_state(ProfileState.photo)
 
 
-@router.message(ProfileState.photo)
-async def profile_photo(
-    message: Message,
-    state: FSMContext,
-):
-    if not message.photo:
-        await message.answer(
-            "Отправь именно фотографию 📸"
-        )
-        return
-
+@router.message(ProfileState.photo, F.photo)
+async def profile_photo(message: Message, state: FSMContext):
     data = await state.get_data()
 
     photo_id = message.photo[-1].file_id
 
     await update_user(
-        message.from_user.id,
+        telegram_id=message.from_user.id,
+        username=message.from_user.username,
         full_name=data["name"],
         age=data["age"],
         city=data["city"],
         interests=data["interests"],
         description=data["description"],
         photo_id=photo_id,
-        username=message.from_user.username,
     )
 
     await state.clear()
 
     await message.answer(
-        "<b>✅ Профиль готов</b>\n\n"
-        "Теперь можно смотреть людей и искать свой вайб.",
-        reply_markup=after_profile(),
+        "<b>🔥 Профиль готов.</b>\n\n"
+        "Теперь можно искать людей с похожими интересами.",
+        reply_markup=main_menu(),
+    )
+
+
+@router.message(ProfileState.photo)
+async def profile_photo_invalid(message: Message):
+    await message.answer(
+        "📸 Отправь именно фотографию."
     )
 
 
 # =========================================================
-# МОЙ ПРОФИЛЬ
+# ГЛАВНОЕ МЕНЮ
 # =========================================================
 
-@router.message(F.text == "👤 Мой профиль")
-async def my_profile_handler(
-    message: Message,
-):
-    user = await get_user(
+@router.message(F.text == "🔎 Найти вайб")
+async def find_vibe_handler(message: Message):
+    await show_next_profile(
+        message,
+        message.from_user.id,
+    )
+
+
+@router.message(F.text == "💜 Мои вайбы")
+async def my_vibes_handler(message: Message):
+    likes = await get_incoming_likes(
         message.from_user.id
     )
 
-    if not user or not user["age"]:
+    if not likes:
         await message.answer(
-            "Сначала создай профиль 👤"
+            "<b>💜 МОИ ВАЙБЫ</b>\n\n"
+            "Пока новых вайбов нет.\n\n"
+            "Попробуй посмотреть несколько профилей "
+            "и найти людей по интересам.",
+            reply_markup=main_menu(),
         )
         return
 
-    text = (
-        f"<b>👤 {user['full_name']}</b>\n\n"
-        f"<b>Возраст:</b> {user['age']}\n"
-        f"<b>Город:</b> {user['city'] or 'не указан'}\n\n"
-        f"<b>Интересы:</b>\n"
-        f"{user['interests'] or 'не указаны'}\n\n"
-        f"<b>О себе:</b>\n"
-        f"{user['description'] or 'не указано'}"
+    await message.answer(
+        f"<b>💜 Тебе понравились {len(likes)} "
+        f"{'пользователь' if len(likes) == 1 else 'пользователя'}.</b>"
     )
-    if user["photo_id"]:
-        await message.answer_photo(
-            user["photo_id"],
-            caption=text,
+
+    for person in likes[:10]:
+        text = profile_text(person)
+
+        await message.answer(
+            text,
+            reply_markup=incoming_actions(
+                person["telegram_id"]
+            ),
+        )
+
+
+@router.message(F.text == "👤 Мой профиль")
+async def my_profile_handler(message: Message):
+    user = await get_user(message.from_user.id)
+
+    if not user:
+        await message.answer(
+            "Сначала напиши /start"
+        )
+        return
+
+    await user_profile_message(
+        message,
+        user,
+        message.from_user.id,
+    )
+
+
+# =========================================================
+# ПРОСМОТР ПРОФИЛЕЙ
+# =========================================================
+
+@router.callback_query(F.data == "browse")
+async def browse_callback(callback: CallbackQuery):
+    await callback.answer()
+
+    await show_next_profile(
+        callback.message,
+        callback.from_user.id,
+    )
+
+# =========================================================
+# LIKE
+# =========================================================
+
+@router.callback_query(F.data.startswith("like:"))
+async def like_callback(callback: CallbackQuery):
+    person_id = int(callback.data.split(":")[1])
+    user_id = callback.from_user.id
+
+    if person_id == user_id:
+        await callback.answer(
+            "Нельзя поставить лайк самому себе.",
+            show_alert=True,
+        )
+        return
+
+    await add_like(
+        from_user=user_id,
+        to_user=person_id,
+    )
+
+    mutual = await has_like(
+        from_user=person_id,
+        to_user=user_id,
+    )
+
+    await callback.answer("💜 Вайб пойман!")
+
+    await callback.message.edit_reply_markup(
+        reply_markup=None
+    )
+
+    if mutual:
+        await callback.message.answer(
+            "<b>💜 ВАЙБ ВЗАИМНЫЙ</b>\n\n"
+            "Вы оба выбрали друг друга.\n\n"
+            "Теперь можно начать общение "
+            "и узнать друг друга получше.",
+            reply_markup=mutual_actions(person_id),
+        )
+
+        try:
+            await callback.bot.send_message(
+                person_id,
+                "<b>💜 ВАЙБ ВЗАИМНЫЙ</b>\n\n"
+                "У вас появился новый взаимный вайб.\n\n"
+                "Можете начать общение.",
+                reply_markup=mutual_actions(user_id),
+            )
+        except Exception:
+            pass
+
+        return
+
+    await show_next_profile(
+        callback.message,
+        user_id,
+    )
+
+
+# =========================================================
+# SKIP
+# =========================================================
+
+@router.callback_query(F.data.startswith("skip:"))
+async def skip_callback(callback: CallbackQuery):
+    person_id = int(callback.data.split(":")[1])
+
+    await add_skip(
+        from_user=callback.from_user.id,
+        to_user=person_id,
+    )
+
+    await callback.answer("👎 Мимо")
+
+    await callback.message.edit_reply_markup(
+        reply_markup=None
+    )
+
+    await show_next_profile(
+        callback.message,
+        callback.from_user.id,
+    )
+
+
+# =========================================================
+# BLOCK
+# =========================================================
+
+@router.callback_query(F.data.startswith("block:"))
+async def block_callback(callback: CallbackQuery):
+    person_id = int(callback.data.split(":")[1])
+
+    await add_block(
+        from_user=callback.from_user.id,
+        to_user=person_id,
+    )
+
+    await callback.answer(
+        "🚫 Пользователь заблокирован."
+    )
+
+    await callback.message.edit_reply_markup(
+        reply_markup=None
+    )
+
+    await show_next_profile(
+        callback.message,
+        callback.from_user.id,
+    )
+
+
+# =========================================================
+# ВХОДЯЩИЙ ВАЙБ
+# =========================================================
+
+@router.callback_query(F.data.startswith("incoming_like:"))
+async def incoming_like_callback(callback: CallbackQuery):
+    person_id = int(callback.data.split(":")[1])
+    user_id = callback.from_user.id
+
+    await add_like(
+        from_user=user_id,
+        to_user=person_id,
+    )
+
+    mutual = await has_like(
+        from_user=person_id,
+        to_user=user_id,
+    )
+
+    await callback.answer("💜")
+
+    await callback.message.edit_reply_markup(
+        reply_markup=None
+    )
+
+    if mutual:
+        await callback.message.answer(
+            "<b>💜 ВАЙБ ВЗАИМНЫЙ</b>\n\n"
+            "Теперь вы можете начать общение.",
+            reply_markup=mutual_actions(person_id),
+        )
+
+        try:
+            await callback.bot.send_message(
+                person_id,
+                "<b>💜 ВАЙБ ВЗАИМНЫЙ</b>\n\n"
+                "У вас появился новый взаимный вайб.",
+                reply_markup=mutual_actions(user_id),
+            )
+        except Exception:
+            pass
+
+
+@router.callback_query(F.data.startswith("incoming_skip:"))
+async def incoming_skip_callback(callback: CallbackQuery):
+    person_id = int(callback.data.split(":")[1])
+
+    await add_skip(
+        from_user=callback.from_user.id,
+        to_user=person_id,
+    )
+
+    await callback.answer("👎 Мимо")
+
+    await callback.message.edit_reply_markup(
+        reply_markup=None
+    )
+
+
+# =========================================================
+# ЗАДАТЬ ВОПРОС
+# =========================================================
+
+@router.callback_query(F.data.startswith("question:"))
+async def question_callback(callback: CallbackQuery):
+    person_id = int(callback.data.split(":")[1])
+
+    question_id = await send_question(
+        callback.bot,
+        callback.from_user.id,
+        person_id,
+    )
+
+    if question_id:
+        await callback.answer(
+            "💬 Вопрос отправлен!"
         )
     else:
-        await message.answer(
-            text
-        )
-
-    # =========================================================
-    # ПРОСМОТР ПРОФИЛЕЙ
-    # =========================================================
-
-    @router.message(F.text == "🔎 Проверить вайб")
-    async def browse_handler(
-            message: Message,
-    ):
-        user = await get_user(
-            message.from_user.id
-        )
-
-        if not user or not user["age"]:
-            await message.answer(
-                "Сначала создай профиль 👤"
-            )
-            return
-
-        await show_next_profile(
-            message,
-            message.from_user.id,
-        )
-
-    # =========================================================
-    # ВАЙБ / МИМО / БЛОК
-    # =========================================================
-
-    @router.callback_query(F.data == "like")
-    async def like_handler(
-            callback: CallbackQuery,
-    ):
-        user_id = callback.from_user.id
-
-        person_id = current_profile.get(user_id)
-
-        if not person_id:
-            await callback.answer(
-                "Профиль уже закончился",
-                show_alert=True,
-            )
-            return
-
         await callback.answer(
-            "💜 Вайб отправлен"
+            "Не удалось отправить вопрос.",
+            show_alert=True,
         )
 
-        await add_like(
-            user_id,
-            person_id,
-        )
 
-        mutual = await has_like(
-            person_id,
-            user_id,
-        )
+# =========================================================
+# ТЕМЫ ДЛЯ ОБЩЕНИЯ
+# =========================================================
 
-        try:
-            await callback.message.delete()
-        except Exception:
-            pass
+@router.callback_query(F.data.startswith("topics:"))
+async def topics_callback(callback: CallbackQuery):
+    person_id = int(callback.data.split(":")[1])
 
-        if mutual:
-            person = await get_user(person_id)
+    await callback.answer()
 
-            username = person["username"] if person else None
-
-            if username:
-                keyboard = InlineKeyboardMarkup(
-                    inline_keyboard=[
-                        [
-                            InlineKeyboardButton(
-                                text="💬 Общаться",
-                                url=f"https://t.me/{username.lstrip('@')}",
-                            )
-                        ],
-                        [
-                            InlineKeyboardButton(
-                                text="🔎 Смотреть дальше",
-                                callback_data="browse",
-                            )
-                        ],
-                    ]
-                )
-            else:
-                keyboard = InlineKeyboardMarkup(
-                    inline_keyboard=[
-                        [
-                            InlineKeyboardButton(
-                                text="🔎 Смотреть дальше",
-                                callback_data="browse",
-                            )
-                        ]
-                    ]
-                )
-
-            await callback.bot.send_message(
-                user_id,
-                "<b>💜 ВЗАИМНЫЙ ВАЙБ</b>\n\n"
-                "Вы понравились друг другу.",
-                reply_markup=keyboard,
-            )
-
-            try:
-                await callback.bot.send_message(
-                    person_id,
-                    "<b>💜 ВЗАИМНЫЙ ВАЙБ</b>\n\n"
-                    "Вы понравились друг другу.",
-                )
-            except Exception:
-                pass
-
-        else:
-            await show_next_profile(
-                callback.message,
-                user_id,
-            )
-
-    @router.callback_query(F.data == "skip")
-    async def skip_handler(
-            callback: CallbackQuery,
-    ):
-        user_id = callback.from_user.id
-
-        person_id = current_profile.get(user_id)
-
-        if not person_id:
-            await callback.answer(
-                "Профиль уже закончился",
-                show_alert=True,
-            )
-            return
-
-        await add_skip(
-            user_id,
-            person_id,
-        )
-
-        await callback.answer(
-            "👎 Пропущено"
-        )
-
-        try:
-            await callback.message.delete()
-        except Exception:
-            pass
-
-        await show_next_profile(
-            callback.message,
-            user_id,
-        )
-
-    @router.callback_query(F.data == "block")
-    async def block_handler(
-            callback: CallbackQuery,
-    ):
-        user_id = callback.from_user.id
-
-        person_id = current_profile.get(user_id)
-
-        if not person_id:
-            await callback.answer(
-                "Профиль уже закончился",
-                show_alert=True,
-            )
-            return
-
-        await add_block(
-            user_id,
-            person_id,
-        )
-        await callback.answer(
-            "🚫 Пользователь заблокирован"
-        )
-
-        try:
-            await callback.message.delete()
-        except Exception:
-            pass
-
-        await show_next_profile(
-            callback.message,
-            user_id,
-        )
-
-    # =========================================================
-    # ВХОДЯЩИЕ ВАЙБЫ
-    # =========================================================
-
-    @router.message(F.text == "👀 Кто поймал мой вайб")
-    async def incoming_handler(
-            message: Message,
-    ):
-        users = await get_incoming_likes(
-            message.from_user.id
-        )
-
-        if not users:
-            await message.answer(
-                "<b>👀 Пока никто не поймал твой вайб</b>\n\n"
-                "Продолжай смотреть профили."
-            )
-            return
-
-        for person in users[:10]:
-
-            text = (
-                f"<b>👀 {person['full_name'] or 'Без имени'}</b>\n\n"
-                f"<b>Возраст:</b> {person['age']}\n"
-                f"<b>Город:</b> {person['city'] or 'не указан'}\n\n"
-                f"<b>Интересы:</b>\n"
-                f"{person['interests'] or 'не указаны'}\n\n"
-                f"<b>О себе:</b>\n"
-                f"{person['description'] or 'не указано'}"
-            )
-
-            keyboard = incoming_actions(
-                person["telegram_id"]
-            )
-
-            if person["photo_id"]:
-                await message.answer_photo(
-                    person["photo_id"],
-                    caption=text,
-                    reply_markup=keyboard,
-                )
-            else:
-                await message.answer(
-                    text,
-                    reply_markup=keyboard,
-                )
-
-    @router.callback_query(
-        F.data.startswith("incoming_like:")
+    await callback.message.answer(
+        "<b>💬 О ЧЁМ ПОГОВОРИТЬ?</b>\n\n"
+        "Выбери тему:",
+        reply_markup=conversation_topics(person_id),
     )
-    async def incoming_like_handler(
-            callback: CallbackQuery,
-    ):
-        person_id = int(
-            callback.data.split(":")[1]
-        )
 
-        user_id = callback.from_user.id
 
-        await add_like(
-            user_id,
-            person_id,
-        )
+TOPIC_TEXTS = {
+    "music": "Какую музыку ты чаще всего слушаешь?",
+    "games": "Во что сейчас играешь или во что играл последнее время?",
+    "movies": "Какой фильм или сериал можешь посоветовать?",
+    "sport": "Каким спортом занимаешься или какой любишь смотреть?",
+    "random": "Расскажи какой-нибудь максимально рандомный факт о себе.",
+}
 
-        await callback.answer(
-            "💜 Вайб отправлен"
-        )
 
-        mutual = await has_like(
-            person_id,
-            user_id,
-        )
+@router.callback_query(F.data.startswith("topic:"))
+async def topic_callback(callback: CallbackQuery):
+    parts = callback.data.split(":")
 
-        try:
-            await callback.message.delete()
-        except Exception:
-            pass
+    topic = parts[1]
+    person_id = int(parts[2])
 
-        if mutual:
-            person = await get_user(
-                person_id
-            )
-
-            if person and person["username"]:
-                keyboard = InlineKeyboardMarkup(
-                    inline_keyboard=[
-                        [
-                            InlineKeyboardButton(
-                                text="💬 Общаться",
-                                url=(
-                                    "https://t.me/"
-                                    f"{person['username'].lstrip('@')}"
-                                ),
-                            )
-                        ]
-                    ]
-                )
-            else:
-                keyboard = None
-
-            await callback.message.answer(
-                "<b>💜 ВЗАИМНЫЙ ВАЙБ</b>\n\n"
-                "Вы понравились друг другу.",
-                reply_markup=keyboard,
-            )
-
-            try:
-                await callback.bot.send_message(
-                    person_id,
-                    "<b>💜 ВЗАИМНЫЙ ВАЙБ</b>\n\n"
-                    "Вы понравились друг другу.",
-                )
-            except Exception:
-                pass
-
-    @router.callback_query(
-        F.data.startswith("incoming_skip:")
+    text = TOPIC_TEXTS.get(
+        topic,
+        "Расскажи что-нибудь интересное о себе.",
     )
-    async def incoming_skip_handler(
-            callback: CallbackQuery,
-    ):
-        person_id = int(
-            callback.data.split(":")[1]
-        )
 
-        await add_skip(
-            callback.from_user.id,
-            person_id,
-        )
+    await callback.answer()
 
+    await callback.message.answer(
+        "<b>💬 ИДЕЯ ДЛЯ РАЗГОВОРА</b>\n\n"
+        f"{text}"
+    )
+
+
+# =========================================================
+# ПОЗНАКОМИТЬСЯ
+# =========================================================
+
+@router.callback_query(F.data.startswith("contact:"))
+async def contact_callback(callback: CallbackQuery):
+    person_id = int(callback.data.split(":")[1])
+
+    person = await get_user(person_id)
+
+    if not person:
         await callback.answer(
-            "👎 Мимо"
+            "Пользователь не найден.",
+            show_alert=True,
+        )
+        return
+
+    await callback.answer()
+
+    username = person["username"]
+
+    if username:
+        username = username.lstrip("@")
+
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="💬 Открыть профиль",
+                        url=f"https://t.me/{username}",
+                    )
+                ]
+            ]
         )
 
-        try:
-            await callback.message.delete()
-        except Exception:
-            pass
-
-    # =========================================================
-    # ВОПРОСЫ
-    # =========================================================
-
-    @router.callback_query(F.data == "question")
-    async def question_handler(
-            callback: CallbackQuery,
-            state: FSMContext,
-    ):
-        user_id = callback.from_user.id
-
-        person_id = current_profile.get(
-            user_id
+        await callback.message.answer(
+            "<b>💬 Можно начинать общение.</b>\n\n"
+            f"Telegram: @{esc(username)}",
+            reply_markup=keyboard,
+        )
+    else:
+        await callback.message.answer(
+            "<b>💬 Можно начинать общение.</b>\n\n"
+            "У пользователя пока нет username в Telegram."
         )
 
-        if not person_id:
-            await callback.answer(
-                "Профиль уже недоступен",
-                show_alert=True,
-            )
-            return
-        question_id = await send_question(
-            callback.bot,
-            user_id,
-            person_id,
-        )
 
-        if not question_id:
-            await callback.answer(
-                "Не удалось отправить вопрос",
-                show_alert=True,
-            )
-            return
+# =========================================================
+# СТАТИСТИКА
+# =========================================================
 
-        await state.set_state(
-            QuestionState.answering
-        )
+@router.message(F.text == "📊 Статистика")
+async def statistics_handler(message: Message):
+    user = await get_user(message.from_user.id)
 
-        await state.update_data(
-            question_id=question_id
-        )
-
-        await callback.answer(
-            "💬 Вопрос отправлен"
-        )
-
-    @router.message(QuestionState.answering)
-    async def question_answer_handler(
-            message: Message,
-            state: FSMContext,
-    ):
-        data = await state.get_data()
-
-        question_id = data.get(
-            "question_id"
-        )
-
-        if not question_id:
-            await state.clear()
-            return
-
-        answer = message.text or ""
-
-        success = await submit_answer(
-            message.bot,
-            question_id,
-            answer,
-        )
-
-        if not success:
-            await message.answer(
-                "Не получилось отправить ответ."
-            )
-            return
-
-        await state.clear()
-
+    if not user:
         await message.answer(
-            "✅ Ответ отправлен.",
-            reply_markup=after_profile(),
+            "Сначала напиши /start"
         )
+        return
 
-    # =========================================================
-    # СТАТИСТИКА
-    # =========================================================
+    try:
+        from database import get_stats
 
-    @router.message(F.text == "📊 Статистика")
-    async def stats_handler(
-            message: Message,
-    ):
         stats = await get_stats(
             message.from_user.id
         )
 
-        await message.answer(
+        text = (
             "<b>📊 ТВОЯ СТАТИСТИКА</b>\n\n"
-            f"💜 Вайбов отправлено: "
-            f"{stats['likes_sent']}\n"
-            f"💜 Вайбов получено: "
-            f"{stats['likes_received']}\n"
-            f"👎 Мимо: "
-            f"{stats['skips']}\n"
-            f"🚫 Блокировок: "
-            f"{stats['blocks']}\n"
-            f"💬 Вопросов получено: "
-            f"{stats['questions_received']}"
+            f"👀 Просмотров: {stats.get('views', 0)}\n"
+            f"💜 Лайков: {stats.get('likes', 0)}\n"
+            f"🤝 Взаимных вайбов: "
+            f"{stats.get('mutual_likes', 0)}"
         )
 
-    # =========================================================
-    # ИГРА
-    # =========================================================
-
-    def game_keyboard(
-            game_id: int,
-            question_index: int,
-            answer_a: str,
-            answer_b: str,
-    ):
-        return InlineKeyboardMarkup(
-            inline_keyboard=[
-                [
-                    InlineKeyboardButton(
-                        text=answer_a,
-                        callback_data=(
-                            f"game_answer:"
-                            f"{game_id}:"
-                            f"{question_index}:a"
-                        ),
-                    )
-                ],
-                [
-                    InlineKeyboardButton(
-                        text=answer_b,
-                        callback_data=(
-                            f"game_answer:"
-                            f"{game_id}:"
-                            f"{question_index}:b"
-                        ),
-                    )
-                ],
-            ]
+    except Exception:
+        text = (
+            "<b>📊 ТВОЯ СТАТИСТИКА</b>\n\n"
+            "Статистика пока собирается.\n"
+            "Основные показатели появятся после активности."
         )
 
-    def game_result_keyboard(person):
-        buttons = []
+    await message.answer(
+        text,
+        reply_markup=stats_keyboard(),
+    )
 
-        if person and person["username"]:
-            buttons.append(
-                [
-                    InlineKeyboardButton(
-                        text="💬 Общаться",
-                        url=(
-                            "https://t.me/"
-                            f"{person['username'].lstrip('@')}"
-                        ),
-                    )
-                ]
-            )
 
-        buttons.append(
-            [
-                InlineKeyboardButton(
-                    text="🔎 Смотреть дальше",
-                    callback_data="browse",
-                )
-            ]
-        )
+# =========================================================
+# НАСТРОЙКИ
+# =========================================================
 
-        return InlineKeyboardMarkup(
-            inline_keyboard=buttons
-        )
+@router.message(F.text == "⚙️ Настройки")
+async def settings_handler(message: Message):
+    await message.answer(
+        "<b>⚙️ НАСТРОЙКИ</b>\n\n"
+        "Здесь можно изменить данные профиля.",
+        reply_markup=settings_keyboard(),
+    )
 
-def game_keyboard(
-    game_id: int,
-    question_index: int,
-    answer_a: str,
-    answer_b: str,
+
+@router.callback_query(F.data == "edit_profile")
+async def edit_profile_callback(
+    callback: CallbackQuery,
+    state: FSMContext,
 ):
-    return InlineKeyboardMarkup(
+    await callback.answer()
+
+    await callback.message.answer(
+        "<b>✏️ РЕДАКТИРОВАНИЕ ПРОФИЛЯ</b>\n\n"
+        "Как тебя зовут?"
+    )
+
+    await state.set_state(ProfileState.name)
+
+
+# =========================================================
+# УДАЛЕНИЕ ПРОФИЛЯ
+# =========================================================
+
+@router.callback_query(F.data == "delete_profile")
+async def delete_profile_callback(callback: CallbackQuery):
+    keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text=answer_a,
-                    callback_data=f"game_answer:{game_id}:{question_index}:a",
+                    text="🗑 Да, удалить",
+                    callback_data="delete_confirm",
                 )
             ],
             [
                 InlineKeyboardButton(
-                    text=answer_b,
-                    callback_data=f"game_answer:{game_id}:{question_index}:b",
+                    text="⬅️ Отмена",
+                    callback_data="main_menu",
                 )
             ],
         ]
     )
 
-async def send_game_question(
-    bot,
-    user_id: int,
-    game_id: int,
-):
+    await callback.answer()
+
+    await callback.message.answer(
+        "<b>⚠️ УДАЛИТЬ ПРОФИЛЬ?</b>\n\n"
+        "Все данные профиля будут удалены.",
+        reply_markup=keyboard,
+    )
+
+
+@router.callback_query(F.data == "delete_confirm")
+async def delete_confirm_callback(callback: CallbackQuery):
+    try:
+        from database import delete_user
+
+        await delete_user(
+            callback.from_user.id
+        )
+
+        await callback.answer(
+            "Профиль удалён."
+        )
+
+        await callback.message.answer(
+            "<b>🗑 ПРОФИЛЬ УДАЛЁН</b>\n\n"
+            "Если захочешь вернуться — нажми /start"
+        )
+
+    except Exception:
+        await callback.answer(
+            "Не удалось удалить профиль.",
+            show_alert=True,
+        )
+
+
+# =========================================================
+# ГЛАВНОЕ МЕНЮ
+# =========================================================
+
+@router.callback_query(F.data == "main_menu")
+async def main_menu_callback(callback: CallbackQuery):
+    await callback.answer()
+
+    await callback.message.answer(
+        "<b>🏠 ГЛАВНОЕ МЕНЮ</b>",
+        reply_markup=main_menu(),
+    )
+
+
+# =========================================================
+# ВАЙБ-ИГРЫ
+# =========================================================
+
+@router.message(F.text == "🎮 Вайб-игры")
+async def vibe_games_handler(message: Message):
+    user_id = message.from_user.id
+
+    user = await get_user(user_id)
+
+    if not user:
+        await message.answer(
+            "Сначала создай профиль через /start."
+        )
+        return
+
+    # Убираем пользователя из старой очереди
+    waiting_players[:] = [
+        x for x in waiting_players
+        if x != user_id
+    ]
+
+    opponent_id = None
+
+    for candidate_id in waiting_players:
+        candidate = await get_user(candidate_id)
+
+        if not candidate:
+            continue
+
+        if (
+            (user["age"] < 18 and candidate["age"] < 18)
+            or
+            (user["age"] >= 18 and candidate["age"] >= 18)
+        ):
+            opponent_id = candidate_id
+            break
+
+    if opponent_id is None:
+        waiting_players.append(user_id)
+
+        await message.answer(
+            "<b>🎮 ВАЙБ-ИГРА</b>\n\n"
+            "Ищем тебе соперника...\n\n"
+            "Как только появится другой игрок — "
+            "начнётся игра.",
+            reply_markup=main_menu(),
+        )
+        return
+
+    waiting_players.remove(opponent_id)
+
+    game = await start_game(
+        opponent_id,
+        user_id,
+    )
+
+    await message.answer(
+        "<b>🎮 СОПЕРНИК НАЙДЕН</b>\n\n"
+        "Вам обоим предстоит ответить "
+        "на 5 вопросов.\n\n"
+        "В конце увидите процент совпадений.",
+        reply_markup=game_actions(game["id"]),
+    )
+
+    try:
+        await message.bot.send_message(
+            opponent_id,
+            "<b>🎮 СОПЕРНИК НАЙДЕН</b>\n\n"
+            "Вам обоим предстоит ответить "
+            "на 5 вопросов.\n\n"
+            "Готов начать?",
+            reply_markup=game_actions(game["id"]),
+        )
+    except Exception:
+        pass
+
+
+# =========================================================
+# СТАРТ ИГРЫ
+# =========================================================
+
+@router.callback_query(F.data.startswith("game_start:"))
+async def game_start_callback(callback: CallbackQuery):
+    game_id = int(callback.data.split(":")[1])
+
     question = await get_current_question(
         game_id,
-        user_id,
+        callback.from_user.id,
     )
 
     if not question:
+        await callback.answer(
+            "Игра уже закончена.",
+            show_alert=True,
+        )
         return
 
-    text = (
-        "<b>🎮 ВАЙБ-ИГРА</b>\n\n"
-        f"<b>Вопрос {question['index'] + 1}/5</b>\n\n"
-        f"{question['question']}\n\n"
-        "Выбери свой вариант 👇"
-    )
+    await callback.answer()
 
-    await bot.send_message(
-        user_id,
-        text,
+    await callback.message.answer(
+        f"<b>🎮 ВОПРОС {question['index'] + 1}/5</b>\n\n"
+        f"{esc(question['question'])}",
         reply_markup=game_keyboard(
             game_id,
             question["index"],
@@ -939,3 +1042,195 @@ async def send_game_question(
             question["b"],
         ),
     )
+
+
+# =========================================================
+# ОТВЕТ В ИГРЕ
+# =========================================================
+
+@router.callback_query(F.data.startswith("game_answer:"))
+async def game_answer_callback(callback: CallbackQuery):
+    parts = callback.data.split(":")
+
+    game_id = int(parts[1])
+    question_index = int(parts[2])
+    answer = parts[3]
+
+    user_id = callback.from_user.id
+
+    success = await save_answer(
+        game_id,
+        user_id,
+        question_index,
+        answer,
+    )
+
+    if not success:
+        await callback.answer(
+            "Этот вопрос уже отвечен.",
+            show_alert=True,
+        )
+        return
+
+    await callback.answer("Ответ принят!")
+
+    next_question = await get_current_question(
+        game_id,
+        user_id,
+    )
+
+    if next_question:
+        await callback.message.edit_reply_markup(
+            reply_markup=None
+        )
+
+        await callback.message.answer(
+            f"<b>🎮 ВОПРОС "
+            f"{next_question['index'] + 1}/5</b>\n\n"
+            f"{esc(next_question['question'])}",
+            reply_markup=game_keyboard(
+                game_id,
+                next_question["index"],
+                next_question["a"],
+                next_question["b"],
+            ),
+        )
+
+        return
+
+    result = await complete_game(game_id)
+
+    if not result:
+        await callback.message.edit_reply_markup(
+            reply_markup=None
+        )
+
+        await callback.message.answer(
+            "<b>✅ ВСЕ ОТВЕТЫ ГОТОВЫ</b>\n\n"
+            "Ждём второго игрока."
+        )
+
+        return
+
+    await callback.message.edit_reply_markup(
+        reply_markup=None
+    )
+
+    text = get_result_text(
+        result["matches"],
+        result["percentage"],
+    )
+
+    opponent_id = (
+        result["user_two"]
+        if result["user_one"] == user_id
+        else result["user_one"]
+    )
+
+    await callback.message.answer(
+        text,
+        reply_markup=game_result_actions(
+            opponent_id
+        ),
+    )
+
+    try:
+        await callback.bot.send_message(
+            opponent_id,
+            text,
+            reply_markup=game_result_actions(
+                user_id
+            ),
+        )
+    except Exception:
+        pass
+
+
+# =========================================================
+# ВАЙБ ПОСЛЕ ИГРЫ
+# =========================================================
+
+@router.callback_query(F.data.startswith("game_like:"))
+async def game_like_callback(callback: CallbackQuery):
+    person_id = int(callback.data.split(":")[1])
+    user_id = callback.from_user.id
+
+    await add_like(
+        from_user=user_id,
+        to_user=person_id,
+    )
+
+    mutual = await has_like(
+        from_user=person_id,
+        to_user=user_id,
+    )
+
+    if mutual:
+        await callback.answer(
+            "💜 Вайб взаимный!"
+        )
+
+        await callback.message.answer(
+            "<b>💜 ВАЙБ ВЗАИМНЫЙ</b>\n\n"
+            "Теперь можете начать общение.",
+            reply_markup=mutual_actions(person_id),
+        )
+
+        try:
+            await callback.bot.send_message(
+                person_id,
+                "<b>💜 ВАЙБ ВЗАИМНЫЙ</b>\n\n"
+                "После игры у вас появился взаимный вайб.",
+                reply_markup=mutual_actions(user_id),
+            )
+        except Exception:
+            pass
+
+    else:
+        await callback.answer(
+            "💜 Вайб отправлен!"
+        )
+
+
+# =========================================================
+# ОТВЕТЫ НА ВОПРОСЫ
+# =========================================================
+
+@router.message(F.text)
+async def universal_text_handler(
+    message: Message,
+    state: FSMContext,
+):
+    current_state = await state.get_state()
+
+    # Если пользователь сейчас заполняет профиль,
+    # этот обработчик ничего не делает.
+    if current_state is not None:
+        return
+
+    try:
+        from database import get_pending_questions
+
+        pending = await get_pending_questions(
+            message.from_user.id
+        )
+
+        if not pending:
+            return
+
+        question = pending[0]
+
+        success = await submit_answer(
+            message.bot,
+            question["id"],
+            message.text,
+        )
+
+        if success:
+            await message.answer(
+                "<b>✅ Ответ отправлен.</b>",
+                reply_markup=main_menu(),
+            )
+
+    except Exception:
+        return
