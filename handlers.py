@@ -309,16 +309,20 @@ async def profile_name(message: Message, state: FSMContext):
 async def profile_age(message: Message, state: FSMContext):
     age_text = message.text.strip()
 
-    print(f"AGE HANDLER: received={age_text!r}")
+    # Убираем возможные невидимые символы
+    age_digits = "".join(
+        char for char in age_text
+        if char.isdigit()
+    )
 
-    if not age_text.isdigit():
+    if not age_digits:
         await message.answer(
-            "❌ Напиши возраст числом.\n\n"
+            "❌ Возраст нужно написать числом.\n\n"
             "Например: 18"
         )
         return
 
-    age = int(age_text)
+    age = int(age_digits)
 
     if age < 16 or age > 99:
         await message.answer(
@@ -335,8 +339,6 @@ async def profile_age(message: Message, state: FSMContext):
 
     await state.set_state(ProfileState.city)
 
-    print("AGE HANDLER: state changed to CITY")
-    
 @router.message(ProfileState.city)
 async def profile_city(message: Message, state: FSMContext):
     city = message.text.strip()
