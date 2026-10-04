@@ -305,35 +305,38 @@ async def profile_name(message: Message, state: FSMContext):
     await state.set_state(ProfileState.age)
 
 
-@router.message(ProfileState.age)
+@router.message(ProfileState.age, F.text)
 async def profile_age(message: Message, state: FSMContext):
     age_text = message.text.strip()
 
+    print(f"AGE HANDLER: received={age_text!r}")
+
     if not age_text.isdigit():
         await message.answer(
-            "<b>❌ Возраст нужно написать числом.</b>\n\n"
-            "Например: <b>18</b>"
+            "❌ Напиши возраст числом.\n\n"
+            "Например: 18"
         )
         return
 
     age = int(age_text)
 
-    if not valid_age(age):
+    if age < 16 or age > 99:
         await message.answer(
-            "<b>❌ Некорректный возраст.</b>\n\n"
-            "Укажи реальный возраст."
+            "❌ Укажи возраст от 16 до 99 лет."
         )
         return
 
     await state.update_data(age=age)
 
     await message.answer(
-        "<b>📍 Отлично.</b>\n\n"
+        "<b>📍 Отлично!</b>\n\n"
         "Теперь напиши свой город."
     )
 
     await state.set_state(ProfileState.city)
 
+    print("AGE HANDLER: state changed to CITY")
+    
 @router.message(ProfileState.city)
 async def profile_city(message: Message, state: FSMContext):
     city = message.text.strip()
