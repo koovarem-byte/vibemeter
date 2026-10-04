@@ -309,7 +309,6 @@ async def profile_name(message: Message, state: FSMContext):
 async def profile_age(message: Message, state: FSMContext):
     age_text = message.text.strip()
 
-    # Убираем возможные невидимые символы
     age_digits = "".join(
         char for char in age_text
         if char.isdigit()
@@ -332,12 +331,44 @@ async def profile_age(message: Message, state: FSMContext):
 
     await state.update_data(age=age)
 
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="👦 Парень",
+                    callback_data="gender:male",
+                ),
+                InlineKeyboardButton(
+                    text="👧 Девушка",
+                    callback_data="gender:female",
+                ),
+            ]
+        ]
+    )
+
     await message.answer(
+        "<b>Отлично!</b>\n\n"
+        "Теперь укажи свой пол:",
+        reply_markup=keyboard,
+    )
+
+@router.callback_query(F.data.startswith("gender:"))
+async def profile_gender(callback: CallbackQuery, state: FSMContext):
+    gender = callback.data.split(":")[1]
+
+    if gender not in ("male", "female"):
+        await callback.answer("Ошибка")
+        return
+
+    await state.update_data(gender=gender)
+
+    await callback.message.edit_text(
         "<b>📍 Отлично!</b>\n\n"
         "Теперь напиши свой город."
     )
 
     await state.set_state(ProfileState.city)
+    await callback.answer()
 
 @router.message(ProfileState.city)
 async def profile_city(message: Message, state: FSMContext):
@@ -418,16 +449,65 @@ async def profile_photo(message: Message, state: FSMContext):
         interests=data["interests"],
         description=data["description"],
         photo_id=photo_id,
+        gender=data["gender"],
+    )
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="👦 Парней",
+                    callback_data="search_gender:male",
+                ),
+                InlineKeyboardButton(
+                    text="👧 Девушек",
+                    callback_data="search_gender:female",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="👥 Всех",
+                    callback_data="search_gender:all",
+                ),
+            ],
+        ]
+    )
+
+    await message.answer(
+        "<b>🔥 Профиль готов!</b>\n\n"
+        "Кого хочешь видеть в поиске?",
+        reply_markup=keyboard,
+    )
+
+@router.callback_query(F.data.startswith("search_gender:"))
+async def profile_search_gender(
+    callback: CallbackQuery,
+    state: FSMContext,
+):
+    search_gender = callback.data.split(":")[1]
+
+    if search_gender not in ("male", "female", "all"):
+        await callback.answer("Ошибка")
+        return
+
+    await update_user(
+        telegram_id=callback.from_user.id,
+        search_gender=search_gender,
     )
 
     await state.clear()
 
-    await message.answer(
+    await callback.message.edit_text(
         "<b>🔥 Профиль готов.</b>\n\n"
-        "Теперь можно искать людей с похожими интересами.",
+        "Теперь можно искать людей с похожими интересами."
+    )
+
+    await callback.message.answer(
+        "Выбирай действие 👇",
         reply_markup=main_menu(),
     )
 
+    await callback.answer()
 
 @router.message(ProfileState.photo)
 async def profile_photo_invalid(message: Message):

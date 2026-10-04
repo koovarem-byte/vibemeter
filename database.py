@@ -22,9 +22,27 @@ async def init_db():
                 description TEXT,
                 photo_id TEXT,
                 balance INTEGER DEFAULT 0,
+                gender TEXT,
+                search_gender TEXT DEFAULT 'all',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+
+        # Добавляем новые поля в уже существующую базу
+        # Если они уже есть — просто пропускаем.
+        try:
+            await db.execute(
+                "ALTER TABLE users ADD COLUMN gender TEXT"
+            )
+        except Exception:
+            pass
+
+        try:
+            await db.execute(
+                "ALTER TABLE users ADD COLUMN search_gender TEXT DEFAULT 'all'"
+            )
+        except Exception:
+            pass
 
         await db.execute("""
             CREATE TABLE IF NOT EXISTS likes (
@@ -98,7 +116,6 @@ async def init_db():
 
         await db.commit()
 
-
 # =========================================================
 # USERS
 # =========================================================
@@ -149,6 +166,7 @@ async def update_user(
     interests: str | None = None,
     description: str | None = None,
     photo_id: str | None = None,
+        search_gender: str | None = None,
 ):
     fields = []
     values = []
@@ -161,6 +179,7 @@ async def update_user(
         "interests": interests,
         "description": description,
         "photo_id": photo_id,
+        "search_gender": search_gender,
     }
 
     for field, value in data.items():
@@ -354,7 +373,7 @@ async def get_candidates(user_id: int):
 
         cursor = await db.execute(
             """
-            SELECT age
+            SELECT age, search_gender
             FROM users
             WHERE telegram_id = ?
             """,
@@ -371,6 +390,15 @@ async def get_candidates(user_id: int):
         else:
             age_condition = "u.age >= 18"
 
+        search_gender = current_user["search_gender"] or "all"
+
+        gender_condition = ""
+
+        if search_gender == "male":
+            gender_condition = "AND u.gender = 'male'"
+        elif search_gender == "female":
+            gender_condition = "AND u.gender = 'female'"
+
         cursor = await db.execute(
             f"""
             SELECT u.*
@@ -379,25 +407,24 @@ async def get_candidates(user_id: int):
             WHERE u.telegram_id != ?
 
             AND u.age IS NOT NULL
-
             AND u.photo_id IS NOT NULL
 
             AND {age_condition}
 
+            {gender_condition}
+
             AND NOT EXISTS (
                 SELECT 1
                 FROM likes l
-                WHERE
-                    l.from_user = ?
-                    AND l.to_user = u.telegram_id
+                WHERE l.from_user = ?
+                AND l.to_user = u.telegram_id
             )
 
             AND NOT EXISTS (
                 SELECT 1
                 FROM skips s
-                WHERE
-                    s.from_user = ?
-                    AND s.to_user = u.telegram_id
+                WHERE s.from_user = ?
+                AND s.to_user = u.telegram_id
             )
 
             AND NOT EXISTS (
@@ -421,7 +448,6 @@ async def get_candidates(user_id: int):
         )
 
         return await cursor.fetchall()
-
 
 # =========================================================
 # INCOMING LIKES
