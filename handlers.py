@@ -439,6 +439,34 @@ async def profile_photo(message: Message, state: FSMContext):
     data = await state.get_data()
 
     photo_id = message.photo[-1].file_id
+    gender = data.get("gender")
+
+    if not gender:
+        await message.answer(
+            "❌ Не удалось определить пол.\n\n"
+            "Давай выберем ещё раз:"
+        )
+
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="👦 Парень",
+                        callback_data="gender:male",
+                    ),
+                    InlineKeyboardButton(
+                        text="👧 Девушка",
+                        callback_data="gender:female",
+                    ),
+                ]
+            ]
+        )
+
+        await message.answer(
+            "Кто ты?",
+            reply_markup=keyboard,
+        )
+        return
 
     await update_user(
         telegram_id=message.from_user.id,
@@ -449,7 +477,7 @@ async def profile_photo(message: Message, state: FSMContext):
         interests=data["interests"],
         description=data["description"],
         photo_id=photo_id,
-        gender=data["gender"],
+        gender=gender,
     )
 
     keyboard = InlineKeyboardMarkup(
