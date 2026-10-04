@@ -371,7 +371,7 @@ async def profile_interests(message: Message, state: FSMContext):
         return
 
     await state.update_data(
-        interests=", ".join(interests)
+        interests=interests
     )
 
     await message.answer(
@@ -380,7 +380,6 @@ async def profile_interests(message: Message, state: FSMContext):
     )
 
     await state.set_state(ProfileState.description)
-
 
 @router.message(ProfileState.description)
 async def profile_description(message: Message, state: FSMContext):
