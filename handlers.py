@@ -62,7 +62,7 @@ from games import (
 
 router = Router()
 
-ADMIN_ID = 123456789
+ADMIN_ID = 1771096901
 
 
 @router.message(Command("admin"))
