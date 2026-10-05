@@ -1353,22 +1353,22 @@ async def universal_text_handler(
     except Exception:
         return
 
-@router.message(F.text == "/admin")
-async def admin_handler(message: Message):
-    if message.from_user.id != ADMIN_ID:
-        return
+    @router.message(F.text == "/admin")
+    async def admin_handler(message: Message):
+        if message.from_user.id != ADMIN_ID:
+            return
 
-    stats = await get_admin_stats()
+        stats = await get_admin_stats()
 
-    await message.answer(
-        "<b>🔥 ВАЙБОМЕТР — ADMIN</b>\n\n"
-        f"👥 Всего пользователей: <b>{stats['total_users']}</b>\n"
-        f"✅ Заполненных профилей: <b>{stats['profiles']}</b>\n"
-        f"📸 С фото: <b>{stats['photos']}</b>\n\n"
-        f"💜 Лайков: <b>{stats['likes']}</b>\n"
-        f"🤝 Взаимных вайбов: <b>{stats['mutual']}</b>\n"
-        f"👎 Скипов: <b>{stats['skips']}</b>\n\n"
-        f"💬 Вопросов: <b>{stats['questions']}</b>\n"
-        f"🎮 Игр: <b>{stats['games']}</b>\n\n"
-        f"📅 Сегодня: <b>+{stats['today']}</b>"
-    )
+        await message.answer(
+            "<b>🔥 ВАЙБОМЕТР — ADMIN</b>\n\n"
+            f"👥 Всего пользователей: <b>{stats['total_users']}</b>\n"
+            f"✅ Заполненных профилей: <b>{stats['profiles']}</b>\n"
+            f"📸 С фото: <b>{stats['photos']}</b>\n\n"
+            f"💜 Лайков: <b>{stats['likes']}</b>\n"
+            f"🤝 Взаимных вайбов: <b>{stats['mutual']}</b>\n"
+            f"👎 Скипов: <b>{stats['skips']}</b>\n\n"
+            f"💬 Вопросов: <b>{stats['questions']}</b>\n"
+            f"🎮 Игр: <b>{stats['games']}</b>\n\n"
+            f"📅 Сегодня: <b>+{stats['today']}</b>"
+        )
