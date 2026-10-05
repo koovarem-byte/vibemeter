@@ -14,6 +14,7 @@ from database import (
     create_user,
     get_user,
     update_user,
+    get_admin_stats,
     get_candidates,
     add_like,
     has_like,
@@ -58,8 +59,9 @@ from games import (
     get_result_text,
 )
 
-
 router = Router()
+
+ADMIN_ID = 1771096901
 
 # Временные данные активных просмотров
 current_profile = {}
@@ -1350,3 +1352,23 @@ async def universal_text_handler(
 
     except Exception:
         return
+
+@router.message(F.text == "/admin")
+async def admin_handler(message: Message):
+    if message.from_user.id != ADMIN_ID:
+        return
+
+    stats = await get_admin_stats()
+
+    await message.answer(
+        "<b>🔥 ВАЙБОМЕТР — ADMIN</b>\n\n"
+        f"👥 Всего пользователей: <b>{stats['total_users']}</b>\n"
+        f"✅ Заполненных профилей: <b>{stats['profiles']}</b>\n"
+        f"📸 С фото: <b>{stats['photos']}</b>\n\n"
+        f"💜 Лайков: <b>{stats['likes']}</b>\n"
+        f"🤝 Взаимных вайбов: <b>{stats['mutual']}</b>\n"
+        f"👎 Скипов: <b>{stats['skips']}</b>\n\n"
+        f"💬 Вопросов: <b>{stats['questions']}</b>\n"
+        f"🎮 Игр: <b>{stats['games']}</b>\n\n"
+        f"📅 Сегодня: <b>+{stats['today']}</b>"
+    )

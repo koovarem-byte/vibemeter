@@ -797,3 +797,70 @@ async def get_stats(user_id: int):
             "questions_received": questions_received,
             "mutual_likes": mutual_likes,
         }
+
+async def get_admin_stats():
+    async with aiosqlite.connect(DB_PATH) as db:
+
+        cursor = await db.execute("SELECT COUNT(*) FROM users")
+        total_users = (await cursor.fetchone())[0]
+
+        cursor = await db.execute("""
+            SELECT COUNT(*)
+            FROM users
+            WHERE age IS NOT NULL
+              AND city IS NOT NULL
+              AND interests IS NOT NULL
+              AND description IS NOT NULL
+              AND photo_id IS NOT NULL
+        """)
+        profiles = (await cursor.fetchone())[0]
+
+        cursor = await db.execute("""
+            SELECT COUNT(*)
+            FROM users
+            WHERE photo_id IS NOT NULL
+        """)
+        photos = (await cursor.fetchone())[0]
+
+        cursor = await db.execute("SELECT COUNT(*) FROM likes")
+        likes = (await cursor.fetchone())[0]
+
+        cursor = await db.execute("SELECT COUNT(*) FROM skips")
+        skips = (await cursor.fetchone())[0]
+
+        cursor = await db.execute("""
+            SELECT COUNT(*)
+            FROM likes l1
+            WHERE EXISTS (
+                SELECT 1
+                FROM likes l2
+                WHERE l2.from_user = l1.to_user
+                  AND l2.to_user = l1.from_user
+            )
+        """)
+        mutual = (await cursor.fetchone())[0] // 2
+
+        cursor = await db.execute("SELECT COUNT(*) FROM questions")
+        questions = (await cursor.fetchone())[0]
+
+        cursor = await db.execute("SELECT COUNT(*) FROM games")
+        games = (await cursor.fetchone())[0]
+
+        cursor = await db.execute("""
+            SELECT COUNT(*)
+            FROM users
+            WHERE DATE(created_at) = DATE('now')
+        """)
+        today = (await cursor.fetchone())[0]
+
+        return {
+            "total_users": total_users,
+            "profiles": profiles,
+            "photos": photos,
+            "likes": likes,
+            "mutual": mutual,
+            "skips": skips,
+            "questions": questions,
+            "games": games,
+            "today": today,
+        }
