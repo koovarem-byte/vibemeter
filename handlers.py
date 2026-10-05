@@ -2,6 +2,7 @@ import html
 import random
 
 from aiogram import Router, F
+from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.types import (
     Message,
@@ -61,7 +62,28 @@ from games import (
 
 router = Router()
 
-ADMIN_ID = 1771096901
+ADMIN_ID = 123456789
+
+
+@router.message(Command("admin"))
+async def admin_handler(message: Message):
+    if message.from_user.id != ADMIN_ID:
+        return
+
+    stats = await get_admin_stats()
+
+    await message.answer(
+        "<b>🔥 ВАЙБОМЕТР — ADMIN</b>\n\n"
+        f"👥 Всего пользователей: <b>{stats['total_users']}</b>\n"
+        f"✅ Профилей: <b>{stats['profiles']}</b>\n"
+        f"📸 С фото: <b>{stats['photos']}</b>\n\n"
+        f"💜 Лайков: <b>{stats['likes']}</b>\n"
+        f"🤝 Взаимных: <b>{stats['mutual']}</b>\n"
+        f"👎 Скипов: <b>{stats['skips']}</b>\n\n"
+        f"💬 Вопросов: <b>{stats['questions']}</b>\n"
+        f"🎮 Игр: <b>{stats['games']}</b>\n"
+        f"📅 Сегодня: <b>+{stats['today']}</b>"
+    )
 
 # Временные данные активных просмотров
 current_profile = {}
@@ -1353,22 +1375,3 @@ async def universal_text_handler(
     except Exception:
         return
 
-    @router.message(F.text == "/admin")
-    async def admin_handler(message: Message):
-        if message.from_user.id != ADMIN_ID:
-            return
-
-        stats = await get_admin_stats()
-
-        await message.answer(
-            "<b>🔥 ВАЙБОМЕТР — ADMIN</b>\n\n"
-            f"👥 Всего пользователей: <b>{stats['total_users']}</b>\n"
-            f"✅ Заполненных профилей: <b>{stats['profiles']}</b>\n"
-            f"📸 С фото: <b>{stats['photos']}</b>\n\n"
-            f"💜 Лайков: <b>{stats['likes']}</b>\n"
-            f"🤝 Взаимных вайбов: <b>{stats['mutual']}</b>\n"
-            f"👎 Скипов: <b>{stats['skips']}</b>\n\n"
-            f"💬 Вопросов: <b>{stats['questions']}</b>\n"
-            f"🎮 Игр: <b>{stats['games']}</b>\n\n"
-            f"📅 Сегодня: <b>+{stats['today']}</b>"
-        )
