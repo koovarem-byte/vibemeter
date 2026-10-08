@@ -9,6 +9,8 @@ from aiogram.types import (
     CallbackQuery,
     InlineKeyboardMarkup,
     InlineKeyboardButton,
+    ReplyKeyboardMarkup,
+    KeyboardButton,
 )
 
 from database import (
@@ -167,12 +169,9 @@ def profile_text(person, vibe=None, common=None):
 
 
 async def send_profile(message, person, viewer_id):
-    """Показывает карточку найденного пользователя."""
+    viewer = await get_user(viewer_id)
 
-    vibe, common = calculate_vibe(
-        await get_user(viewer_id),
-        person,
-    )
+    vibe, common = calculate_vibe(viewer, person)
 
     current_profile[viewer_id] = person["telegram_id"]
 
@@ -182,20 +181,16 @@ async def send_profile(message, person, viewer_id):
         common=common,
     )
 
-    keyboard = profile_actions(person["telegram_id"])
+    keyboard = profile_actions(
+        person["telegram_id"]
+    )
 
-    if person["photo_id"]:
-        await message.answer_photo(
-            photo=person["photo_id"],
-            caption=text,
-            reply_markup=keyboard,
-        )
-    else:
-        await message.answer(
-            text,
-            reply_markup=keyboard,
-        )
-
+    # Фото скрыто до взаимного лайка
+    await message.answer(
+        text
+        + "\n\n🔒 <b>Фото откроется после взаимного вайба.</b>",
+        reply_markup=keyboard,
+    )
 
 async def show_next_profile(message, user_id):
     """Показывает следующего кандидата."""
@@ -308,6 +303,15 @@ async def start_handler(message: Message, state: FSMContext):
 # =========================================================
 # СОЗДАНИЕ ПРОФИЛЯ
 # =========================================================
+
+@router.message(F.text == "❌ Отменить")
+async def cancel_edit(message: Message, state: FSMContext):
+    await state.clear()
+
+    await message.answer(
+        "✅ Редактирование отменено.",
+        reply_markup=main_menu(),
+    )
 
 @router.message(ProfileState.name)
 async def profile_name(message: Message, state: FSMContext):
@@ -995,7 +999,15 @@ async def edit_profile_callback(
 
     await callback.message.answer(
         "<b>✏️ РЕДАКТИРОВАНИЕ ПРОФИЛЯ</b>\n\n"
-        "Как тебя зовут?"
+        "Как тебя зовут?",
+        reply_markup=ReplyKeyboardMarkup(
+            keyboard=[
+                [
+                    KeyboardButton(text="❌ Отменить")
+                ]
+            ],
+            resize_keyboard=True,
+        ),
     )
 
     await state.set_state(ProfileState.name)

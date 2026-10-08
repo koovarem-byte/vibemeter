@@ -68,15 +68,8 @@ def profile_actions(person_id: int):
                     callback_data=f"block:{person_id}",
                 ),
             ],
-            [
-                InlineKeyboardButton(
-                    text="➡️ Следующий",
-                    callback_data="browse",
-                ),
-            ],
         ]
     )
-
 
 # =========================================================
 # ВХОДЯЩИЙ ВАЙБ
@@ -373,4 +366,14 @@ def back_keyboard(callback_data: str = "main_menu"):
                 ),
             ],
         ]
+    )
+def cancel_edit_keyboard():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [
+                KeyboardButton(text="❌ Отменить")
+            ]
+        ],
+        resize_keyboard=True,
+        input_field_placeholder="Введи данные или отмени",
     )
