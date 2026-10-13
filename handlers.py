@@ -848,47 +848,6 @@ async def question_callback(callback: CallbackQuery):
 # ТЕМЫ ДЛЯ ОБЩЕНИЯ
 # =========================================================
 
-@router.callback_query(F.data.startswith("topics:"))
-async def topics_callback(callback: CallbackQuery):
-    person_id = int(callback.data.split(":")[1])
-
-    await callback.answer()
-
-    await callback.message.answer(
-        "<b>💬 О ЧЁМ ПОГОВОРИТЬ?</b>\n\n"
-        "Выбери тему:",
-        reply_markup=conversation_topics(person_id),
-    )
-
-
-TOPIC_TEXTS = {
-    "music": "Какую музыку ты чаще всего слушаешь?",
-    "games": "Во что сейчас играешь или во что играл последнее время?",
-    "movies": "Какой фильм или сериал можешь посоветовать?",
-    "sport": "Каким спортом занимаешься или какой любишь смотреть?",
-    "random": "Расскажи какой-нибудь максимально рандомный факт о себе.",
-}
-
-
-@router.callback_query(F.data.startswith("topic:"))
-async def topic_callback(callback: CallbackQuery):
-    parts = callback.data.split(":")
-
-    topic = parts[1]
-    person_id = int(parts[2])
-
-    text = TOPIC_TEXTS.get(
-        topic,
-        "Расскажи что-нибудь интересное о себе.",
-    )
-
-    await callback.answer()
-
-    await callback.message.answer(
-        "<b>💬 ИДЕЯ ДЛЯ РАЗГОВОРА</b>\n\n"
-        f"{text}"
-    )
-
 
 # =========================================================
 # ПОЗНАКОМИТЬСЯ

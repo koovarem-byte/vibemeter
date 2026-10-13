@@ -107,29 +107,12 @@ def mutual_actions(person_id: int):
             ],
             [
                 InlineKeyboardButton(
-                    text="💬 О чём поговорить?",
-                    callback_data=f"topics:{person_id}",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="🎮 Вайб-игра",
-                    callback_data=f"game_start:{person_id}",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
                     text="🔎 Смотреть дальше",
                     callback_data="browse",
                 ),
             ],
         ]
     )
-
-
-# =========================================================
-# ТЕМЫ ДЛЯ РАЗГОВОРА
-# =========================================================
 
 def conversation_topics(person_id: int):
     return InlineKeyboardMarkup(
