@@ -24,6 +24,8 @@ from database import (
     add_skip,
     add_block,
     get_incoming_likes,
+    get_stats,
+    get_blocked_users
 )
 
 from keyboards import (
@@ -1168,16 +1170,86 @@ async def vibe_games_handler(message: Message):
 
 @router.callback_query(F.data.startswith("game_start:"))
 async def game_start_callback(callback: CallbackQuery):
-    game_id = int(callback.data.split(":")[1])
+    target_id = int(callback.data.split(":")[1])
+    user_id = callback.from_user.id
+
+    # Если нажали на игру из взаимного вайба,
+    # создаём новую игру с выбранным человеком.
+    if target_id != user_id:
+        user = await get_user(user_id)
+        opponent = await get_user(target_id)
+
+        if not user or not opponent:
+            await callback.answer(
+                "Пользователь не найден.",
+                show_alert=True,
+            )
+            return
+
+        if (
+            (user["age"] < 18 and opponent["age"] >= 18)
+            or
+            (user["age"] >= 18 and opponent["age"] < 18)
+        ):
+            await callback.answer(
+                "Играть можно только в своей возрастной группе.",
+                show_alert=True,
+            )
+            return
+
+        game = await start_game(user_id, target_id)
+        game_id = game["id"]
+
+        await callback.answer("Игра создана!")
+
+        await callback.message.answer(
+            "<b>🎮 ВАЙБ-ИГРА</b>\n\n"
+            "Ты начал игру с выбранным пользователем.\n"
+            "Ответь на 5 вопросов!",
+        )
+
+        question = await get_current_question(
+            game_id,
+            user_id,
+        )
+
+        if question:
+            await callback.message.answer(
+                f"<b>🎮 ВОПРОС 1/5</b>\n\n"
+                f"{esc(question['question'])}",
+                reply_markup=game_keyboard(
+                    game_id,
+                    question["index"],
+                    question["a"],
+                    question["b"],
+                ),
+            )
+
+        try:
+            await callback.bot.send_message(
+                target_id,
+                "<b>🎮 ТЕБЯ ПРИГЛАСИЛИ В ВАЙБ-ИГРУ</b>\n\n"
+                "Твой соперник уже начал отвечать. "
+                "Твоя очередь!",
+                reply_markup=game_actions(game_id),
+            )
+        except Exception:
+            pass
+
+        return
+
+    # Если callback содержит собственный ID,
+    # продолжаем уже созданную игру.
+    game_id = target_id
 
     question = await get_current_question(
         game_id,
-        callback.from_user.id,
+        user_id,
     )
 
     if not question:
         await callback.answer(
-            "Игра уже закончена.",
+            "Игра уже закончена или не найдена.",
             show_alert=True,
         )
         return
@@ -1194,11 +1266,6 @@ async def game_start_callback(callback: CallbackQuery):
             question["b"],
         ),
     )
-
-
-# =========================================================
-# ОТВЕТ В ИГРЕ
-# =========================================================
 
 @router.callback_query(F.data.startswith("game_answer:"))
 async def game_answer_callback(callback: CallbackQuery):
@@ -1387,3 +1454,60 @@ async def universal_text_handler(
     except Exception:
         return
 
+@router.callback_query(F.data == "achievements")
+async def achievements_callback(callback: CallbackQuery):
+    await callback.answer()
+
+    stats = await get_stats(callback.from_user.id)
+
+    if not stats:
+        stats = {}
+
+    likes = stats.get("likes", 0)
+    mutual = stats.get("mutual", 0)
+    questions = stats.get("questions", 0)
+    games = stats.get("games", 0)
+
+    text = (
+        "<b>🏆 ТВОИ ДОСТИЖЕНИЯ</b>\n\n"
+        f"{'✅' if likes >= 1 else '🔒'} Первый вайб — {likes >= 1}\n"
+        f"{'✅' if mutual >= 1 else '🔒'} Взаимность — {mutual >= 1}\n"
+        f"{'✅' if questions >= 1 else '🔒'} Первое общение — {questions >= 1}\n"
+        f"{'✅' if games >= 1 else '🔒'} Первая игра — {games >= 1}"
+    )
+
+    await callback.message.answer(text)
+
+
+@router.callback_query(F.data == "streak")
+async def streak_callback(callback: CallbackQuery):
+    await callback.answer(
+        "🔥 Серия активности пока не реализована.",
+        show_alert=True,
+    )
+
+@router.callback_query(F.data == "blocked_users")
+async def blocked_users_callback(callback: CallbackQuery):
+    await callback.answer()
+
+    blocked = await get_blocked_users(callback.from_user.id)
+
+    if not blocked:
+        await callback.message.answer(
+            "🚫 <b>Заблокированные пользователи</b>\n\n"
+            "Список пока пуст."
+        )
+        return
+
+    text = ["🚫 <b>ЗАБЛОКИРОВАННЫЕ ПОЛЬЗОВАТЕЛИ</b>\n"]
+
+    for person in blocked:
+        name = person["full_name"] or "Без имени"
+        age = person["age"] or "—"
+        city = person["city"] or "—"
+
+        text.append(
+            f"• {name} — {age} лет, {city}"
+        )
+
+    await callback.message.answer("\n".join(text))

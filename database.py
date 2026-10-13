@@ -347,6 +347,23 @@ async def add_block(from_user: int, to_user: int):
 
         await db.commit()
 
+async def get_blocked_users(telegram_id: int):
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+
+        cursor = await db.execute(
+            """
+            SELECT u.telegram_id, u.full_name, u.age, u.city
+            FROM blocks b
+            JOIN users u ON u.telegram_id = b.to_user
+            WHERE b.from_user = ?
+            ORDER BY u.full_name
+            """,
+            (telegram_id,),
+        )
+
+        rows = await cursor.fetchall()
+        return [dict(row) for row in rows]
 
 async def is_blocked(from_user: int, to_user: int):
     async with aiosqlite.connect(DB_PATH) as db:
