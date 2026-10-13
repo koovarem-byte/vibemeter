@@ -1173,99 +1173,82 @@ async def game_start_callback(callback: CallbackQuery):
     target_id = int(callback.data.split(":")[1])
     user_id = callback.from_user.id
 
-    # Если нажали на игру из взаимного вайба,
-    # создаём новую игру с выбранным человеком.
-    if target_id != user_id:
-        user = await get_user(user_id)
-        opponent = await get_user(target_id)
+    # Сначала проверяем: это уже созданная игра?
+    question = await get_current_question(
+        target_id,
+        user_id,
+    )
 
-        if not user or not opponent:
-            await callback.answer(
-                "Пользователь не найден.",
-                show_alert=True,
-            )
-            return
-
-        if (
-            (user["age"] < 18 and opponent["age"] >= 18)
-            or
-            (user["age"] >= 18 and opponent["age"] < 18)
-        ):
-            await callback.answer(
-                "Играть можно только в своей возрастной группе.",
-                show_alert=True,
-            )
-            return
-
-        game = await start_game(user_id, target_id)
-        game_id = game["id"]
-
-        await callback.answer("Игра создана!")
+    if question:
+        await callback.answer()
 
         await callback.message.answer(
-            "<b>🎮 ВАЙБ-ИГРА</b>\n\n"
-            "Ты начал игру с выбранным пользователем.\n"
-            "Ответь на 5 вопросов!",
-        )
-
-        question = await get_current_question(
-            game_id,
-            user_id,
-        )
-
-        if question:
-            await callback.message.answer(
-                f"<b>🎮 ВОПРОС 1/5</b>\n\n"
-                f"{esc(question['question'])}",
-                reply_markup=game_keyboard(
-                    game_id,
-                    question["index"],
-                    question["a"],
-                    question["b"],
-                ),
-            )
-
-        try:
-            await callback.bot.send_message(
+            f"<b>🎮 ВОПРОС "
+            f"{question['index'] + 1}/5</b>\n\n"
+            f"{esc(question['question'])}",
+            reply_markup=game_keyboard(
                 target_id,
-                "<b>🎮 ТЕБЯ ПРИГЛАСИЛИ В ВАЙБ-ИГРУ</b>\n\n"
-                "Твой соперник уже начал отвечать. "
-                "Твоя очередь!",
-                reply_markup=game_actions(game_id),
-            )
-        except Exception:
-            pass
-
+                question["index"],
+                question["a"],
+                question["b"],
+            ),
+        )
         return
 
-    # Если callback содержит собственный ID,
-    # продолжаем уже созданную игру.
-    game_id = target_id
+    # Иначе считаем, что это ID пользователя
+    opponent = await get_user(target_id)
+    user = await get_user(user_id)
+
+    if not opponent or not user:
+        await callback.answer(
+            "Пользователь не найден.",
+            show_alert=True,
+        )
+        return
+
+    if (
+        (user["age"] < 18 and opponent["age"] >= 18)
+        or
+        (user["age"] >= 18 and opponent["age"] < 18)
+    ):
+        await callback.answer(
+            "Играть можно только в своей возрастной группе.",
+            show_alert=True,
+        )
+        return
+
+    game = await start_game(user_id, target_id)
+    game_id = game["id"]
+
+    await callback.answer("Игра создана!")
 
     question = await get_current_question(
         game_id,
         user_id,
     )
 
-    if not question:
-        await callback.answer(
-            "Игра уже закончена или не найдена.",
-            show_alert=True,
+    if question:
+        await callback.message.answer(
+            "<b>🎮 ВАЙБ-ИГРА</b>\n\n"
+            f"<b>ВОПРОС 1/5</b>\n\n"
+            f"{esc(question['question'])}",
+            reply_markup=game_keyboard(
+                game_id,
+                question["index"],
+                question["a"],
+                question["b"],
+            ),
         )
-        return
 
-    await callback.answer()
-
-    await callback.message.answer(
-        f"<b>🎮 ВОПРОС {question['index'] + 1}/5</b>\n\n"
-        f"{esc(question['question'])}",
-        reply_markup=game_keyboard(
-            game_id,
-            question["index"],
-            question["a"],
-            question["b"],
-        ),
-    )
+    try:
+        await callback.bot.send_message(
+            target_id,
+            "<b>🎮 ТЕБЯ ПРИГЛАСИЛИ В ВАЙБ-ИГРУ</b>\n\n"
+            "Нажми кнопку, чтобы ответить на первый вопрос.",
+            reply_markup=game_actions(game_id),
+        )
+    except Exception:
+        pass
 
 @router.callback_query(F.data.startswith("game_answer:"))
 async def game_answer_callback(callback: CallbackQuery):
