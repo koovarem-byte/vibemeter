@@ -195,29 +195,76 @@ async def send_profile(message, person, viewer_id):
     )
 
 async def show_next_profile(message, user_id):
-    """Показывает следующего кандидата."""
+    """Показывает следующую подходящую анкету."""
+
+    viewer = await get_user(user_id)
+
+    if not viewer:
+        await message.answer("Сначала напиши /start.")
+        return
 
     candidates = await get_candidates(user_id)
 
     if not candidates:
         current_profile.pop(user_id, None)
-
         await message.answer(
             "<b>🔎 Пока больше никого нет</b>\n\n"
-            "Ты посмотрел всех подходящих пользователей.\n\n"
-            "Загляни позже — новые профили будут появляться.",
+            "Ты посмотрел все доступные анкеты. "
+            "Загляни позже!",
             reply_markup=main_menu(),
         )
         return
-# Чтобы не показывать один и тот же профиль несколько раз подряд
-    person = random.choice(candidates)
 
-    await send_profile(
-        message,
-        person,
-        user_id,
-    )
+    # Дополнительная проверка пола и возрастной группы
+    viewer_age = viewer.get("age") or 0
+    viewer_gender = viewer.get("search_gender") or "all"
 
+    filtered = []
+
+    for person in candidates:
+        person_id = person.get("telegram_id")
+        person_age = person.get("age") or 0
+
+        if person_id == user_id:
+            continue
+
+        # Не показываем несовместимую возрастную группу
+        if (viewer_age < 18 and person_age >= 18) or (
+            viewer_age >= 18 and person_age < 18
+        ):
+            continue
+
+        # Фильтр по полу, если поле есть в данных анкеты
+        person_gender = person.get("gender")
+
+        if (
+            viewer_gender != "all"
+            and person_gender
+            and person_gender != viewer_gender
+        ):
+            continue
+
+        filtered.append(person)
+
+    if not filtered:
+        current_profile.pop(user_id, None)
+        await message.answer(
+            "<b>🔎 Подходящих анкет пока нет</b>\n\n"
+            "Попробуй зайти позже.",
+            reply_markup=main_menu(),
+        )
+        return
+
+    # Не показываем текущую анкету повторно подряд
+    previous_id = current_profile.get(user_id)
+    available = [
+        person for person in filtered
+        if person.get("telegram_id") != previous_id
+    ]
+
+    person = random.choice(available or filtered)
+
+    await send_profile(message, person, user_id)
 
 async def finish_profile(state: FSMContext, user_id: int):
     """Получает готовый профиль и показывает его."""
@@ -272,11 +319,43 @@ async def user_profile_message(message, user, user_id):
 # START
 # =========================================================
 
-@router.message(F.text == "/start")
+@router.message(Command("start"))
 async def start_handler(message: Message, state: FSMContext):
     user = await get_user(message.from_user.id)
 
-    if user:
+    if not user:
+        await create_user(
+            telegram_id=message.from_user.id,
+            username=message.from_user.username,
+            full_name=message.from_user.full_name,
+        )
+
+        await state.clear()
+        await message.answer(
+            "<b>🔥 Добро пожаловать в Вайбометр</b>\n\n"
+            "Здесь можно находить новых знакомых "
+            "по интересам и общему вайбу.\n\n"
+            "Сначала давай создадим твой профиль.\n\n"
+            "<b>Как тебя зовут?</b>"
+        )
+        await state.set_state(ProfileState.name)
+        return
+
+    profile_complete = all(
+        user.get(field)
+        for field in (
+            "age",
+            "gender",
+            "city",
+            "interests",
+            "description",
+            "photo_id",
+            "search_gender",
+        )
+    )
+
+    if profile_complete:
+        await state.clear()
         await message.answer(
             "<b>🔥 С возвращением в Вайбометр</b>\n\n"
             "Найди людей с похожими интересами, "
@@ -285,22 +364,20 @@ async def start_handler(message: Message, state: FSMContext):
         )
         return
 
-    await create_user(
-        telegram_id=message.from_user.id,
-        username=message.from_user.username,
-        full_name=message.from_user.full_name,
-    )
+    current_state = await state.get_state()
 
+    if current_state and current_state.startswith("ProfileState:"):
+        await message.answer(
+            "Продолжим создание профиля 👇"
+        )
+        return
+
+    await state.clear()
     await message.answer(
-        "<b>🔥 Добро пожаловать в Вайбометр</b>\n\n"
-        "Здесь можно находить новых знакомых "
-        "по интересам и общему вайбу.\n\n"
-        "Сначала давай создадим твой профиль.\n\n"
+        "<b>🔥 Давай закончим создание профиля</b>\n\n"
         "<b>Как тебя зовут?</b>"
     )
-
     await state.set_state(ProfileState.name)
-
 
 # =========================================================
 # СОЗДАНИЕ ПРОФИЛЯ
@@ -648,6 +725,34 @@ async def browse_callback(callback: CallbackQuery):
         callback.from_user.id,
     )
 
+@router.callback_query(F.data.startswith("contact:"))
+async def contact_callback(callback: CallbackQuery):
+    person_id = int(callback.data.split(":")[1])
+    person = await get_user(person_id)
+
+    await callback.answer()
+
+    if not person:
+        await callback.message.answer(
+            "Пользователь больше недоступен."
+        )
+        return
+
+    username = person.get("username")
+
+    if username:
+        await callback.message.answer(
+            "💬 <b>Переходи в Telegram и знакомься!</b>\n\n"
+            f'<a href="https://t.me/{esc(username)}">'
+            "Открыть профиль пользователя</a>"
+        )
+    else:
+        await callback.message.answer(
+            "У пользователя не указан публичный Telegram username.\n\n"
+            "Попроси его указать username в Telegram, "
+            "чтобы можно было перейти в личные сообщения."
+        )
+
 # =========================================================
 # LIKE
 # =========================================================
@@ -664,10 +769,16 @@ async def like_callback(callback: CallbackQuery):
         )
         return
 
-    await add_like(
+    already_liked = await has_like(
         from_user=user_id,
         to_user=person_id,
     )
+
+    if not already_liked:
+        await add_like(
+            from_user=user_id,
+            to_user=person_id,
+        )
 
     mutual = await has_like(
         from_user=person_id,
@@ -684,8 +795,8 @@ async def like_callback(callback: CallbackQuery):
         await callback.message.answer(
             "<b>💜 ВАЙБ ВЗАИМНЫЙ</b>\n\n"
             "Вы оба выбрали друг друга.\n\n"
-            "Теперь можно начать общение "
-            "и узнать друг друга получше.",
+            "Нажми «Познакомиться», чтобы перейти "
+            "в Telegram, или смотри дальше.",
             reply_markup=mutual_actions(person_id),
         )
 
@@ -693,8 +804,7 @@ async def like_callback(callback: CallbackQuery):
             await callback.bot.send_message(
                 person_id,
                 "<b>💜 ВАЙБ ВЗАИМНЫЙ</b>\n\n"
-                "У вас появился новый взаимный вайб.\n\n"
-                "Можете начать общение.",
+                "Вы оба выбрали друг друга!",
                 reply_markup=mutual_actions(user_id),
             )
         except Exception:
@@ -702,12 +812,8 @@ async def like_callback(callback: CallbackQuery):
 
         return
 
-    await show_next_profile(
-        callback.message,
-        user_id,
-    )
-
-
+    await show_next_profile(callback.message, user_id)
+    
 # =========================================================
 # SKIP
 # =========================================================
