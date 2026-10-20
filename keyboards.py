@@ -436,3 +436,20 @@ def admin_report_keyboard(person_id: int):
             ]
         ]
     )
+
+
+# =========================================================
+# ВОПРОСЫ
+# =========================================================
+
+def question_answer_keyboard(question_id: int):
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="✍️ Ответить",
+                    callback_data=f"answer_q:{question_id}",
+                )
+            ]
+        ]
+    )

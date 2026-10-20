@@ -5,6 +5,7 @@ from database import (
     get_question,
     answer_question,
 )
+from keyboards import question_answer_keyboard
 
 
 MAX_QUESTION_LENGTH = 500
@@ -43,7 +44,8 @@ async def send_question(
             to_user,
             "<b>💬 Тебе задали вопрос!</b>\n\n"
             f"{question_text}\n\n"
-            "Ответь на этот вопрос сообщением боту 👇",
+            "Нажми «Ответить», чтобы ответить 👇",
+            reply_markup=question_answer_keyboard(question_id),
         )
     except Exception:
         # Если отправить сообщение не удалось,
@@ -69,10 +71,12 @@ async def submit_answer(
     bot: Bot,
     question_id: int,
     answer: str,
+    user_id: int,
 ):
     question = await get_question(question_id)
 
-    if not question:
+    # Отвечать может только тот, кому задали вопрос
+    if not question or question["to_user"] != user_id:
         return False
 
     if question["answered"]:

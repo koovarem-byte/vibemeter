@@ -49,6 +49,7 @@ from keyboards import (
     game_result_actions,
     back_keyboard,
     consent_keyboard,
+    question_answer_keyboard,
     report_reasons_keyboard,
     admin_report_keyboard,
     REPORT_REASONS,
@@ -68,7 +69,7 @@ from utils import (
     MAX_AGE,
 )
 
-from questions import send_question, submit_answer
+from questions import send_question, submit_answer, get_question_data
 
 from games import (
     start_game,
@@ -529,7 +530,7 @@ async def cancel_edit(message: Message, state: FSMContext):
     await state.clear()
 
     await message.answer(
-        "✅ Редактирование отменено.",
+        "✅ Отменено.",
         reply_markup=main_menu(),
     )
 
@@ -968,6 +969,61 @@ async def question_text_handler(
         "✅ Вопрос отправлен! Когда пользователь ответит, "
         "я пришлю тебе его ответ."
     )
+
+@router.callback_query(F.data.startswith("answer_q:"))
+async def answer_question_callback(
+    callback: CallbackQuery,
+    state: FSMContext,
+):
+    question_id = int(callback.data.split(":")[1])
+    question = await get_question_data(question_id)
+
+    if not question or question["to_user"] != callback.from_user.id:
+        await callback.answer("Вопрос не найден.", show_alert=True)
+        return
+
+    if question["answered"]:
+        await callback.answer("Ты уже ответил на этот вопрос.", show_alert=True)
+        return
+
+    await state.clear()
+    await state.update_data(question_id=question_id)
+    await state.set_state(QuestionState.replying)
+
+    await callback.answer()
+    await callback.message.answer(
+        "✍️ <b>Напиши ответ одним сообщением.</b>\n\n"
+        "Передумал — нажми «❌ Отменить».",
+        reply_markup=ReplyKeyboardMarkup(
+            keyboard=[[KeyboardButton(text="❌ Отменить")]],
+            resize_keyboard=True,
+        ),
+    )
+
+
+@router.message(QuestionState.replying, F.text)
+async def question_reply_handler(
+    message: Message,
+    state: FSMContext,
+):
+    data = await state.get_data()
+    question_id = data.get("question_id")
+
+    success = question_id and await submit_answer(
+        message.bot,
+        question_id,
+        message.text,
+        message.from_user.id,
+    )
+
+    await state.clear()
+
+    await message.answer(
+        "<b>✅ Ответ отправлен.</b>" if success
+        else "Не удалось отправить ответ — возможно, ты уже отвечал.",
+        reply_markup=main_menu(),
+    )
+
 
 # =========================================================
 # LIKE
@@ -1749,7 +1805,7 @@ async def game_like_callback(callback: CallbackQuery):
 
 
 # =========================================================
-# ОТВЕТЫ НА ВОПРОСЫ
+# ПРОЧИЙ ТЕКСТ
 # =========================================================
 
 @router.message(F.text)
@@ -1757,39 +1813,19 @@ async def universal_text_handler(
     message: Message,
     state: FSMContext,
 ):
-    current_state = await state.get_state()
-
-    # Если пользователь сейчас заполняет профиль,
-    # этот обработчик ничего не делает.
-    if current_state is not None:
+    # Сюда попадает текст, который не поймал ни один хендлер.
+    # Ответы на вопросы — только через кнопку «Ответить».
+    if await state.get_state() is not None:
         return
 
-    try:
-        from database import get_pending_questions
-
-        pending = await get_pending_questions(
-            message.from_user.id
-        )
-
-        if not pending:
-            return
-
-        question = pending[0]
-
-        success = await submit_answer(
-            message.bot,
-            question["id"],
-            message.text,
-        )
-
-        if success:
-            await message.answer(
-                "<b>✅ Ответ отправлен.</b>",
-                reply_markup=main_menu(),
-            )
-
-    except Exception:
+    if not await get_user(message.from_user.id):
+        await message.answer("Напиши /start, чтобы начать.")
         return
+
+    await message.answer(
+        "Не понял 🙂 Выбери действие в меню 👇",
+        reply_markup=main_menu(),
+    )
 
 @router.callback_query(F.data == "achievements")
 async def achievements_callback(callback: CallbackQuery):
