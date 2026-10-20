@@ -7,11 +7,13 @@ API и статика Telegram Mini App.
 """
 
 import io
+import re
 import logging
 import time
 from pathlib import Path
 
 from aiohttp import web
+from aiogram.types import BufferedInputFile
 from aiogram.utils.web_app import safe_parse_webapp_init_data
 
 import ui
@@ -20,6 +22,7 @@ from database import (
     add_like,
     add_report,
     add_skip,
+    delete_skip,
     get_candidates,
     get_incoming_likes,
     get_mutual_likes,
@@ -37,7 +40,13 @@ from handlers import (
     notify_mutual,
 )
 from questions import MAX_QUESTION_LENGTH, send_question
-from utils import is_adult
+from utils import (
+    is_adult,
+    normalize_interests,
+    valid_city,
+    valid_description,
+    valid_name,
+)
 
 WEBAPP_DIR = Path(__file__).parent / "webapp"
 
@@ -48,6 +57,9 @@ ICONS = {
     "heart": "🩷", "diamond": "💎", "fire": "🔥", "crown": "👑",
     "candy": "🍭", "bolt": "⚡", "star": "⭐",
 }
+
+MAX_PHOTO_BYTES = 8 * 1024 * 1024
+MAX_INTEREST_LEN = 30
 
 # Кеш фото в памяти: file_id → байты
 _photo_cache: dict[str, bytes] = {}
@@ -177,7 +189,10 @@ async def api_me(request):
     me["gender"] = user["gender"]
     me["search_gender"] = user["search_gender"] or "all"
 
+    bot_info = await request.app["bot"].me()
+
     return web.json_response({
+        "bot_username": bot_info.username,
         "user": me,
         "stats": {k: int(v or 0) for k, v in stats.items()},
         "achievements": achievements_json(stats),
@@ -264,6 +279,123 @@ async def api_report(request):
     # add_report заодно скрывает анкету для автора жалобы
     if await add_report(user_id, person_id, reason):
         await notify_admin_report(request.app["bot"], user_id, person_id, reason)
+    return web.json_response({"ok": True})
+
+
+async def api_undo(request):
+    """Вернуть анкету после «Мимо»."""
+    user_id = request["user"]["telegram_id"]
+    body, person_id = await read_body(request)
+    if body is None:
+        return error("bad_request", 400)
+
+    person = await get_target(user_id, person_id)
+    if not person or not await delete_skip(user_id, person_id):
+        return error("not_found", 404)
+    return web.json_response({"candidate": person_json(person, viewer=request["user"])})
+
+
+async def api_profile(request):
+    """Правка анкеты. Возраст и пол меняются только в боте (проверка 18+)."""
+    user = request["user"]
+    try:
+        body = await request.json()
+    except ValueError:
+        return error("bad_request", 400)
+    if not isinstance(body, dict):
+        return error("bad_request", 400)
+
+    changes = {}
+
+    if "name" in body:
+        name = str(body["name"] or "").strip()
+        if not valid_name(name):
+            return error("bad_name", 400)
+        changes["full_name"] = name
+
+    if "city" in body:
+        city = str(body["city"] or "").strip()
+        if not valid_city(city):
+            return error("bad_city", 400)
+        changes["city"] = city
+
+    if "about" in body:
+        about = str(body["about"] or "").strip()
+        if not about or not valid_description(about):
+            return error("bad_about", 400)
+        changes["description"] = about
+
+    if "interests" in body:
+        items = body["interests"]
+        if not isinstance(items, list):
+            return error("bad_interests", 400)
+        # запятая внутри тега сломала бы хранение строкой
+        cleaned = [
+            re.sub(r"\s+", " ", str(i).replace(",", " ")).strip()[:MAX_INTEREST_LEN]
+            for i in items
+        ]
+        interests = normalize_interests(", ".join(i for i in cleaned if i))
+        if not interests:
+            return error("bad_interests", 400)
+        changes["interests"] = interests
+
+    if "search_gender" in body:
+        if body["search_gender"] not in ("male", "female", "all"):
+            return error("bad_request", 400)
+        changes["search_gender"] = body["search_gender"]
+
+    if not changes:
+        return error("bad_request", 400)
+
+    await update_user(user["telegram_id"], **changes)
+    return web.json_response({"ok": True})
+
+
+async def api_upload_photo(request):
+    """Новое фото анкеты: шлём его пользователю в чат с ботом и берём file_id."""
+    user_id = request["user"]["telegram_id"]
+
+    if request.content_length and request.content_length > MAX_PHOTO_BYTES + 4096:
+        return error("too_big", 413)
+
+    try:
+        reader = await request.multipart()
+        part = await reader.next()
+    except Exception:
+        return error("bad_request", 400)
+    if part is None or part.name != "photo":
+        return error("bad_request", 400)
+
+    # читаем кусками, чтобы не принять гигантский файл целиком
+    chunks, size = [], 0
+    while chunk := await part.read_chunk(64 * 1024):
+        size += len(chunk)
+        if size > MAX_PHOTO_BYTES:
+            return error("too_big", 413)
+        chunks.append(chunk)
+    data = b"".join(chunks)
+    if not data:
+        return error("bad_request", 400)
+    # JPEG, PNG или WEBP — по сигнатуре, а не по имени файла
+    if not (data[:3] == b"\xff\xd8\xff" or data[:8] == b"\x89PNG\r\n\x1a\n"
+            or (data[:4] == b"RIFF" and data[8:12] == b"WEBP")):
+        return error("bad_type", 415)
+
+    bot = request.app["bot"]
+    try:
+        message = await bot.send_photo(
+            user_id,
+            photo=BufferedInputFile(data, filename="photo.jpg"),
+            caption=ui.PHOTO_UPDATED,
+            disable_notification=True,
+        )
+    except Exception:
+        logging.exception("Не удалось загрузить фото %s", user_id)
+        return error("upload_failed", 502)
+
+    old = request["user"]["photo_id"]
+    _photo_cache.pop(old, None)
+    await update_user(user_id, photo_id=message.photo[-1].file_id)
     return web.json_response({"ok": True})
 
 
@@ -364,6 +496,9 @@ def setup_webapp(app: web.Application, bot):
     app.router.add_get("/app/api/me", api_me)
     app.router.add_get("/app/api/next", api_next)
     app.router.add_post("/app/api/vibe", api_vibe)
+    app.router.add_post("/app/api/undo", api_undo)
+    app.router.add_post("/app/api/profile", api_profile)
+    app.router.add_post("/app/api/upload_photo", api_upload_photo)
     app.router.add_post("/app/api/question", api_question)
     app.router.add_post("/app/api/report", api_report)
     app.router.add_get("/app/api/vibes", api_vibes)

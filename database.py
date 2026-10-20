@@ -313,6 +313,16 @@ async def add_skip(from_user: int, to_user: int):
         """, from_user, to_user)
 
 
+async def delete_skip(from_user: int, to_user: int) -> bool:
+    """«Вернуть» анкету после «Мимо». True, если было что вернуть."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        result = await conn.execute("""
+            DELETE FROM skips WHERE from_user = $1 AND to_user = $2
+        """, from_user, to_user)
+        return result.endswith(" 1")
+
+
 async def add_block(from_user: int, to_user: int):
     db = await get_pool()
     async with db.acquire() as conn:
