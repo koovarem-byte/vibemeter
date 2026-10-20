@@ -55,6 +55,7 @@ from keyboards import (
     REPORT_REASONS,
 )
 
+from config import ADMIN_ID
 from states import ProfileState, QuestionState
 from utils import (
     normalize_interests,
@@ -80,8 +81,6 @@ from games import (
 )
 
 router = Router()
-
-ADMIN_ID = 1771096901
 
 
 # =========================================================
