@@ -112,7 +112,7 @@ def person_json(person, viewer=None, full=False):
         "id": person["telegram_id"],
         "name": person["full_name"],
         "age": person["age"],
-        "city": person["city"],
+        "city": (person["city"] or "").strip(),
         "interests": interests_list(person),
         "about": person["description"],
     }
