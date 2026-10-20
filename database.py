@@ -516,16 +516,6 @@ async def answer_question(question_id: int, answer: str):
         """, answer, question_id)
 
 
-async def get_pending_questions(user_id: int):
-    db = await get_pool()
-    async with db.acquire() as conn:
-        return await conn.fetch("""
-            SELECT * FROM questions
-            WHERE to_user = $1 AND answered = 0
-            ORDER BY created_at DESC
-        """, user_id)
-
-
 # GAMES
 
 async def create_game(

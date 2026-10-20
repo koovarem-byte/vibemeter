@@ -299,20 +299,6 @@ async def show_next_profile(message, user_id):
 
     await send_profile(message, person, user_id)
 
-async def finish_profile(state: FSMContext, user_id: int):
-    """Получает готовый профиль и показывает его."""
-
-    user = await get_user(user_id)
-
-    await state.clear()
-
-    await user_profile_message(
-        None,
-        user,
-        user_id,
-    )
-
-
 async def user_profile_message(message, user, user_id):
     """Показывает собственный профиль."""
 
