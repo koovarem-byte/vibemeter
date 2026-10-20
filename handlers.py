@@ -2,7 +2,7 @@ import logging
 import random
 
 from aiogram import Router, F
-from aiogram.filters import Command, StateFilter
+from aiogram.filters import Command, CommandObject, CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import (
     Message,
@@ -321,8 +321,12 @@ async def consent_accept_callback(
 # START
 # =========================================================
 
-@router.message(Command("start"))
-async def start_handler(message: Message, state: FSMContext):
+@router.message(CommandStart())
+async def start_handler(
+    message: Message,
+    state: FSMContext,
+    command: CommandObject,
+):
     user = await get_user(message.from_user.id)
 
     if not user:
@@ -345,6 +349,13 @@ async def start_handler(message: Message, state: FSMContext):
 
     if profile_complete:
         await state.clear()
+
+        # Ссылка из Mini App: t.me/бот?start=game
+        if command.args == "game":
+            await message.answer(ui.MAIN_MENU, reply_markup=main_menu())
+            await find_game(message, message.from_user.id)
+            return
+
         await message.answer(
             ui.welcome_back(user["streak_days"]),
             reply_markup=main_menu(),
@@ -1069,7 +1080,18 @@ async def main_menu_callback(callback: CallbackQuery):
 
 @router.message(F.text.in_(ui.menu_texts(ui.MENU_GAMES)))
 async def vibe_games_handler(message: Message):
-    user_id = message.from_user.id
+    await find_game(message, message.from_user.id)
+
+
+@router.callback_query(F.data == "play_again")
+async def play_again_callback(callback: CallbackQuery):
+    await callback.answer()
+    await find_game(callback.message, callback.from_user.id)
+
+
+async def find_game(message: Message, user_id: int):
+    """Ставит в очередь или сразу находит соперника.
+    user_id передаём явно: из кнопки message — это сообщение бота."""
     user = await get_user(user_id)
 
     if not user or not is_adult(user["age"]):

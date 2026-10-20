@@ -192,10 +192,13 @@ def game_keyboard(game_id: int, question_index: int, answer_a: str, answer_b: st
 
 
 def game_result_actions(person_id: int):
-    return rows([
-        btn(ui.BTN_LIKE, f"game_like:{person_id}", neon="heart"),
-        btn(ui.BTN_NEXT, "browse"),
-    ])
+    return rows(
+        [
+            btn(ui.BTN_LIKE, f"game_like:{person_id}", neon="heart"),
+            btn(ui.BTN_PLAY_AGAIN, "play_again", neon="candy"),
+        ],
+        [btn(ui.BTN_NEXT, "browse")],
+    )
 
 
 # =========================================================

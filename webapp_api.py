@@ -49,9 +49,6 @@ ICONS = {
     "candy": "🍭", "bolt": "⚡", "star": "⭐",
 }
 
-# Уровни по числу открытых достижений (в app.js та же лесенка)
-LEVELS = ((0, "Новичок"), (2, "В теме"), (4, "Вайбер"), (6, "Звезда"))
-
 # Кеш фото в памяти: file_id → байты
 _photo_cache: dict[str, bytes] = {}
 PHOTO_CACHE_MAX = 200
@@ -133,12 +130,7 @@ def achievements_json(stats):
 
 
 def level_json(done: int, total: int):
-    steps = list(LEVELS) + [(total, "Легенда")]
-    n, name, next_at = 1, steps[0][1], steps[1][0]
-    for i, (at, title) in enumerate(steps):
-        if done >= at:
-            n, name = i + 1, title
-            next_at = steps[i + 1][0] if i + 1 < len(steps) else total
+    n, name, next_at = ui.level(done, total)
     return {"n": n, "name": name, "done": done, "total": total, "next_at": next_at}
 
 

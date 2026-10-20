@@ -119,6 +119,7 @@ BTN_VIEW = "Посмотреть"
 BTN_LATER = "Позже"
 BTN_ANSWER = "Ответить"
 BTN_START_GAME = "Начать"
+BTN_PLAY_AGAIN = "Сыграть ещё"
 BTN_ACHIEVEMENTS = "Зал славы"
 BTN_EDIT = "Изменить анкету"
 BTN_SEARCH = "Кого искать"
@@ -346,7 +347,8 @@ def own_profile(user, stats=None, done=0, total=0) -> str:
         lines += [
             "",
             f"{e('fire')} Серия {days(stats['streak_days'])} · "
-            f"{e('crown')} {done} из {total} достижений",
+            f"{e('crown')} Уровень {level(done, total)[0]} · "
+            f"{level(done, total)[1]} · {done} из {total} достижений",
         ]
 
     return "\n".join(lines)
@@ -522,9 +524,30 @@ def achievements_progress(s) -> tuple[int, int]:
     return done, len(ACHIEVEMENTS)
 
 
+# Уровни по числу открытых достижений (Mini App показывает те же)
+LEVELS = ((0, "Новичок"), (2, "В теме"), (4, "Вайбер"), (6, "Звезда"))
+
+
+def level(done: int, total: int) -> tuple[int, str, int]:
+    """(номер, название, сколько достижений нужно для следующего)."""
+    steps = list(LEVELS) + [(total, "Легенда")]
+    n, name, next_at = 1, steps[0][1], steps[1][0]
+    for i, (at, title_) in enumerate(steps):
+        if done >= at:
+            n, name = i + 1, title_
+            next_at = steps[i + 1][0] if i + 1 < len(steps) else total
+    return n, name, next_at
+
+
 def hall_of_fame(s) -> str:
     done, total = achievements_progress(s)
-    lines = [f"{title('crown', 'Зал славы')} · {done} из {total}", ""]
+    n, name, next_at = level(done, total)
+    lines = [
+        f"{title('crown', 'Зал славы')} · {done} из {total}",
+        f"Уровень {n} · <b>{name}</b>"
+        + (f" · до следующего {next_at - done}" if next_at > done else ""),
+        "",
+    ]
 
     # открытые сверху
     ordered = sorted(ACHIEVEMENTS, key=lambda a: not achieved(s, a))
