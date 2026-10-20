@@ -6,6 +6,7 @@ API и статика Telegram Mini App.
 подпись проверяется токеном бота, так что выдать себя за другого нельзя.
 """
 
+import asyncio
 import io
 import re
 import logging
@@ -449,13 +450,18 @@ async def api_photo(request):
 
     if content is None:
         bot = request.app["bot"]
-        try:
-            file = await bot.get_file(file_id)
-            buffer = io.BytesIO()
-            await bot.download_file(file.file_path, destination=buffer)
-        except Exception:
-            logging.exception("Не удалось скачать фото %s", person_id)
-            return error("not_found", 404)
+        # сеть до Telegram бывает нестабильной: пара повторов
+        for attempt in range(3):
+            try:
+                file = await bot.get_file(file_id)
+                buffer = io.BytesIO()
+                await bot.download_file(file.file_path, destination=buffer)
+                break
+            except Exception:
+                if attempt == 2:
+                    logging.exception("Не удалось скачать фото %s", person_id)
+                    return error("not_found", 404)
+                await asyncio.sleep(1)
 
         content = buffer.getvalue()
         if len(_photo_cache) >= PHOTO_CACHE_MAX:
