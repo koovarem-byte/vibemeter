@@ -1,7 +1,19 @@
+# секреты
+.env
+.env.*
+
+# базы
+*.db
+*.sqlite3
+
+# окружения
+venv/
 .venv/
 .venv313/
-pycache/
+
+# python
+__pycache__/
 *.pyc
-.env
+
+# IDE
 .idea/
-vibemeter.db
