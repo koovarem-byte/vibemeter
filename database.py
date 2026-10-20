@@ -78,6 +78,22 @@ async def init_db():
             ALTER TABLE users
             ADD COLUMN IF NOT EXISTS search_gender TEXT DEFAULT 'all'
         """)
+        await conn.execute("""
+            ALTER TABLE users
+            ADD COLUMN IF NOT EXISTS is_banned BOOLEAN NOT NULL DEFAULT FALSE
+        """)
+
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS reports (
+                id BIGSERIAL PRIMARY KEY,
+                from_user BIGINT NOT NULL,
+                to_user BIGINT NOT NULL,
+                reason TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'open',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(from_user, to_user)
+            )
+        """)
 
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS likes (
@@ -371,6 +387,7 @@ async def get_candidates(user_id: int):
               AND u.age IS NOT NULL
               AND u.photo_id IS NOT NULL
               AND u.age >= 18
+              AND NOT u.is_banned
               {gender_condition}
               AND NOT EXISTS (
                   SELECT 1 FROM likes l
@@ -401,6 +418,7 @@ async def get_incoming_likes(user_id: int):
             FROM users u
             JOIN likes l ON l.from_user = u.telegram_id
             WHERE l.to_user = $1
+              AND NOT u.is_banned
               AND NOT EXISTS (
                   SELECT 1 FROM likes r
                   WHERE r.from_user = $1 AND r.to_user = u.telegram_id
@@ -412,6 +430,69 @@ async def get_incoming_likes(user_id: int):
               )
             ORDER BY l.created_at DESC
         """, user_id)
+
+
+# REPORTS / BANS
+
+async def add_report(from_user: int, to_user: int, reason: str) -> bool:
+    """Жалоба + блокировка для автора. False, если уже жаловался."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        report_id = await conn.fetchval("""
+            INSERT INTO reports (from_user, to_user, reason)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (from_user, to_user) DO NOTHING
+            RETURNING id
+        """, from_user, to_user, reason)
+        await conn.execute("""
+            INSERT INTO blocks (from_user, to_user)
+            VALUES ($1, $2)
+            ON CONFLICT DO NOTHING
+        """, from_user, to_user)
+        return report_id is not None
+
+
+async def count_reports(to_user: int) -> int:
+    db = await get_pool()
+    async with db.acquire() as conn:
+        return await conn.fetchval(
+            "SELECT COUNT(*) FROM reports WHERE to_user = $1",
+            to_user,
+        )
+
+
+async def set_banned(telegram_id: int, banned: bool) -> bool:
+    """True, если пользователь найден."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        result = await conn.execute(
+            "UPDATE users SET is_banned = $2 WHERE telegram_id = $1",
+            telegram_id, banned,
+        )
+        if banned:
+            await conn.execute(
+                "UPDATE reports SET status = 'banned' WHERE to_user = $1 AND status = 'open'",
+                telegram_id,
+            )
+        return result.endswith(" 1")
+
+
+async def dismiss_reports(to_user: int):
+    db = await get_pool()
+    async with db.acquire() as conn:
+        await conn.execute(
+            "UPDATE reports SET status = 'dismissed' WHERE to_user = $1 AND status = 'open'",
+            to_user,
+        )
+
+
+async def is_banned(telegram_id: int) -> bool:
+    db = await get_pool()
+    async with db.acquire() as conn:
+        return bool(await conn.fetchval(
+            "SELECT is_banned FROM users WHERE telegram_id = $1",
+            telegram_id,
+        ))
 
 
 # QUESTIONS

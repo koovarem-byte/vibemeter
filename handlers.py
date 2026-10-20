@@ -28,6 +28,11 @@ from database import (
     get_stats,
     get_blocked_users,
     delete_user,
+    add_report,
+    count_reports,
+    set_banned,
+    dismiss_reports,
+    is_banned,
 )
 
 from keyboards import (
@@ -44,6 +49,9 @@ from keyboards import (
     game_result_actions,
     back_keyboard,
     consent_keyboard,
+    report_reasons_keyboard,
+    admin_report_keyboard,
+    REPORT_REASONS,
 )
 
 from states import ProfileState, QuestionState
@@ -73,6 +81,32 @@ from games import (
 router = Router()
 
 ADMIN_ID = 1771096901
+
+
+# =========================================================
+# БАН: забаненные не пользуются ботом
+# =========================================================
+
+BANNED_TEXT = (
+    "🚫 Твой аккаунт заблокирован за нарушение правил Вайбометра."
+)
+
+
+async def ban_middleware(handler, event, data):
+    user = data.get("event_from_user")
+
+    if user and user.id != ADMIN_ID and await is_banned(user.id):
+        if isinstance(event, CallbackQuery):
+            await event.answer(BANNED_TEXT, show_alert=True)
+        else:
+            await event.answer(BANNED_TEXT)
+        return None
+
+    return await handler(event, data)
+
+
+router.message.outer_middleware(ban_middleware)
+router.callback_query.outer_middleware(ban_middleware)
 
 
 @router.message(Command("admin"))
@@ -1008,6 +1042,155 @@ async def like_callback(callback: CallbackQuery):
         return
 
     await show_next_profile(callback.message, user_id)
+
+# =========================================================
+# ЖАЛОБЫ
+# =========================================================
+
+@router.callback_query(F.data.startswith("report:"))
+async def report_callback(callback: CallbackQuery):
+    person_id = int(callback.data.split(":")[1])
+
+    if person_id == callback.from_user.id:
+        await callback.answer()
+        return
+
+    await callback.answer()
+    await callback.message.answer(
+        "<b>⚠️ ЖАЛОБА</b>\n\n"
+        "Что не так с этой анкетой? "
+        "После жалобы ты больше её не увидишь.",
+        reply_markup=report_reasons_keyboard(person_id),
+    )
+
+
+@router.callback_query(F.data.startswith("report_reason:"))
+async def report_reason_callback(callback: CallbackQuery):
+    _, person_id, code = callback.data.split(":")
+    person_id = int(person_id)
+    reason = REPORT_REASONS.get(code, "Другое")
+    user_id = callback.from_user.id
+
+    if person_id == user_id:
+        await callback.answer()
+        return
+
+    is_new = await add_report(user_id, person_id, reason)
+
+    await callback.answer("Спасибо, жалоба отправлена.")
+    await callback.message.edit_text(
+        "✅ Жалоба отправлена. Мы проверим анкету."
+    )
+
+    if is_new:
+        await notify_admin_report(
+            callback.bot, user_id, person_id, reason
+        )
+
+    await show_next_profile(callback.message, user_id)
+
+
+async def notify_admin_report(bot, from_user, person_id, reason):
+    person = await get_user(person_id)
+
+    if not person:
+        return
+
+    total = await count_reports(person_id)
+
+    text = (
+        "<b>⚠️ НОВАЯ ЖАЛОБА</b>\n\n"
+        f"Причина: <b>{esc(reason)}</b>\n"
+        f"От: <code>{from_user}</code>\n"
+        f"На: <code>{person_id}</code>"
+        + (f" (@{esc(person['username'])})" if person["username"] else "")
+        + f"\nВсего жалоб на него: <b>{total}</b>\n\n"
+        + profile_text(person)
+    )
+
+    keyboard = admin_report_keyboard(person_id)
+
+    try:
+        if person["photo_id"] and len(text) <= 1024:
+            await bot.send_photo(
+                ADMIN_ID,
+                photo=person["photo_id"],
+                caption=text,
+                reply_markup=keyboard,
+            )
+        else:
+            await bot.send_message(
+                ADMIN_ID, text, reply_markup=keyboard
+            )
+    except Exception:
+        logging.exception("Не удалось отправить жалобу админу")
+
+
+async def apply_ban(bot, person_id, banned):
+    found = await set_banned(person_id, banned)
+
+    if found and banned:
+        try:
+            await bot.send_message(person_id, BANNED_TEXT)
+        except Exception:
+            pass
+
+    return found
+
+
+@router.callback_query(F.data.startswith("admin_ban:"))
+async def admin_ban_callback(callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer()
+        return
+
+    person_id = int(callback.data.split(":")[1])
+    found = await apply_ban(callback.bot, person_id, True)
+
+    await callback.answer("Забанен" if found else "Пользователь не найден")
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await callback.message.answer(
+        f"🚫 <code>{person_id}</code> забанен. Снять: /unban {person_id}"
+        if found else "Пользователь уже удалён."
+    )
+
+
+@router.callback_query(F.data.startswith("admin_dismiss:"))
+async def admin_dismiss_callback(callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer()
+        return
+
+    person_id = int(callback.data.split(":")[1])
+    await dismiss_reports(person_id)
+
+    await callback.answer("Жалобы отклонены")
+    await callback.message.edit_reply_markup(reply_markup=None)
+
+
+@router.message(Command("ban", "unban"))
+async def admin_ban_command(message: Message):
+    if message.from_user.id != ADMIN_ID:
+        return
+
+    parts = (message.text or "").split()
+    banned = parts[0].lstrip("/").split("@")[0] == "ban"
+
+    if len(parts) != 2 or not parts[1].isdigit():
+        await message.answer("Формат: /ban ID или /unban ID")
+        return
+
+    person_id = int(parts[1])
+    found = await apply_ban(message.bot, person_id, banned)
+
+    if not found:
+        await message.answer("Пользователь не найден.")
+    else:
+        await message.answer(
+            f"🚫 {person_id} забанен." if banned
+            else f"✅ {person_id} разбанен."
+        )
+
 
 # =========================================================
 # SKIP

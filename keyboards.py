@@ -67,6 +67,10 @@ def profile_actions(person_id: int):
                     text="🚫 Заблокировать",
                     callback_data=f"block:{person_id}",
                 ),
+                InlineKeyboardButton(
+                    text="⚠️ Пожаловаться",
+                    callback_data=f"report:{person_id}",
+                ),
             ],
         ]
     )
@@ -86,6 +90,12 @@ def incoming_actions(person_id: int):
                 InlineKeyboardButton(
                     text="👎 Мимо",
                     callback_data=f"incoming_skip:{person_id}",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="⚠️ Пожаловаться",
+                    callback_data=f"report:{person_id}",
                 ),
             ],
         ]
@@ -380,5 +390,49 @@ def consent_keyboard():
                     callback_data="consent:policy",
                 ),
             ],
+        ]
+    )
+
+
+# =========================================================
+# ЖАЛОБЫ
+# =========================================================
+
+REPORT_REASONS = {
+    "fake": "Фейк или спам",
+    "rude": "Оскорбления",
+    "nsfw": "Неприемлемый контент",
+    "minor": "Похоже, младше 18",
+    "other": "Другое",
+}
+
+
+def report_reasons_keyboard(person_id: int):
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=title,
+                    callback_data=f"report_reason:{person_id}:{code}",
+                )
+            ]
+            for code, title in REPORT_REASONS.items()
+        ]
+    )
+
+
+def admin_report_keyboard(person_id: int):
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🚫 Забанить",
+                    callback_data=f"admin_ban:{person_id}",
+                ),
+                InlineKeyboardButton(
+                    text="✅ Отклонить",
+                    callback_data=f"admin_dismiss:{person_id}",
+                ),
+            ]
         ]
     )
