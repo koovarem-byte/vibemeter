@@ -27,7 +27,7 @@
 - Репозиторий: https://github.com/koovarem-byte/vibemeter
 - Локальная папка: `/Users/mac/PycharmProjects/вайбометр`
 - ID администратора — `ADMIN_ID` в `.env` / переменных хостинга (`/admin` — статистика, сюда же приходят жалобы).
-- Хостинг: Apply.build (бесплатный тариф, Финляндия), сборка по `Dockerfile`, режим polling. Render не используем.
+- Хостинг: VPS Timeweb Cloud в Амстердаме (оплата СБП/МИР), бот — служба systemd `vibemeter`, режим polling. Деплой с Mac: `./deploy/deploy.sh IP` (копирует закоммиченный код, секреты — в `/etc/vibemeter/env` на сервере). Серверы в РФ не годятся: с марта 2026 `api.telegram.org` с российских IP недоступен. Apply.build не пускает из РФ, Render не используем.
 
 ## Карта кода
 | Файл | Что делает |
