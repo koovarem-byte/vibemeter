@@ -1879,7 +1879,7 @@ async def blocked_users_callback(callback: CallbackQuery):
         city = person["city"] or "—"
 
         text.append(
-            f"• {name} — {age} лет, {city}"
+            f"• {esc(name)} — {age} лет, {esc(city)}"
         )
 
     await callback.message.answer("\n".join(text))
