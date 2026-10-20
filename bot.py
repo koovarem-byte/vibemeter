@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 
 from aiohttp import web
@@ -7,7 +8,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 
 from config import BOT_TOKEN
-from database import init_db
+from database import init_db, close_db
 from handlers import router
 
 
@@ -67,6 +68,7 @@ async def start_bot():
         await dp.start_polling(bot)
     finally:
         await bot.session.close()
+        await close_db()
 
 
 # =========================
@@ -83,4 +85,8 @@ async def main():
 
 
 if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
     asyncio.run(main())

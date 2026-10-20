@@ -10,7 +10,7 @@
 ### Фаза 1. Бот запускается
 - [x] Добавить `add_question` в `database.py` (код выше).
 - [ ] `python3 -m py_compile *.py`, затем `python3 bot.py`. Исправлять ошибки по одной, пока бот не ответит на `/start`.
-- [ ] Вызывать `close_db()` при остановке (`bot.py`).
+- [x] Вызывать `close_db()` при остановке (`bot.py`).
 
 ### Фаза 2. P0 — без этого не выпускаем
 - [ ] Только 18+: отказ при возрасте < 18, убрать ветки «возрастных групп» (`utils.valid_age`, `profile_age`, `get_candidates`, `show_next_profile`, `vibe_games_handler`, `game_start_callback`).
