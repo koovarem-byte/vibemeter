@@ -430,6 +430,28 @@ async def get_incoming_likes(user_id: int):
         """, user_id)
 
 
+async def get_mutual_likes(user_id: int, limit: int = 50):
+    """Люди со взаимным вайбом, свежие сверху."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        return await conn.fetch("""
+            SELECT u.*
+            FROM likes mine
+            JOIN likes theirs
+              ON theirs.from_user = mine.to_user AND theirs.to_user = $1
+            JOIN users u ON u.telegram_id = mine.to_user
+            WHERE mine.from_user = $1
+              AND NOT u.is_banned
+              AND NOT EXISTS (
+                  SELECT 1 FROM blocks b
+                  WHERE (b.from_user = $1 AND b.to_user = u.telegram_id)
+                     OR (b.from_user = u.telegram_id AND b.to_user = $1)
+              )
+            ORDER BY GREATEST(mine.created_at, theirs.created_at) DESC
+            LIMIT $2
+        """, user_id, limit)
+
+
 # REPORTS / BANS
 
 async def add_report(from_user: int, to_user: int, reason: str) -> bool:

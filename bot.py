@@ -12,6 +12,7 @@ from aiogram.webhook.aiohttp_server import SimpleRequestHandler
 from config import BOT_TOKEN
 from database import init_db, close_db
 from handlers import router
+from webapp_api import setup_webapp
 
 
 # Режим работы:
@@ -50,6 +51,9 @@ def create_app(bot, dp, webhook=True):
 
     app.router.add_get("/", health)
     app.router.add_get("/health", health)
+
+    # Mini App: страница /app/ и API /app/api/*
+    setup_webapp(app, bot)
 
     if webhook:
         SimpleRequestHandler(

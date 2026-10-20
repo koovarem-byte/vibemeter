@@ -499,29 +499,26 @@ def stats(s) -> str:
     )
 
 
-# (эмодзи, название, описание, условие по статистике)
+# (эмодзи, название, описание, ключ статистики, цель)
 ACHIEVEMENTS = (
-    ("heart", "Первый вайб", "первый лайк",
-     lambda s: s["likes_sent"] >= 1),
-    ("diamond", "Взаимность", "первый взаимный вайб",
-     lambda s: s["mutual_likes"] >= 1),
-    ("fire", "В огне", "серия 7 дней",
-     lambda s: s["best_streak"] >= 7),
-    ("heart", "Сердцеед", "25 лайков",
-     lambda s: s["likes_sent"] >= 25),
-    ("crown", "Легенда", "серия 30 дней",
-     lambda s: s["best_streak"] >= 30),
-    ("candy", "Душа компании", "10 игр",
-     lambda s: s["games"] >= 10),
-    ("bolt", "Болтун", "10 вопросов",
-     lambda s: s["questions_sent"] >= 10),
-    ("star", "Магнит", "тебя выбрали 25 раз",
-     lambda s: s["likes_received"] >= 25),
+    ("heart", "Первый вайб", "первый лайк", "likes_sent", 1),
+    ("diamond", "Взаимность", "первый взаимный вайб", "mutual_likes", 1),
+    ("fire", "В огне", "серия 7 дней", "best_streak", 7),
+    ("heart", "Сердцеед", "25 лайков", "likes_sent", 25),
+    ("crown", "Легенда", "серия 30 дней", "best_streak", 30),
+    ("candy", "Душа компании", "10 игр", "games", 10),
+    ("bolt", "Болтун", "10 вопросов", "questions_sent", 10),
+    ("star", "Магнит", "тебя выбрали 25 раз", "likes_received", 25),
 )
 
 
+def achieved(s, achievement) -> bool:
+    *_, key, goal = achievement
+    return s[key] >= goal
+
+
 def achievements_progress(s) -> tuple[int, int]:
-    done = sum(1 for *_, check in ACHIEVEMENTS if check(s))
+    done = sum(1 for a in ACHIEVEMENTS if achieved(s, a))
     return done, len(ACHIEVEMENTS)
 
 
@@ -530,10 +527,11 @@ def hall_of_fame(s) -> str:
     lines = [f"{title('crown', 'Зал славы')} · {done} из {total}", ""]
 
     # открытые сверху
-    ordered = sorted(ACHIEVEMENTS, key=lambda a: not a[3](s))
+    ordered = sorted(ACHIEVEMENTS, key=lambda a: not achieved(s, a))
 
-    for emoji, name, hint, check in ordered:
-        if check(s):
+    for a in ordered:
+        emoji, name, hint, *_ = a
+        if achieved(s, a):
             lines.append(f"{e(emoji)} <b>{name}</b> · {hint}")
         else:
             lines.append(f"🔒 {name} · {hint}")
