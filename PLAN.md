@@ -4,7 +4,7 @@
 ### Фаза 0. Подготовка
 - [x] Создать ветку `fix/launch`, посмотреть `git status`.
 - [x] `.gitignore`: `.env`, `*.db`, `venv/`, `.venv/`, `__pycache__/`, `.idea/`. Убедиться, что секретов нет в истории.
-- [ ] `requirements.txt`: убрать `aiosqlite`, закрепить версии `asyncpg` и `aiohttp`.
+- [x] `requirements.txt`: убрать `aiosqlite`, закрепить версии `asyncpg` и `aiohttp`.
 - [ ] Создать venv, поставить зависимости, прогнать `check_db.py` (ждём `NEON CONNECTED`).
 
 ### Фаза 1. Бот запускается
