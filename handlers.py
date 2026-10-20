@@ -3,7 +3,7 @@ import logging
 import random
 
 from aiogram import Router, F
-from aiogram.filters import Command
+from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import (
     Message,
@@ -534,13 +534,13 @@ async def cancel_edit(message: Message, state: FSMContext):
         reply_markup=main_menu(),
     )
 
-@router.message(ProfileState.name)
+@router.message(ProfileState.name, F.text)
 async def profile_name(message: Message, state: FSMContext):
     name = message.text.strip()
 
     if not valid_name(name):
         await message.answer(
-            "❌ Имя должно быть от 2 до 50 символов.\n\n"
+            "❌ Имя должно быть от 2 до 30 символов.\n\n"
             "Попробуй ещё раз:"
         )
         return
@@ -630,7 +630,7 @@ async def profile_gender(callback: CallbackQuery, state: FSMContext):
     await state.set_state(ProfileState.city)
     await callback.answer()
 
-@router.message(ProfileState.city)
+@router.message(ProfileState.city, F.text)
 async def profile_city(message: Message, state: FSMContext):
     city = message.text.strip()
 
@@ -651,7 +651,7 @@ async def profile_city(message: Message, state: FSMContext):
 
     await state.set_state(ProfileState.interests)
 
-@router.message(ProfileState.interests)
+@router.message(ProfileState.interests, F.text)
 async def profile_interests(message: Message, state: FSMContext):
     interests = normalize_interests(message.text)
 
@@ -672,7 +672,7 @@ async def profile_interests(message: Message, state: FSMContext):
 
     await state.set_state(ProfileState.description)
 
-@router.message(ProfileState.description)
+@router.message(ProfileState.description, F.text)
 async def profile_description(message: Message, state: FSMContext):
     description = message.text.strip()
 
@@ -796,6 +796,14 @@ async def profile_search_gender(
     )
 
     await callback.answer()
+
+@router.message(StateFilter(
+    ProfileState.name, ProfileState.age, ProfileState.city,
+    ProfileState.interests, ProfileState.description,
+))
+async def profile_text_invalid(message: Message):
+    await message.answer("✏️ Напиши ответ текстом.")
+
 
 @router.message(ProfileState.photo)
 async def profile_photo_invalid(message: Message):
