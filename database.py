@@ -82,6 +82,12 @@ async def init_db():
             ALTER TABLE users
             ADD COLUMN IF NOT EXISTS is_banned BOOLEAN NOT NULL DEFAULT FALSE
         """)
+        await conn.execute("""
+            ALTER TABLE users
+            ADD COLUMN IF NOT EXISTS streak_days INTEGER NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS best_streak INTEGER NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS last_active DATE
+        """)
 
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS reports (
@@ -478,6 +484,42 @@ async def dismiss_reports(to_user: int):
         )
 
 
+async def touch_user(telegram_id: int):
+    """
+    Отмечает активность за сегодня (по Москве) и считает серию дней.
+    Возвращает None, если пользователя нет, иначе запись:
+    is_banned, streak_days, first_today.
+    """
+    db = await get_pool()
+    async with db.acquire() as conn:
+        return await conn.fetchrow("""
+            WITH d AS (
+                SELECT (now() AT TIME ZONE 'Europe/Moscow')::date AS today
+            ),
+            old AS (
+                SELECT telegram_id, last_active, streak_days
+                FROM users WHERE telegram_id = $1
+            ),
+            calc AS (
+                SELECT old.telegram_id, d.today,
+                       old.last_active IS DISTINCT FROM d.today AS first_today,
+                       CASE
+                           WHEN old.last_active = d.today THEN old.streak_days
+                           WHEN old.last_active = d.today - 1 THEN old.streak_days + 1
+                           ELSE 1
+                       END AS streak
+                FROM old, d
+            )
+            UPDATE users u
+            SET streak_days = calc.streak,
+                best_streak = GREATEST(u.best_streak, calc.streak),
+                last_active = calc.today
+            FROM calc
+            WHERE u.telegram_id = calc.telegram_id
+            RETURNING u.is_banned, u.streak_days, calc.first_today
+        """, telegram_id)
+
+
 async def is_banned(telegram_id: int) -> bool:
     db = await get_pool()
     async with db.acquire() as conn:
@@ -624,7 +666,14 @@ async def get_stats(user_id: int):
               )
         """, user_id)
 
+        streaks = await conn.fetchrow(
+            "SELECT streak_days, best_streak FROM users WHERE telegram_id = $1",
+            user_id,
+        )
+
         return {
+            "streak_days": streaks["streak_days"] if streaks else 0,
+            "best_streak": streaks["best_streak"] if streaks else 0,
             "likes_sent": likes_sent,
             "likes_received": likes_received,
             "skips": skips,

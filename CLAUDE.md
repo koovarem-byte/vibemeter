@@ -47,7 +47,7 @@
 | `PLAN.md` | План работ с отметками `[x]`. |
 
 ## База данных (Neon PostgreSQL)
-- `users`: `telegram_id` (PK, bigint), `username`, `full_name`, `age`, `city`, `interests`, `description`, `photo_id`, `balance`, `gender` (`male`/`female`), `search_gender` (`male`/`female`/`all`), `is_banned` (bool), `created_at`.
+- `users`: `telegram_id` (PK, bigint), `username`, `full_name`, `age`, `city`, `interests`, `description`, `photo_id`, `balance`, `gender` (`male`/`female`), `search_gender` (`male`/`female`/`all`), `is_banned` (bool), `streak_days`, `best_streak`, `last_active` (date, по Москве), `created_at`.
 - `reports`: `id`, `from_user`, `to_user`, `reason`, `status` (`open`/`banned`/`dismissed`), `created_at`, `UNIQUE(from_user, to_user)`.
 - `likes`, `skips`, `blocks`: `id`, `from_user`, `to_user`, `created_at`, `UNIQUE(from_user, to_user)`.
 - `questions`: `id`, `from_user`, `to_user`, `text`, `answer`, `answered` (0/1), `created_at`, `answered_at`.

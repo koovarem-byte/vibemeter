@@ -29,7 +29,7 @@ from database import (
     count_reports,
     set_banned,
     dismiss_reports,
-    is_banned,
+    touch_user,
 )
 from keyboards import (
     main_menu,
@@ -86,16 +86,31 @@ waiting_players = []
 # =========================================================
 
 async def ban_middleware(handler, event, data):
+    """Бан + серия дней: один запрос к базе на апдейт."""
     user = data.get("event_from_user")
+    info = await touch_user(user.id) if user else None
 
-    if user and user.id != ADMIN_ID and await is_banned(user.id):
+    if info and info["is_banned"] and user.id != ADMIN_ID:
         if isinstance(event, CallbackQuery):
             await event.answer(ui.BANNED, show_alert=True)
         else:
             await event.answer(ui.BANNED)
         return None
 
-    return await handler(event, data)
+    result = await handler(event, data)
+
+    # первый заход за день: напоминаем про серию (на /start она и так видна)
+    is_start = isinstance(event, Message) and (event.text or "").startswith("/start")
+
+    if info and info["first_today"] and info["streak_days"] >= 2 and not is_start:
+        try:
+            await event.bot.send_message(
+                user.id, ui.streak_notice(info["streak_days"])
+            )
+        except Exception:
+            logging.exception("Не удалось отправить серию %s", user.id)
+
+    return result
 
 
 router.message.outer_middleware(ban_middleware)
@@ -105,6 +120,14 @@ router.callback_query.outer_middleware(ban_middleware)
 # =========================================================
 # ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
 # =========================================================
+
+def same_city(first, second) -> bool:
+    return bool(
+        first["city"]
+        and second["city"]
+        and first["city"].strip().lower() == second["city"].strip().lower()
+    )
+
 
 def calculate_vibe(first, second):
     """
@@ -119,12 +142,7 @@ def calculate_vibe(first, second):
 
     score = 40 + min(len(common) * 10, 40)
 
-    if (
-        first["city"]
-        and second["city"]
-        and first["city"].strip().lower()
-        == second["city"].strip().lower()
-    ):
+    if same_city(first, second):
         score += 15
 
     return min(score, 95), common
@@ -138,7 +156,7 @@ async def send_profile(message, person, viewer_id):
 
     # Фото скрыто до взаимного лайка
     await message.answer(
-        ui.search_card(person, vibe, common),
+        ui.search_card(person, vibe, common, same_city(viewer, person)),
         reply_markup=profile_actions(person["telegram_id"]),
     )
 
@@ -192,7 +210,9 @@ async def show_next_profile(message, user_id):
 async def user_profile_message(message, user):
     """Показывает собственную анкету."""
 
-    text = ui.own_profile(user)
+    stats = await get_stats(user["telegram_id"])
+    done, total = ui.achievements_progress(stats)
+    text = ui.own_profile(user, stats, done, total)
 
     if user["photo_id"]:
         await message.answer_photo(
@@ -325,7 +345,10 @@ async def start_handler(message: Message, state: FSMContext):
 
     if profile_complete:
         await state.clear()
-        await message.answer(ui.WELCOME_BACK, reply_markup=main_menu())
+        await message.answer(
+            ui.welcome_back(user["streak_days"]),
+            reply_markup=main_menu(),
+        )
         return
 
     current_state = await state.get_state()
@@ -554,7 +577,12 @@ async def show_incoming_likes(message, user_id):
         vibe, common = calculate_vibe(viewer, person) if viewer else (None, None)
 
         await message.answer(
-            ui.profile_card(person, vibe=vibe, common=common),
+            ui.profile_card(
+                person,
+                vibe=vibe,
+                common=common,
+                same_city=bool(viewer) and same_city(viewer, person),
+            ),
             reply_markup=incoming_actions(person["telegram_id"]),
         )
 
@@ -952,17 +980,9 @@ async def statistics_handler(message: Message):
 async def achievements_callback(callback: CallbackQuery):
     await callback.answer()
 
-    stats = await get_stats(callback.from_user.id)
-
-    await callback.message.answer(ui.achievements((
-        ("Первый вайб", stats["likes_sent"] >= 1),
-        ("Взаимность", stats["mutual_likes"] >= 1),
-        (
-            "Первое общение",
-            stats["questions_sent"] + stats["questions_received"] >= 1,
-        ),
-        ("Первая игра", stats["games"] >= 1),
-    )))
+    await callback.message.answer(
+        ui.hall_of_fame(await get_stats(callback.from_user.id))
+    )
 
 
 # =========================================================
