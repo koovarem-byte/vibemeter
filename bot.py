@@ -1,54 +1,40 @@
 import asyncio
 import logging
 import os
+import secrets
 
 from aiohttp import web
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
+from aiogram.webhook.aiohttp_server import SimpleRequestHandler
 
 from config import BOT_TOKEN
 from database import init_db, close_db
 from handlers import router
 
 
-# =========================
-# HEALTH SERVER FOR RENDER
-# =========================
+# Режим работы:
+# - WEBHOOK_BASE_URL задан (или Render дал RENDER_EXTERNAL_URL) → webhook.
+#   Запрос от Telegram будит уснувший сервис.
+# - иначе → long polling (локальный запуск).
+WEBHOOK_BASE_URL = (
+    os.getenv("WEBHOOK_BASE_URL")
+    or os.getenv("RENDER_EXTERNAL_URL")
+    or ""
+).rstrip("/")
+WEBHOOK_PATH = "/webhook"
+# Telegram присылает этот секрет в заголовке, чужие запросы отбрасываются.
+WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET") or secrets.token_urlsafe(32)
+
+PORT = int(os.getenv("PORT", "10000"))
+
 
 async def health(request):
     return web.Response(text="OK")
 
 
-async def start_web_server():
-    app = web.Application()
-
-    app.router.add_get("/", health)
-    app.router.add_get("/health", health)
-
-    port = int(os.getenv("PORT", "10000"))
-
-    runner = web.AppRunner(app)
-    await runner.setup()
-
-    site = web.TCPSite(
-        runner,
-        host="0.0.0.0",
-        port=port,
-    )
-
-    await site.start()
-
-    print(f"HTTP server started on port {port}")
-
-    return runner
-
-
-# =========================
-# TELEGRAM BOT
-# =========================
-
-async def start_bot():
+def create_bot_and_dispatcher():
     bot = Bot(
         token=BOT_TOKEN,
         default=DefaultBotProperties(
@@ -57,31 +43,85 @@ async def start_bot():
     )
 
     dp = Dispatcher()
-
     dp.include_router(router)
 
+    return bot, dp
+
+
+def create_app(bot, dp, webhook=True):
+    app = web.Application()
+
+    app.router.add_get("/", health)
+    app.router.add_get("/health", health)
+
+    if webhook:
+        SimpleRequestHandler(
+            dispatcher=dp,
+            bot=bot,
+            secret_token=WEBHOOK_SECRET,
+        ).register(app, path=WEBHOOK_PATH)
+
+    return app
+
+
+# =========================
+# WEBHOOK
+# =========================
+
+async def run_webhook():
+    bot, dp = create_bot_and_dispatcher()
+
     await init_db()
+
+    app = create_app(bot, dp, webhook=True)
+
+    runner = web.AppRunner(app)
+    await runner.setup()
+    await web.TCPSite(runner, host="0.0.0.0", port=PORT).start()
+
+    await bot.set_webhook(
+        f"{WEBHOOK_BASE_URL}{WEBHOOK_PATH}",
+        secret_token=WEBHOOK_SECRET,
+        allowed_updates=dp.resolve_used_update_types(),
+    )
+
+    print(f"Webhook mode on port {PORT}")
+
+    try:
+        await asyncio.Event().wait()
+    finally:
+        await runner.cleanup()
+        await bot.session.close()
+        await close_db()
+
+
+# =========================
+# POLLING
+# =========================
+
+async def run_polling():
+    bot, dp = create_bot_and_dispatcher()
+
+    # health-сервер, чтобы хостинг видел, что процесс жив
+    runner = web.AppRunner(create_app(bot, dp, webhook=False))
+    await runner.setup()
+    await web.TCPSite(runner, host="0.0.0.0", port=PORT).start()
+
+    print(f"HTTP server started on port {PORT}")
+
+    await init_db()
+
+    # webhook здесь специально не снимаем: если бот уже работает
+    # на хостинге, локальный polling упадёт с Conflict, а не уведёт бота.
 
     print("Bot started")
 
     try:
         await dp.start_polling(bot)
     finally:
+        await runner.cleanup()
         await bot.session.close()
         await close_db()
-
-
-# =========================
-# MAIN
-# =========================
-
-async def main():
-    web_runner = await start_web_server()
-
-    try:
-        await start_bot()
-    finally:
-        await web_runner.cleanup()
 
 
 if __name__ == "__main__":
@@ -89,4 +129,8 @@ if __name__ == "__main__":
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
-    asyncio.run(main())
+
+    if WEBHOOK_BASE_URL:
+        asyncio.run(run_webhook())
+    else:
+        asyncio.run(run_polling())
