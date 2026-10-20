@@ -877,34 +877,6 @@ async def browse_callback(callback: CallbackQuery):
         callback.from_user.id,
     )
 
-@router.callback_query(F.data.startswith("contact:"))
-async def contact_callback(callback: CallbackQuery):
-    person_id = int(callback.data.split(":")[1])
-    person = await get_user(person_id)
-
-    await callback.answer()
-
-    if not person:
-        await callback.message.answer(
-            "Пользователь больше недоступен."
-        )
-        return
-
-    username = person.get("username")
-
-    if username:
-        await callback.message.answer(
-            "💬 <b>Переходи в Telegram и знакомься!</b>\n\n"
-            f'<a href="https://t.me/{esc(username)}">'
-            "Открыть профиль пользователя</a>"
-        )
-    else:
-        await callback.message.answer(
-            "У пользователя не указан публичный Telegram username.\n\n"
-            "Попроси его указать username в Telegram, "
-            "чтобы можно было перейти в личные сообщения."
-        )
-
 # =========================================================
 # РУЧНЫЕ ВОПРОСЫ
 # =========================================================
@@ -1292,36 +1264,6 @@ async def incoming_skip_callback(callback: CallbackQuery):
 
 
 # =========================================================
-# ЗАДАТЬ ВОПРОС
-# =========================================================
-
-@router.callback_query(F.data.startswith("question:"))
-async def question_callback(callback: CallbackQuery):
-    person_id = int(callback.data.split(":")[1])
-
-    question_id = await send_question(
-        callback.bot,
-        callback.from_user.id,
-        person_id,
-    )
-
-    if question_id:
-        await callback.answer(
-            "💬 Вопрос отправлен!"
-        )
-    else:
-        await callback.answer(
-            "Не удалось отправить вопрос.",
-            show_alert=True,
-        )
-
-
-# =========================================================
-# ТЕМЫ ДЛЯ ОБЩЕНИЯ
-# =========================================================
-
-
-# =========================================================
 # ПОЗНАКОМИТЬСЯ
 # =========================================================
 
@@ -1329,11 +1271,25 @@ async def question_callback(callback: CallbackQuery):
 async def contact_callback(callback: CallbackQuery):
     person_id = int(callback.data.split(":")[1])
 
+    user_id = callback.from_user.id
     person = await get_user(person_id)
 
     if not person:
         await callback.answer(
             "Пользователь не найден.",
+            show_alert=True,
+        )
+        return
+
+    # Контакт открывается только при взаимном вайбе
+    mutual = (
+        await has_like(from_user=user_id, to_user=person_id)
+        and await has_like(from_user=person_id, to_user=user_id)
+    )
+
+    if not mutual:
+        await callback.answer(
+            "Контакт откроется после взаимного вайба.",
             show_alert=True,
         )
         return

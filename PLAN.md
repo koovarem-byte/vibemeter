@@ -20,7 +20,7 @@
 
 ### Фаза 3. P1 — ломает логику
 - [x] `add_skip` не должен писать в `blocks` и удалять лайки.
-- [ ] Удалить дубли `question_callback` и `contact_callback`, оставить рабочие версии.
+- [x] Удалить дубли `question_callback` и `contact_callback`, оставить рабочие версии.
 - [ ] Починить статистику и достижения (согласовать ключи `get_stats` и обработчиков, убрать вывод `True/False`).
 - [ ] Ответ на вопрос только через явную кнопку «Ответить» и `QuestionState.replying`, по конкретному `question_id`.
 - [ ] Экранировать пользовательский текст (`html.escape`) в `questions.py` и `blocked_users_callback`.
