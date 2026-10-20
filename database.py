@@ -1,3 +1,5 @@
+import asyncio
+import logging
 import os
 import asyncpg
 from dotenv import load_dotenv
@@ -15,13 +17,27 @@ async def get_pool():
         if not DATABASE_URL:
             raise RuntimeError("Переменная DATABASE_URL не задана")
 
-        _pool = await asyncpg.create_pool(
-            dsn=DATABASE_URL,
-            min_size=1,
-            max_size=5,
-            command_timeout=30,
-            ssl="require",
-        )
+        # Соединение с Neon иногда рвётся или подвисает
+        # на подключении, поэтому пробуем несколько раз.
+        for attempt in range(1, 6):
+            try:
+                _pool = await asyncpg.create_pool(
+                    dsn=DATABASE_URL,
+                    min_size=1,
+                    max_size=5,
+                    command_timeout=30,
+                    timeout=15,
+                    ssl="require",
+                )
+                break
+            except (OSError, asyncio.TimeoutError, asyncpg.PostgresConnectionError) as e:
+                if attempt == 5:
+                    raise
+                logging.warning(
+                    "Neon: попытка %s не удалась (%s), повторяю",
+                    attempt, type(e).__name__,
+                )
+                await asyncio.sleep(attempt * 2)
 
     return _pool
 
