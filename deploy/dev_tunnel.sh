@@ -9,7 +9,7 @@ trap 'echo; echo "Туннель остановлен"; exit 0' INT
 while true; do
     ssh -tt -o ServerAliveInterval=30 -o ExitOnForwardFailure=yes \
         -o StrictHostKeyChecking=accept-new \
-        -R 80:localhost:8080 nokey@localhost.run 2>&1 |
+        -R 80:127.0.0.1:8080 nokey@localhost.run 2>&1 |
     while IFS= read -r line; do
         url=$(printf '%s' "$line" | grep -o 'https://[a-z0-9]*\.lhr\.life' | head -1)
         if [ -n "$url" ] && [ "$url" != "$last" ]; then
