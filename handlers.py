@@ -1,4 +1,5 @@
 import html
+import logging
 import random
 
 from aiogram import Router, F
@@ -309,6 +310,50 @@ async def user_profile_message(message, user, user_id):
             text,
             reply_markup=after_profile(),
         )
+
+
+async def notify_mutual(bot, user_id, person_id, title):
+    """Взаимный вайб: каждому открываем фото и анкету второго."""
+
+    user = await get_user(user_id)
+    person = await get_user(person_id)
+
+    for viewer_id, other in ((user_id, person), (person_id, user)):
+        if not other:
+            continue
+
+        caption = (
+            f"<b>💜 {title}</b>\n\n"
+            "🔓 Фото открыто — вы оба выбрали друг друга.\n\n"
+            f"<b>{esc(other['full_name'])}</b>"
+        )
+
+        if other["age"]:
+            caption += f", {other['age']}"
+
+        if other["city"]:
+            caption += f"\n📍 {esc(other['city'])}"
+
+        keyboard = mutual_actions(other["telegram_id"])
+
+        try:
+            if other["photo_id"]:
+                await bot.send_photo(
+                    viewer_id,
+                    photo=other["photo_id"],
+                    caption=caption,
+                    reply_markup=keyboard,
+                )
+            else:
+                await bot.send_message(
+                    viewer_id,
+                    caption,
+                    reply_markup=keyboard,
+                )
+        except Exception:
+            logging.exception(
+                "Не удалось отправить взаимный вайб %s", viewer_id
+            )
 
 
 # =========================================================
@@ -891,24 +936,9 @@ async def like_callback(callback: CallbackQuery):
     )
 
     if mutual:
-        await callback.message.answer(
-            "<b>💜 ВАЙБ ВЗАИМНЫЙ</b>\n\n"
-            "Вы оба выбрали друг друга.\n\n"
-            "Нажми «Познакомиться», чтобы перейти "
-            "в Telegram, или смотри дальше.",
-            reply_markup=mutual_actions(person_id),
+        await notify_mutual(
+            callback.bot, user_id, person_id, "ВАЙБ ВЗАИМНЫЙ"
         )
-
-        try:
-            await callback.bot.send_message(
-                person_id,
-                "<b>💜 ВАЙБ ВЗАИМНЫЙ</b>\n\n"
-                "Вы оба выбрали друг друга!",
-                reply_markup=mutual_actions(user_id),
-            )
-        except Exception:
-            pass
-
         return
 
     await show_next_profile(callback.message, user_id)
@@ -991,21 +1021,9 @@ async def incoming_like_callback(callback: CallbackQuery):
     )
 
     if mutual:
-        await callback.message.answer(
-            "<b>💜 ВАЙБ ВЗАИМНЫЙ</b>\n\n"
-            "Теперь вы можете начать общение.",
-            reply_markup=mutual_actions(person_id),
+        await notify_mutual(
+            callback.bot, user_id, person_id, "ВАЙБ ВЗАИМНЫЙ"
         )
-
-        try:
-            await callback.bot.send_message(
-                person_id,
-                "<b>💜 ВАЙБ ВЗАИМНЫЙ</b>\n\n"
-                "У вас появился новый взаимный вайб.",
-                reply_markup=mutual_actions(user_id),
-            )
-        except Exception:
-            pass
 
 
 @router.callback_query(F.data.startswith("incoming_skip:"))
@@ -1525,21 +1543,9 @@ async def game_like_callback(callback: CallbackQuery):
             "💜 Вайб взаимный!"
         )
 
-        await callback.message.answer(
-            "<b>💜 ВАЙБ ВЗАИМНЫЙ</b>\n\n"
-            "Теперь можете начать общение.",
-            reply_markup=mutual_actions(person_id),
+        await notify_mutual(
+            callback.bot, user_id, person_id, "ВАЙБ ПОСЛЕ ИГРЫ ВЗАИМНЫЙ"
         )
-
-        try:
-            await callback.bot.send_message(
-                person_id,
-                "<b>💜 ВАЙБ ВЗАИМНЫЙ</b>\n\n"
-                "После игры у вас появился взаимный вайб.",
-                reply_markup=mutual_actions(user_id),
-            )
-        except Exception:
-            pass
 
     else:
         await callback.answer(
