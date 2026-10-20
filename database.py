@@ -304,20 +304,6 @@ async def add_skip(from_user: int, to_user: int):
             ON CONFLICT (from_user, to_user) DO NOTHING
         """, from_user, to_user)
 
-    async with db.acquire() as conn:
-        async with conn.transaction():
-            await conn.execute("""
-                INSERT INTO blocks (from_user, to_user)
-                VALUES ($1, $2)
-                ON CONFLICT (from_user, to_user) DO NOTHING
-            """, from_user, to_user)
-
-            await conn.execute("""
-                DELETE FROM likes
-                WHERE (from_user = $1 AND to_user = $2)
-                   OR (from_user = $2 AND to_user = $1)
-            """, from_user, to_user)
-
 
 async def add_block(from_user: int, to_user: int):
     db = await get_pool()
@@ -422,6 +408,10 @@ async def get_incoming_likes(user_id: int):
               AND NOT EXISTS (
                   SELECT 1 FROM likes r
                   WHERE r.from_user = $1 AND r.to_user = u.telegram_id
+              )
+              AND NOT EXISTS (
+                  SELECT 1 FROM skips s
+                  WHERE s.from_user = $1 AND s.to_user = u.telegram_id
               )
               AND NOT EXISTS (
                   SELECT 1 FROM blocks b
