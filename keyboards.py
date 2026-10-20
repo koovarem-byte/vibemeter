@@ -5,6 +5,22 @@ from aiogram.types import (
     InlineKeyboardButton,
 )
 
+import ui
+
+
+def btn(text, callback_data=None, url=None, neon=None):
+    """Inline-кнопка. neon — имя эмодзи из ui.NEON для иконки."""
+    extra = {"icon_custom_emoji_id": ui.icon(neon)} if neon else {}
+    if url:
+        return InlineKeyboardButton(text=text, url=url, **extra)
+    return InlineKeyboardButton(
+        text=text, callback_data=callback_data, **extra
+    )
+
+
+def rows(*rows_):
+    return InlineKeyboardMarkup(inline_keyboard=[list(r) for r in rows_])
+
 
 # =========================================================
 # ГЛАВНОЕ МЕНЮ
@@ -14,209 +30,147 @@ def main_menu():
     return ReplyKeyboardMarkup(
         keyboard=[
             [
-                KeyboardButton(text="🔎 Найти вайб"),
-                KeyboardButton(text="💜 Мои вайбы"),
+                KeyboardButton(text=ui.MENU_FIND),
+                KeyboardButton(text=ui.MENU_LIKES),
             ],
             [
-                KeyboardButton(text="👤 Мой профиль"),
-                KeyboardButton(text="🎮 Вайб-игры"),
+                KeyboardButton(text=ui.MENU_PROFILE),
+                KeyboardButton(text=ui.MENU_GAMES),
             ],
             [
-                KeyboardButton(text="📊 Статистика"),
-                KeyboardButton(text="⚙️ Настройки"),
+                KeyboardButton(text=ui.MENU_STATS),
+                KeyboardButton(text=ui.MENU_SETTINGS),
             ],
         ],
         resize_keyboard=True,
-        input_field_placeholder="Выбери действие",
+        input_field_placeholder=ui.MENU_PLACEHOLDER,
+    )
+
+
+def cancel_keyboard():
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text=ui.CANCEL)]],
+        resize_keyboard=True,
     )
 
 
 # =========================================================
-# МЕНЮ ПОСЛЕ СОЗДАНИЯ ПРОФИЛЯ
-# =========================================================
-
-def after_profile():
-    return main_menu()
-
-
-# =========================================================
-# КАРТОЧКА ПРОФИЛЯ
+# АНКЕТЫ
 # =========================================================
 
 def profile_actions(person_id: int):
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="💜 Поймать вайб",
-                    callback_data=f"like:{person_id}",
-                ),
-                InlineKeyboardButton(
-                    text="👎 Мимо",
-                    callback_data=f"skip:{person_id}",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="💬 Задать вопрос",
-                    callback_data=f"question:{person_id}",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="🚫 Заблокировать",
-                    callback_data=f"block:{person_id}",
-                ),
-                InlineKeyboardButton(
-                    text="⚠️ Пожаловаться",
-                    callback_data=f"report:{person_id}",
-                ),
-            ],
-        ]
+    """Карточка в поиске."""
+    return rows(
+        [
+            btn(ui.BTN_LIKE, f"like:{person_id}", neon="heart"),
+            btn(ui.BTN_SKIP, f"skip:{person_id}"),
+        ],
+        [
+            btn(ui.BTN_QUESTION, f"question:{person_id}", neon="bolt"),
+            btn(ui.BTN_REPORT, f"report:{person_id}"),
+        ],
     )
 
-# =========================================================
-# ВХОДЯЩИЙ ВАЙБ
-# =========================================================
 
 def incoming_actions(person_id: int):
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="💜 Поймать вайб",
-                    callback_data=f"incoming_like:{person_id}",
-                ),
-                InlineKeyboardButton(
-                    text="👎 Мимо",
-                    callback_data=f"incoming_skip:{person_id}",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="⚠️ Пожаловаться",
-                    callback_data=f"report:{person_id}",
-                ),
-            ],
-        ]
+    """Карточка в «Мои вайбы»."""
+    return rows(
+        [
+            btn(ui.BTN_LIKE, f"incoming_like:{person_id}", neon="heart"),
+            btn(ui.BTN_SKIP, f"incoming_skip:{person_id}"),
+        ],
+        [
+            btn(ui.BTN_QUESTION, f"question:{person_id}", neon="bolt"),
+            btn(ui.BTN_REPORT, f"report:{person_id}"),
+        ],
+    )
+
+
+def mutual_actions(person_id: int, username: str | None):
+    """После взаимного вайба: сразу ссылка на чат, если есть username."""
+    if username:
+        write = btn(
+            ui.BTN_WRITE,
+            url=f"https://t.me/{username.lstrip('@')}",
+            neon="heart",
+        )
+    else:
+        write = btn(ui.BTN_WRITE, f"contact:{person_id}", neon="heart")
+
+    return rows([write, btn(ui.BTN_NEXT, "browse")])
+
+
+def contact_keyboard(username: str):
+    return rows([
+        btn(ui.BTN_WRITE, url=f"https://t.me/{username}", neon="heart"),
+    ])
+
+
+def liked_you_keyboard():
+    return rows([
+        btn(ui.BTN_VIEW, "my_vibes", neon="heart"),
+        btn(ui.BTN_LATER, "dismiss"),
+    ])
+
+
+# =========================================================
+# АНКЕТА: ВЫБОР ПОЛА
+# =========================================================
+
+def gender_keyboard():
+    return rows([
+        btn(ui.BTN_MALE, "gender:male"),
+        btn(ui.BTN_FEMALE, "gender:female"),
+    ])
+
+
+def search_gender_keyboard():
+    return rows(
+        [
+            btn(ui.BTN_SEARCH_MALE, "search_gender:male"),
+            btn(ui.BTN_SEARCH_FEMALE, "search_gender:female"),
+        ],
+        [btn(ui.BTN_SEARCH_ALL, "search_gender:all")],
     )
 
 
 # =========================================================
-# ВЗАИМНЫЙ ВАЙБ
+# СОГЛАСИЕ
 # =========================================================
 
-def mutual_actions(person_id: int):
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="💬 Познакомиться",
-                    callback_data=f"contact:{person_id}",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="🔎 Смотреть дальше",
-                    callback_data="browse",
-                ),
-            ],
-        ]
-    )
-
-def conversation_topics(person_id: int):
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="🎵 Музыка",
-                    callback_data=f"topic:music:{person_id}",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="🎮 Игры",
-                    callback_data=f"topic:games:{person_id}",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="🎬 Фильмы",
-                    callback_data=f"topic:movies:{person_id}",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="🏀 Спорт",
-                    callback_data=f"topic:sport:{person_id}",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="😂 Рандом",
-                    callback_data=f"topic:random:{person_id}",
-                ),
-            ],
-        ]
+def consent_keyboard():
+    return rows(
+        [btn(ui.BTN_ACCEPT, "consent:accept", neon="heart")],
+        [btn(ui.BTN_POLICY, "consent:policy")],
     )
 
 
 # =========================================================
-# НАСТРОЙКИ
+# НАСТРОЙКИ И СТАТИСТИКА
 # =========================================================
 
 def settings_keyboard():
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="✏️ Изменить профиль",
-                    callback_data="edit_profile",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="🔔 Уведомления",
-                    callback_data="notifications",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="🚫 Заблокированные",
-                    callback_data="blocked_users",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="🗑 Удалить профиль",
-                    callback_data="delete_profile",
-                ),
-            ],
-        ]
+    return rows(
+        [
+            btn(ui.BTN_EDIT, "edit_profile"),
+            btn(ui.BTN_SEARCH, "search_settings"),
+        ],
+        [
+            btn(ui.BTN_BLOCKED, "blocked_users"),
+            btn(ui.BTN_DELETE, "delete_profile"),
+        ],
     )
 
 
-# =========================================================
-# СТАТИСТИКА
-# =========================================================
+def delete_confirm_keyboard():
+    return rows([
+        btn(ui.BTN_DELETE_YES, "delete_confirm"),
+        btn(ui.BTN_BACK, "dismiss"),
+    ])
+
 
 def stats_keyboard():
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="🏆 Достижения",
-                    callback_data="achievements",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="🔥 Моя серия",
-                    callback_data="streak",
-                ),
-            ],
-        ]
-    )
+    return rows([btn(ui.BTN_ACHIEVEMENTS, "achievements", neon="crown")])
 
 
 # =========================================================
@@ -224,249 +178,51 @@ def stats_keyboard():
 # =========================================================
 
 def game_actions(game_id: int):
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="🎮 Начать игру",
-                    callback_data=f"game_start:{game_id}",
-                ),
-            ],
-        ]
+    return rows([
+        btn(ui.BTN_START_GAME, f"game_start:{game_id}", neon="candy"),
+    ])
+
+
+def game_keyboard(game_id: int, question_index: int, answer_a: str, answer_b: str):
+    # варианты длинные, поэтому по одному в строке
+    return rows(
+        [btn(answer_a, f"game_answer:{game_id}:{question_index}:a")],
+        [btn(answer_b, f"game_answer:{game_id}:{question_index}:b")],
     )
 
-
-def game_keyboard(
-    game_id: int,
-    question_index: int,
-    answer_a: str,
-    answer_b: str,
-):
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text=answer_a,
-                    callback_data=(
-                        f"game_answer:"
-                        f"{game_id}:"
-                        f"{question_index}:a"
-                    ),
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text=answer_b,
-                    callback_data=(
-                        f"game_answer:"
-                        f"{game_id}:"
-                        f"{question_index}:b"
-                    ),
-                ),
-            ],
-        ]
-    )
-
-
-# =========================================================
-# РЕЗУЛЬТАТ ИГРЫ
-# =========================================================
 
 def game_result_actions(person_id: int):
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="💜 Поймать вайб",
-                    callback_data=f"game_like:{person_id}",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="🔎 Смотреть дальше",
-                    callback_data="browse",
-                ),
-            ],
-        ]
-    )
-
-
-# =========================================================
-# ВАЙБ ДНЯ
-# =========================================================
-
-def vibe_day_keyboard(person_id: int):
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="💜 Поймать вайб",
-                    callback_data=f"like:{person_id}",
-                ),
-                InlineKeyboardButton(
-                    text="👎 Мимо",
-                    callback_data=f"skip:{person_id}",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="💬 Задать вопрос",
-                    callback_data=f"question:{person_id}",
-                ),
-            ],
-        ]
-    )
-
-
-# =========================================================
-# СЛУЧАЙНЫЙ ВАЙБ
-# =========================================================
-
-def random_vibe_keyboard(person_id: int):
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="💜 Поймать вайб",
-                    callback_data=f"like:{person_id}",
-                ),
-                InlineKeyboardButton(
-                    text="🎲 Ещё один",
-                    callback_data="random_vibe",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="👎 Мимо",
-                    callback_data=f"skip:{person_id}",
-                ),
-            ],
-        ]
-    )
-
-
-# =========================================================
-# НАВИГАЦИЯ
-# =========================================================
-
-def back_keyboard(callback_data: str = "main_menu"):
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="⬅️ Назад",
-                    callback_data=callback_data,
-                ),
-            ],
-        ]
-    )
-def cancel_edit_keyboard():
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [
-                KeyboardButton(text="❌ Отменить")
-            ]
-        ],
-        resize_keyboard=True,
-        input_field_placeholder="Введи данные или отмени",
-    )
-
-# =========================================================
-# СОГЛАСИЕ
-# =========================================================
-
-def consent_keyboard():
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="✅ Мне есть 18, принимаю",
-                    callback_data="consent:accept",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="📄 Политика конфиденциальности",
-                    callback_data="consent:policy",
-                ),
-            ],
-        ]
-    )
-
-
-# =========================================================
-# ЖАЛОБЫ
-# =========================================================
-
-REPORT_REASONS = {
-    "fake": "Фейк или спам",
-    "rude": "Оскорбления",
-    "nsfw": "Неприемлемый контент",
-    "minor": "Похоже, младше 18",
-    "other": "Другое",
-}
-
-
-def report_reasons_keyboard(person_id: int):
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text=title,
-                    callback_data=f"report_reason:{person_id}:{code}",
-                )
-            ]
-            for code, title in REPORT_REASONS.items()
-        ]
-    )
-
-
-def admin_report_keyboard(person_id: int):
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="🚫 Забанить",
-                    callback_data=f"admin_ban:{person_id}",
-                ),
-                InlineKeyboardButton(
-                    text="✅ Отклонить",
-                    callback_data=f"admin_dismiss:{person_id}",
-                ),
-            ]
-        ]
-    )
+    return rows([
+        btn(ui.BTN_LIKE, f"game_like:{person_id}", neon="heart"),
+        btn(ui.BTN_NEXT, "browse"),
+    ])
 
 
 # =========================================================
 # ВОПРОСЫ
 # =========================================================
 
-def liked_you_keyboard():
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="Посмотреть",
-                    callback_data="my_vibes",
-                ),
-                InlineKeyboardButton(
-                    text="Позже",
-                    callback_data="dismiss",
-                ),
-            ]
-        ]
-    )
-
-
 def question_answer_keyboard(question_id: int):
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="✍️ Ответить",
-                    callback_data=f"answer_q:{question_id}",
-                )
-            ]
-        ]
-    )
+    return rows([
+        btn(ui.BTN_ANSWER, f"answer_q:{question_id}", neon="bolt"),
+    ])
+
+
+# =========================================================
+# ЖАЛОБЫ
+# =========================================================
+
+def report_reasons_keyboard(person_id: int):
+    buttons = [
+        btn(title, f"report_reason:{person_id}:{code}")
+        for code, title in ui.REPORT_REASONS.items()
+    ]
+    buttons.append(btn(ui.BTN_HIDE, f"block:{person_id}"))
+    return rows(*(buttons[i:i + 2] for i in range(0, len(buttons), 2)))
+
+
+def admin_report_keyboard(person_id: int):
+    return rows([
+        btn(ui.BTN_BAN, f"admin_ban:{person_id}"),
+        btn(ui.BTN_DISMISS, f"admin_dismiss:{person_id}"),
+    ])

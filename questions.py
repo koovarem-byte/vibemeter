@@ -1,6 +1,6 @@
-from html import escape
-
 from aiogram import Bot
+
+import ui
 
 from database import (
     add_question,
@@ -44,9 +44,7 @@ async def send_question(
     try:
         await bot.send_message(
             to_user,
-            "<b>💬 Тебе задали вопрос!</b>\n\n"
-            f"{escape(question_text)}\n\n"
-            "Нажми «Ответить», чтобы ответить 👇",
+            ui.incoming_question(question_text),
             reply_markup=question_answer_keyboard(question_id),
         )
     except Exception:
@@ -100,9 +98,7 @@ async def submit_answer(
     try:
         await bot.send_message(
             question["from_user"],
-            "<b>💬 На твой вопрос ответили!</b>\n\n"
-            f"<b>Вопрос:</b>\n{escape(question['text'])}\n\n"
-            f"<b>Ответ:</b>\n{escape(answer_text)}",
+            ui.question_answered(question["text"], answer_text),
         )
     except Exception:
         pass

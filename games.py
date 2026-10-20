@@ -224,23 +224,3 @@ async def complete_game(game_id: int):
 
     return result
 
-
-def get_result_text(
-    matches: int,
-    percentage: int,
-):
-    if percentage >= 80:
-        vibe = "🔥 Очень много совпадений"
-    elif percentage >= 60:
-        vibe = "💜 Хороший общий вайб"
-    elif percentage >= 40:
-        vibe = "🙂 Есть некоторые совпадения"
-    else:
-        vibe = "👀 Похоже, вы довольно разные"
-
-    return (
-        "<b>🎮 РЕЗУЛЬТАТ</b>\n\n"
-        f"<b>{matches} из 5 совпадений</b>\n\n"
-        f"<b>🔥 {percentage}% ВАЙБА</b>\n\n"
-        f"{vibe}"
-    )

@@ -36,7 +36,8 @@
 | `config.py` | Читает `BOT_TOKEN` и `ADMIN_ID` из `.env`, падает, если их нет. |
 | `database.py` | Весь доступ к Neon: пул asyncpg (ssl=require), `init_db()` создаёт таблицы, функции для users / likes / skips / blocks / candidates / questions / games / stats. |
 | `handlers.py` | Весь aiogram-роутер (около 1650 строк): регистрация профиля, поиск, лайк/скип/блок, вопросы, игры, статистика, настройки, `/admin`. |
-| `keyboards.py` | Все reply- и inline-клавиатуры. |
+| `ui.py` | Все тексты, неоновые эмодзи (`NEON`), подписи кнопок. Стиль меняется только здесь. |
+| `keyboards.py` | Все reply- и inline-клавиатуры, кнопки парами, иконки `icon_custom_emoji_id`. |
 | `states.py` | FSM: `ProfileState` (name, age, city, interests, description, photo), `QuestionState` (answering — пишем вопрос, replying — отвечаем). |
 | `games.py` | Логика игры: 10 вопросов «а/б», на игру берётся 5 случайных, подсчёт совпадений, текст результата. |
 | `questions.py` | Отправка вопроса одним пользователем другому и доставка ответа. |
