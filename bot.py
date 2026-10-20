@@ -7,6 +7,7 @@ from aiohttp import web
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
+from aiogram.types import MenuButtonDefault, MenuButtonWebApp, WebAppInfo
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler
 
 from config import BOT_TOKEN
@@ -27,6 +28,10 @@ WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET") or secrets.token_urlsafe(32)
 
 PORT = int(os.getenv("PORT", "8080"))
 
+# Публичный HTTPS-адрес сервера бота (туннель или VPS с Caddy).
+# Задан → кнопка меню открывает Mini App по WEBAPP_URL/app/
+WEBAPP_URL = (os.getenv("WEBAPP_URL") or "").rstrip("/")
+
 
 async def health(request):
     return web.Response(text="OK")
@@ -44,6 +49,20 @@ def create_bot_and_dispatcher():
     dp.include_router(router)
 
     return bot, dp
+
+
+async def setup_menu_button(bot):
+    try:
+        if WEBAPP_URL:
+            await bot.set_chat_menu_button(menu_button=MenuButtonWebApp(
+                text="Вайбометр",
+                web_app=WebAppInfo(url=f"{WEBAPP_URL}/app/"),
+            ))
+            print(f"Mini App: {WEBAPP_URL}/app/")
+        else:
+            await bot.set_chat_menu_button(menu_button=MenuButtonDefault())
+    except Exception:
+        logging.exception("Не удалось поставить кнопку Mini App")
 
 
 def create_app(bot, dp, webhook=True):
@@ -73,6 +92,7 @@ async def run_webhook():
     bot, dp = create_bot_and_dispatcher()
 
     await init_db()
+    await setup_menu_button(bot)
 
     app = create_app(bot, dp, webhook=True)
 
@@ -111,6 +131,7 @@ async def run_polling():
     print(f"HTTP server started on port {PORT}")
 
     await init_db()
+    await setup_menu_button(bot)
 
     # webhook здесь специально не снимаем: если бот уже работает
     # на хостинге, локальный polling упадёт с Conflict, а не уведёт бота.
