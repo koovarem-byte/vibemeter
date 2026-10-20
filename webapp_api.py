@@ -18,6 +18,7 @@ import ui
 from config import BOT_TOKEN
 from database import (
     add_like,
+    add_report,
     add_skip,
     get_candidates,
     get_incoming_likes,
@@ -29,7 +30,13 @@ from database import (
     touch_user,
     update_user,
 )
-from handlers import calculate_vibe, notify_liked, notify_mutual
+from handlers import (
+    calculate_vibe,
+    notify_admin_report,
+    notify_liked,
+    notify_mutual,
+)
+from questions import MAX_QUESTION_LENGTH, send_question
 from utils import is_adult
 
 WEBAPP_DIR = Path(__file__).parent / "webapp"
@@ -135,6 +142,30 @@ def level_json(done: int, total: int):
     return {"n": n, "name": name, "done": done, "total": total, "next_at": next_at}
 
 
+async def get_target(user_id: int, person_id: int):
+    """Анкета, с которой можно взаимодействовать, иначе None."""
+    if person_id == user_id:
+        return None
+    person = await get_user(person_id)
+    if (
+        not person
+        or person["is_banned"]
+        or not is_adult(person["age"])
+        or await is_blocked(user_id, person_id)
+        or await is_blocked(person_id, user_id)
+    ):
+        return None
+    return person
+
+
+async def read_body(request):
+    try:
+        body = await request.json()
+        return body, int(body["id"])
+    except (ValueError, KeyError, TypeError):
+        return None, None
+
+
 async def is_mutual(a: int, b: int) -> bool:
     return await has_like(a, b) and await has_like(b, a)
 
@@ -174,24 +205,13 @@ async def api_vibe(request):
     user = request["user"]
     user_id = user["telegram_id"]
 
-    try:
-        body = await request.json()
-        person_id = int(body["id"])
-        action = body["action"]
-    except (ValueError, KeyError, TypeError):
+    body, person_id = await read_body(request)
+    if body is None or body.get("action") not in ("like", "skip"):
         return error("bad_request", 400)
+    action = body["action"]
 
-    if action not in ("like", "skip") or person_id == user_id:
-        return error("bad_request", 400)
-
-    person = await get_user(person_id)
-    if (
-        not person
-        or person["is_banned"]
-        or not is_adult(person["age"])
-        or await is_blocked(user_id, person_id)
-        or await is_blocked(person_id, user_id)
-    ):
+    person = await get_target(user_id, person_id)
+    if not person:
         return error("not_found", 404)
 
     if action == "skip":
@@ -213,6 +233,46 @@ async def api_vibe(request):
         await notify_liked(bot, person_id)
 
     return web.json_response({"mutual": False})
+
+
+async def api_question(request):
+    user_id = request["user"]["telegram_id"]
+
+    body, person_id = await read_body(request)
+    text = str((body or {}).get("text") or "").strip()
+    if body is None or not 0 < len(text) <= MAX_QUESTION_LENGTH:
+        return error("bad_request", 400)
+
+    if not await get_target(user_id, person_id):
+        return error("not_found", 404)
+
+    question_id = await send_question(
+        bot=request.app["bot"],
+        from_user=user_id,
+        to_user=person_id,
+        text=text,
+    )
+    if question_id is None:
+        return error("not_delivered", 502)
+    return web.json_response({"ok": True})
+
+
+async def api_report(request):
+    user_id = request["user"]["telegram_id"]
+
+    body, person_id = await read_body(request)
+    code = (body or {}).get("reason")
+    if body is None or code not in ui.REPORT_REASONS:
+        return error("bad_request", 400)
+
+    if not await get_target(user_id, person_id):
+        return error("not_found", 404)
+
+    reason = ui.REPORT_REASONS[code]
+    # add_report заодно скрывает анкету для автора жалобы
+    if await add_report(user_id, person_id, reason):
+        await notify_admin_report(request.app["bot"], user_id, person_id, reason)
+    return web.json_response({"ok": True})
 
 
 async def api_vibes(request):
@@ -312,6 +372,8 @@ def setup_webapp(app: web.Application, bot):
     app.router.add_get("/app/api/me", api_me)
     app.router.add_get("/app/api/next", api_next)
     app.router.add_post("/app/api/vibe", api_vibe)
+    app.router.add_post("/app/api/question", api_question)
+    app.router.add_post("/app/api/report", api_report)
     app.router.add_get("/app/api/vibes", api_vibes)
     app.router.add_post("/app/api/settings", api_settings)
     app.router.add_get("/app/api/photo/{person_id}", api_photo)

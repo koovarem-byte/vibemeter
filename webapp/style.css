@@ -570,3 +570,31 @@ h1 { font-weight: 800; letter-spacing: -0.03em; }
 
 .streak-chip { border-radius: 10px; background: transparent; }
 .toast { border-radius: 12px; background: #120e22; }
+
+/* ---------- Шторка ---------- */
+.sheet { position: fixed; inset: 0; z-index: 55; }
+.sheet-backdrop { position: absolute; inset: 0; background: rgba(4, 3, 8, .7); animation: fadeIn .2s ease; }
+.sheet-panel {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  max-width: 520px; margin: 0 auto;
+  padding: 10px 16px calc(18px + var(--safe-b));
+  border-radius: 18px 18px 0 0;
+  border: 1px solid transparent; border-bottom: 0;
+  background: linear-gradient(#0f0c1c, #0f0c1c) padding-box, var(--edge) border-box;
+  box-shadow: 0 -10px 40px rgba(155, 92, 255, .18);
+  animation: slideUp .25s ease;
+}
+.sheet-grip { width: 40px; height: 4px; border-radius: 4px; background: rgba(196, 140, 255, .4); margin: 0 auto 14px; }
+.sheet-title { font-size: 19px !important; letter-spacing: -0.01em !important; text-transform: none !important; color: var(--text) !important; margin: 0 0 4px; }
+.field {
+  width: 100%; resize: none;
+  padding: 12px 14px; border-radius: 12px;
+  font: inherit; color: var(--text);
+  background: rgba(255, 255, 255, .02);
+  border: 1px solid rgba(196, 140, 255, .45);
+  outline: none;
+}
+.field:focus { border-color: #c084fc; box-shadow: 0 0 0 3px rgba(155, 92, 255, .15), 0 0 12px rgba(155, 92, 255, .3); }
+.btn:disabled { opacity: .45; box-shadow: none; }
+@keyframes fadeIn { from { opacity: 0; } }
+@keyframes slideUp { from { transform: translateY(100%); } }

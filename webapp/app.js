@@ -78,6 +78,8 @@ const api = DEMO ? makeDemoApi() : {
   vibe(id, action) { return this.call("vibe", { id, action }); },
   vibes() { return this.call("vibes"); },
   setSearch(value) { return this.call("settings", { search_gender: value }); },
+  question(id, text) { return this.call("question", { id, text }); },
+  report(id, reason) { return this.call("report", { id, reason }); },
   async photo(id) {
     const res = await fetch(`api/photo/${id}`, { headers: { "X-Init-Data": tg.initData } });
     if (!res.ok) return null;
@@ -140,6 +142,8 @@ function makeDemoApi() {
       return { incoming: queue.filter((p) => p.likes_me), mutual };
     },
     async setSearch(v) { me.search_gender = v; return { ok: true }; },
+    async question() { await wait(300); return { ok: true }; },
+    async report(id) { await wait(200); queue = queue.filter((x) => x.id !== id); return { ok: true }; },
     async photo() { return null; },
   };
 }
@@ -173,6 +177,7 @@ function route() { return (location.hash || "#home").slice(1); }
 function go(id) { if (route() === id) render(); else location.hash = id; }
 window.addEventListener("hashchange", () => {
   document.getElementById("overlay").classList.add("hidden");
+  closeSheet();
   render();
 });
 
@@ -603,6 +608,90 @@ function toBot(hint) {
 }
 
 // =========================================================
+// Шторка: вопрос и жалоба
+// =========================================================
+const REPORT_REASONS = [
+  ["fake", "Фейк или спам"],
+  ["rude", "Оскорбления"],
+  ["nsfw", "Неприемлемый контент"],
+  ["minor", "Похоже, младше 18"],
+  ["other", "Другое"],
+];
+const QUESTION_MAX = 500;
+
+function openSheet(html) {
+  const sheet = document.getElementById("sheet");
+  sheet.innerHTML = `<div class="sheet-backdrop" data-close></div><div class="sheet-panel"><div class="sheet-grip"></div>${html}</div>`;
+  sheet.classList.remove("hidden");
+  sheet.querySelectorAll("[data-close]").forEach((el) => el.onclick = closeSheet);
+  return sheet;
+}
+
+function closeSheet() {
+  document.getElementById("sheet").classList.add("hidden");
+}
+
+function openQuestion(p) {
+  const sheet = openSheet(`
+    <h2 class="sheet-title">Задай вопрос · ${esc(p.name)}</h2>
+    <p class="muted small" style="margin:0 0 12px">Анонимно: ${esc(p.name)} не узнает, кто спросил</p>
+    <textarea id="q-text" class="field" rows="4" maxlength="${QUESTION_MAX}" placeholder="Например: какой фильм пересматриваешь чаще всего?"></textarea>
+    <div class="row between small muted" style="margin:6px 2px 14px"><span>Ответ придёт в чат с ботом</span><span id="q-count">0 / ${QUESTION_MAX}</span></div>
+    <button class="btn btn-violet btn-block" id="q-send" disabled>${svg("chat")} Отправить</button>`);
+  const area = sheet.querySelector("#q-text"), send = sheet.querySelector("#q-send");
+  area.oninput = () => {
+    const n = area.value.trim().length;
+    sheet.querySelector("#q-count").textContent = `${area.value.length} / ${QUESTION_MAX}`;
+    send.disabled = n === 0;
+  };
+  setTimeout(() => area.focus(), 250);
+  send.onclick = async () => {
+    send.disabled = true;
+    try {
+      await api.question(p.id, area.value.trim());
+      haptic("success");
+      closeSheet();
+      toast("Вопрос улетел 💬");
+    } catch (e) {
+      send.disabled = false;
+      toast(e.code === "not_delivered" ? "Не получилось доставить, человек закрыл бота" : "Не получилось отправить, попробуй ещё раз");
+    }
+  };
+}
+
+function openReport(p) {
+  const sheet = openSheet(`
+    <h2 class="sheet-title">Пожаловаться · ${esc(p.name)}</h2>
+    <p class="muted small" style="margin:0 0 12px">Анкета сразу пропадёт из твоей выдачи, модератор проверит</p>
+    <div class="list">${REPORT_REASONS.map(([code, label]) =>
+      `<button class="set-item" data-reason="${code}"><span class="st"><b>${label}</b></span><span class="chev">${svg("chev")}</span></button>`).join("")}</div>
+    <button class="btn btn-ghost btn-block mt" data-close>Отмена</button>`);
+  sheet.querySelectorAll("[data-close]").forEach((el) => el.onclick = closeSheet);
+  sheet.querySelectorAll("[data-reason]").forEach((b) => b.onclick = async () => {
+    try {
+      await api.report(p.id, b.dataset.reason);
+      haptic("success");
+      closeSheet();
+      toast("Жалоба отправлена, спасибо");
+      dismissCard();
+    } catch (_) {
+      toast("Не получилось отправить, попробуй ещё раз");
+    }
+  });
+}
+
+// Убрать карточку без лайка и скипа (после жалобы)
+function dismissCard() {
+  const card = document.querySelector("#deck .pcard:not(.back)");
+  if (card) {
+    card.style.transition = "transform .3s ease, opacity .3s ease";
+    card.style.transform = "translateY(40px) scale(.9)";
+    card.style.opacity = "0";
+  }
+  setTimeout(loadCandidate, 300);
+}
+
+// =========================================================
 // Рендер и обработчики экранов
 // =========================================================
 function errorHtml(e) {
@@ -639,8 +728,8 @@ function render() {
     loadCandidate();
     document.getElementById("btn-like").onclick = () => decide("like");
     document.getElementById("btn-skip").onclick = () => decide("skip");
-    document.getElementById("btn-question").onclick = () => toBot("Вопрос можно задать в чате с ботом: «Найти вайб» → «Вопрос»");
-    document.getElementById("btn-report").onclick = () => toBot("Пожаловаться можно в чате с ботом на карточке анкеты");
+    document.getElementById("btn-question").onclick = () => state.candidate && openQuestion(state.candidate);
+    document.getElementById("btn-report").onclick = () => state.candidate && openReport(state.candidate);
     document.querySelectorAll("[data-sg]").forEach((b) => b.onclick = async () => {
       haptic("light");
       await api.setSearch(b.dataset.sg).catch(() => toast("Не получилось сохранить"));
@@ -686,6 +775,7 @@ function render() {
 if (tg && tg.BackButton) tg.BackButton.onClick(() => {
   const ov = document.getElementById("overlay");
   if (!ov.classList.contains("hidden")) { ov.classList.add("hidden"); return; }
+  if (!document.getElementById("sheet").classList.contains("hidden")) { closeSheet(); return; }
   history.length > 1 ? history.back() : go("home");
 });
 
