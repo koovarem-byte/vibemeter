@@ -43,6 +43,7 @@ from keyboards import (
     game_keyboard,
     game_result_actions,
     back_keyboard,
+    consent_keyboard,
 )
 
 from states import ProfileState, QuestionState
@@ -357,6 +358,81 @@ async def notify_mutual(bot, user_id, person_id, title):
 
 
 # =========================================================
+# СОГЛАСИЕ И ПОЛИТИКА
+# =========================================================
+
+CONSENT_TEXT = (
+    "<b>🔥 Добро пожаловать в Вайбометр</b>\n\n"
+    "Здесь можно находить новых знакомых "
+    "по интересам и общему вайбу.\n\n"
+    "<b>Перед началом:</b>\n"
+    "• бот только для тех, кому есть 18;\n"
+    "• мы храним твою анкету и фото, чтобы показывать "
+    "тебя другим пользователям;\n"
+    "• фото и твой Telegram видны человеку только "
+    "после взаимного вайба;\n"
+    "• удалить все данные можно в любой момент: "
+    "⚙️ Настройки → Удалить профиль.\n\n"
+    "Нажимая «Принимаю», ты подтверждаешь, что тебе есть 18, "
+    "и соглашаешься с политикой конфиденциальности (/privacy)."
+)
+
+PRIVACY_TEXT = (
+    "<b>📄 ПОЛИТИКА КОНФИДЕНЦИАЛЬНОСТИ</b>\n\n"
+    "<b>Что храним:</b> Telegram ID и username, имя, возраст, пол, "
+    "город, интересы, текст «о себе», фото, кого ты ищешь; "
+    "лайки, пропуски, блокировки, жалобы, вопросы и ответы, "
+    "ответы в играх.\n\n"
+    "<b>Зачем:</b> чтобы подбирать анкеты, показывать процент вайба "
+    "и соединять людей после взаимного лайка. "
+    "Данные не продаём и не передаём третьим лицам.\n\n"
+    "<b>Кто видит:</b> другие пользователи видят анкету без фото. "
+    "Фото и ссылка на твой Telegram открываются только при "
+    "взаимном вайбе. Жалобы на тебя видит администратор.\n\n"
+    "<b>Где хранится:</b> в базе данных бота на сервере Neon (PostgreSQL).\n\n"
+    "<b>Удаление:</b> ⚙️ Настройки → Удалить профиль — "
+    "анкета, фото, лайки, вопросы и игры удаляются.\n\n"
+    "<b>Возраст:</b> только 18+. Анкеты младше 18 не сохраняем.\n\n"
+    "Вопросы по данным — напиши администратору бота."
+)
+
+
+@router.message(Command("privacy"))
+async def privacy_handler(message: Message):
+    await message.answer(PRIVACY_TEXT)
+
+
+@router.callback_query(F.data == "consent:policy")
+async def consent_policy_callback(callback: CallbackQuery):
+    await callback.answer()
+    await callback.message.answer(PRIVACY_TEXT)
+
+
+@router.callback_query(F.data == "consent:accept")
+async def consent_accept_callback(
+    callback: CallbackQuery,
+    state: FSMContext,
+):
+    # Запись создаётся только после согласия
+    if not await get_user(callback.from_user.id):
+        await create_user(
+            telegram_id=callback.from_user.id,
+            username=callback.from_user.username,
+            full_name=callback.from_user.full_name,
+        )
+
+    await callback.answer()
+    await callback.message.edit_reply_markup(reply_markup=None)
+
+    await state.clear()
+    await callback.message.answer(
+        "Отлично! Давай создадим твой профиль.\n\n"
+        "<b>Как тебя зовут?</b>"
+    )
+    await state.set_state(ProfileState.name)
+
+
+# =========================================================
 # START
 # =========================================================
 
@@ -365,21 +441,11 @@ async def start_handler(message: Message, state: FSMContext):
     user = await get_user(message.from_user.id)
 
     if not user:
-        await create_user(
-            telegram_id=message.from_user.id,
-            username=message.from_user.username,
-            full_name=message.from_user.full_name,
-        )
-
         await state.clear()
         await message.answer(
-            "<b>🔥 Добро пожаловать в Вайбометр</b>\n\n"
-            "Здесь можно находить новых знакомых "
-            "по интересам и общему вайбу.\n\n"
-            "Сначала давай создадим твой профиль.\n\n"
-            "<b>Как тебя зовут?</b>"
+            CONSENT_TEXT,
+            reply_markup=consent_keyboard(),
         )
-        await state.set_state(ProfileState.name)
         return
 
     profile_complete = all(

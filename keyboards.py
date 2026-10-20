@@ -360,3 +360,25 @@ def cancel_edit_keyboard():
         resize_keyboard=True,
         input_field_placeholder="Введи данные или отмени",
     )
+
+# =========================================================
+# СОГЛАСИЕ
+# =========================================================
+
+def consent_keyboard():
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="✅ Мне есть 18, принимаю",
+                    callback_data="consent:accept",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="📄 Политика конфиденциальности",
+                    callback_data="consent:policy",
+                ),
+            ],
+        ]
+    )
