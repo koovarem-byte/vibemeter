@@ -35,6 +35,7 @@ from database import (
 )
 from handlers import (
     calculate_vibe,
+    same_city,
     notify_admin_report,
     notify_liked,
     notify_mutual,
@@ -119,6 +120,7 @@ def person_json(person, viewer=None, full=False):
         vibe, common = calculate_vibe(viewer, person)
         data["vibe"] = vibe
         data["common"] = common
+        data["same_city"] = same_city(viewer, person)
     if full:
         # только себе и при взаимном вайбе
         data["username"] = person["username"]
@@ -233,7 +235,7 @@ async def api_vibe(request):
         await notify_mutual(bot, user_id, person_id)
         return web.json_response({
             "mutual": True,
-            "match": person_json(person, full=True),
+            "match": person_json(person, viewer=user, full=True),
         })
 
     if is_new:

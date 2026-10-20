@@ -3,30 +3,27 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#07060d">
   <title>Вайбометр</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Marck+Script&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Marck+Script&family=Manrope:wght@400;500;600;700;800&family=Unbounded:wght@500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div class="bg-glow"></div>
+  <div class="bg"></div>
 
   <div class="layout">
     <aside class="sidebar">
-      <div class="logo">Вайбометр</div>
+      <div class="brand" data-go="home"></div>
       <nav class="side-nav" id="side-nav"></nav>
-      <div class="side-user" id="side-user"></div>
     </aside>
 
     <main class="content">
       <header class="topbar">
-        <div class="logo logo-sm">Вайбометр</div>
-        <div class="topbar-right">
-          <div class="streak-chip" id="top-streak"></div>
-          <div class="avatar avatar-sm" id="top-avatar"></div>
-        </div>
+        <div class="brand" data-go="home"></div>
+        <div class="topbar-right" id="topbar-right"></div>
       </header>
       <div id="view" class="view"></div>
     </main>
@@ -36,7 +33,9 @@
 
   <div id="overlay" class="overlay hidden"></div>
   <div id="sheet" class="sheet hidden"></div>
+  <div id="onb" class="onb hidden"></div>
   <div id="toast" class="toast hidden"></div>
+  <input type="file" id="photo-input" accept="image/*" hidden>
 
   <script src="app.js"></script>
 </body>
