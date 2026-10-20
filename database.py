@@ -616,6 +616,14 @@ async def get_stats(user_id: int):
         questions_received = await conn.fetchval(
             "SELECT COUNT(*) FROM questions WHERE to_user = $1", user_id
         )
+        questions_sent = await conn.fetchval(
+            "SELECT COUNT(*) FROM questions WHERE from_user = $1", user_id
+        )
+        games = await conn.fetchval("""
+            SELECT COUNT(*) FROM games
+            WHERE (user_one = $1 OR user_two = $1)
+              AND status = 'finished'
+        """, user_id)
         mutual_likes = await conn.fetchval("""
             SELECT COUNT(*) FROM likes
             WHERE from_user = $1
@@ -630,6 +638,8 @@ async def get_stats(user_id: int):
             "skips": skips,
             "blocks": blocks,
             "questions_received": questions_received,
+            "questions_sent": questions_sent,
+            "games": games,
             "mutual_likes": mutual_likes,
         }
 async def get_admin_stats():

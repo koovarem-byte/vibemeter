@@ -1338,27 +1338,17 @@ async def statistics_handler(message: Message):
         )
         return
 
-    try:
-        from database import get_stats
+    stats = await get_stats(message.from_user.id)
 
-        stats = await get_stats(
-            message.from_user.id
-        )
-
-        text = (
-            "<b>📊 ТВОЯ СТАТИСТИКА</b>\n\n"
-            f"👀 Просмотров: {stats.get('views', 0)}\n"
-            f"💜 Лайков: {stats.get('likes', 0)}\n"
-            f"🤝 Взаимных вайбов: "
-            f"{stats.get('mutual_likes', 0)}"
-        )
-
-    except Exception:
-        text = (
-            "<b>📊 ТВОЯ СТАТИСТИКА</b>\n\n"
-            "Статистика пока собирается.\n"
-            "Основные показатели появятся после активности."
-        )
+    text = (
+        "<b>📊 ТВОЯ СТАТИСТИКА</b>\n\n"
+        f"💜 Ты поймал вайбов: {stats['likes_sent']}\n"
+        f"💌 Тебя выбрали: {stats['likes_received']}\n"
+        f"🤝 Взаимных вайбов: {stats['mutual_likes']}\n"
+        f"💬 Вопросов задано: {stats['questions_sent']}\n"
+        f"📩 Вопросов получено: {stats['questions_received']}\n"
+        f"🎮 Игр сыграно: {stats['games']}"
+    )
 
     await message.answer(
         text,
@@ -1807,20 +1797,19 @@ async def achievements_callback(callback: CallbackQuery):
 
     stats = await get_stats(callback.from_user.id)
 
-    if not stats:
-        stats = {}
+    achievements = (
+        ("Первый вайб", stats["likes_sent"] >= 1),
+        ("Взаимность", stats["mutual_likes"] >= 1),
+        (
+            "Первое общение",
+            stats["questions_sent"] + stats["questions_received"] >= 1,
+        ),
+        ("Первая игра", stats["games"] >= 1),
+    )
 
-    likes = stats.get("likes", 0)
-    mutual = stats.get("mutual", 0)
-    questions = stats.get("questions", 0)
-    games = stats.get("games", 0)
-
-    text = (
-        "<b>🏆 ТВОИ ДОСТИЖЕНИЯ</b>\n\n"
-        f"{'✅' if likes >= 1 else '🔒'} Первый вайб — {likes >= 1}\n"
-        f"{'✅' if mutual >= 1 else '🔒'} Взаимность — {mutual >= 1}\n"
-        f"{'✅' if questions >= 1 else '🔒'} Первое общение — {questions >= 1}\n"
-        f"{'✅' if games >= 1 else '🔒'} Первая игра — {games >= 1}"
+    text = "<b>🏆 ТВОИ ДОСТИЖЕНИЯ</b>\n\n" + "\n".join(
+        f"{'✅' if done else '🔒'} {title}"
+        for title, done in achievements
     )
 
     await callback.message.answer(text)
