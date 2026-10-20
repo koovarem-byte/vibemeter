@@ -15,19 +15,16 @@ from handlers import router
 
 
 # Режим работы:
-# - WEBHOOK_BASE_URL задан (или Render дал RENDER_EXTERNAL_URL) → webhook.
-#   Запрос от Telegram будит уснувший сервис.
-# - иначе → long polling (локальный запуск).
-WEBHOOK_BASE_URL = (
-    os.getenv("WEBHOOK_BASE_URL")
-    or os.getenv("RENDER_EXTERNAL_URL")
-    or ""
-).rstrip("/")
+# - по умолчанию long polling: процесс сам ходит в Telegram, хостингу
+#   нужен только постоянно работающий контейнер;
+# - WEBHOOK_BASE_URL задан (https://адрес-приложения) → webhook.
+#   Нужен, если хостинг усыпляет приложение без входящих запросов.
+WEBHOOK_BASE_URL = (os.getenv("WEBHOOK_BASE_URL") or "").rstrip("/")
 WEBHOOK_PATH = "/webhook"
 # Telegram присылает этот секрет в заголовке, чужие запросы отбрасываются.
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET") or secrets.token_urlsafe(32)
 
-PORT = int(os.getenv("PORT", "10000"))
+PORT = int(os.getenv("PORT", "8080"))
 
 
 async def health(request):

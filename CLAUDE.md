@@ -27,12 +27,12 @@
 - Репозиторий: https://github.com/koovarem-byte/vibemeter
 - Локальная папка: `/Users/mac/PycharmProjects/вайбометр`
 - ID администратора — `ADMIN_ID` в `.env` / переменных хостинга (`/admin` — статистика, сюда же приходят жалобы).
-- Render-сервис `vibemeter` приостановлен (Suspended) из-за лимита бесплатного тарифа. Это не ошибка кода. Оплата Render не вариант.
+- Хостинг: Apply.build (бесплатный тариф, Финляндия), сборка по `Dockerfile`, режим polling. Render не используем.
 
 ## Карта кода
 | Файл | Что делает |
 |---|---|
-| `bot.py` | Точка входа. Поднимает aiohttp-сервер (`/` и `/health`, порт из `PORT`, по умолчанию 10000) под Render, затем `init_db()` и long polling aiogram. |
+| `bot.py` | Точка входа. Поднимает aiohttp-сервер (`/` и `/health`, порт из `PORT`, по умолчанию 8080), затем `init_db()` и long polling aiogram. С `WEBHOOK_BASE_URL` — режим webhook (`/webhook`, секретный заголовок). |
 | `config.py` | Читает `BOT_TOKEN` и `ADMIN_ID` из `.env`, падает, если их нет. |
 | `database.py` | Весь доступ к Neon: пул asyncpg (ssl=require), `init_db()` создаёт таблицы, функции для users / likes / skips / blocks / candidates / questions / games / stats. |
 | `handlers.py` | Весь aiogram-роутер (около 1650 строк): регистрация профиля, поиск, лайк/скип/блок, вопросы, игры, статистика, настройки, `/admin`. |
@@ -102,7 +102,7 @@
 
 ## Решения (не обсуждаем заново)
 - Старую SQLite-базу не мигрируем. Начинаем с чистой в Neon.
-- Render за деньги не предлагаем.
+- Render не используем.
 - Хочу закончить быстро, без лишних вопросов и теории.
 - Бот только для 18+ (см. P0.1).
 
