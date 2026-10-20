@@ -43,7 +43,7 @@ from keyboards import (
     back_keyboard,
 )
 
-from states import ProfileState
+from states import ProfileState, QuestionState
 from utils import (
     normalize_interests,
     get_common_interests,
@@ -754,6 +754,98 @@ async def contact_callback(callback: CallbackQuery):
         )
 
 # =========================================================
+# РУЧНЫЕ ВОПРОСЫ
+# =========================================================
+
+@router.callback_query(F.data.startswith("question:"))
+async def question_callback(
+    callback: CallbackQuery,
+    state: FSMContext,
+):
+    person_id = int(callback.data.split(":")[1])
+
+    if person_id == callback.from_user.id:
+        await callback.answer(
+            "Нельзя задать вопрос самому себе.",
+            show_alert=True,
+        )
+        return
+
+    person = await get_user(person_id)
+
+    if not person:
+        await callback.answer(
+            "Пользователь не найден.",
+            show_alert=True,
+        )
+        return
+
+    await state.clear()
+    await state.update_data(question_to=person_id)
+    await state.set_state(QuestionState.answering)
+
+    await callback.message.answer(
+        "💬 <b>Напиши свой вопрос</b>\n\n"
+        "Получатель увидит именно твой текст "
+        "и сможет ответить на него.\n\n"
+        "Отправь вопрос одним сообщением."
+    )
+
+    await callback.answer()
+
+
+@router.message(QuestionState.answering, F.text)
+async def question_text_handler(
+    message: Message,
+    state: FSMContext,
+):
+    question_text = (message.text or "").strip()
+
+    if question_text.startswith("/"):
+        await message.answer(
+            "Сначала отправь текст вопроса или отмени действие."
+        )
+        return
+
+    if not question_text or len(question_text) > 500:
+        await message.answer(
+            "Вопрос должен содержать от 1 до 500 символов. "
+            "Попробуй ещё раз."
+        )
+        return
+
+    data = await state.get_data()
+    person_id = data.get("question_to")
+
+    if not person_id:
+        await state.clear()
+        await message.answer(
+            "Не удалось определить получателя. "
+            "Открой анкету и попробуй снова."
+        )
+        return
+
+    question_id = await send_question(
+        bot=message.bot,
+        from_user=message.from_user.id,
+        to_user=person_id,
+        text=question_text,
+    )
+
+    if question_id is None:
+        await message.answer(
+            "Не удалось доставить вопрос. "
+            "Возможно, получатель не запускал бота."
+        )
+        return
+
+    await state.clear()
+    await message.answer(
+        "✅ Вопрос отправлен! Когда пользователь ответит, "
+        "я пришлю тебе его ответ."
+    )
+
+# =========================================================
 # LIKE
 # =========================================================
 
@@ -813,7 +905,7 @@ async def like_callback(callback: CallbackQuery):
         return
 
     await show_next_profile(callback.message, user_id)
-    
+
 # =========================================================
 # SKIP
 # =========================================================

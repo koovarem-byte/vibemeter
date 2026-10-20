@@ -12,7 +12,7 @@ class ProfileState(StatesGroup):
 
 class QuestionState(StatesGroup):
     answering = State()
-
+    replying = State()
 
 class GameState(StatesGroup):
     waiting_opponent = State()

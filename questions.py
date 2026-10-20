@@ -1,5 +1,3 @@
-import asyncio
-
 from aiogram import Bot
 
 from database import (
@@ -9,65 +7,50 @@ from database import (
 )
 
 
-# =========================================================
-# ВОПРОСЫ
-# =========================================================
-
-QUESTIONS = [
-    "Какую музыку можешь слушать часами?",
-    "Какая игра тебе никогда не надоест?",
-    "Какой фильм можешь пересматривать много раз?",
-    "Чем обычно занимаешься в свободное время?",
-    "Какой у тебя самый странный интерес?",
-    "Что тебе реально нравится делать?",
-    "Куда бы ты поехал прямо сейчас?",
-    "Какой навык хотел бы освоить?",
-    "Что тебя может рассмешить почти всегда?",
-    "Какой у тебя идеальный выходной?",
-    "Что ты выберешь: море или горы?",
-    "Какой предмет тебе реально нравился в школе?",
-]
-
-
-def get_random_question() -> str:
-    import random
-
-    return random.choice(QUESTIONS)
+MAX_QUESTION_LENGTH = 500
+MAX_ANSWER_LENGTH = 500
 
 
 # =========================================================
-# СОЗДАТЬ ВОПРОС
+# СОЗДАТЬ И ОТПРАВИТЬ ВОПРОС, НАПИСАННЫЙ ПОЛЬЗОВАТЕЛЕМ
 # =========================================================
 
 async def send_question(
     bot: Bot,
     from_user: int,
     to_user: int,
+    text: str,
 ):
-    question = get_random_question()
+    question_text = (text or "").strip()
+
+    if not question_text:
+        return None
+
+    if len(question_text) > MAX_QUESTION_LENGTH:
+        question_text = question_text[:MAX_QUESTION_LENGTH]
+
+    if from_user == to_user:
+        return None
 
     question_id = await add_question(
         from_user=from_user,
         to_user=to_user,
-        text=question,
+        text=question_text,
     )
 
     try:
         await bot.send_message(
             to_user,
-            f"""
-<b>💬 Тебе задали вопрос</b>
-
-{question}
-
-Напиши ответ прямо сюда 👇
-""",
+            "<b>💬 Тебе задали вопрос!</b>\n\n"
+            f"{question_text}\n\n"
+            "Ответь на этот вопрос сообщением боту 👇",
         )
-
-        return question_id
-
     except Exception:
+        # Если отправить сообщение не удалось,
+        # вопрос остаётся в базе, но возвращаем None.
         return None
+
+    return question_id
 
 
 # =========================================================
@@ -95,31 +78,27 @@ async def submit_answer(
     if question["answered"]:
         return False
 
-    answer = answer.strip()
+    answer_text = (answer or "").strip()
 
-    if not answer:
+    if not answer_text:
         return False
 
-    if len(answer) > 500:
-        answer = answer[:500]
+    if len(answer_text) > MAX_ANSWER_LENGTH:
+        answer_text = answer_text[:MAX_ANSWER_LENGTH]
 
     await answer_question(
         question_id=question_id,
-        answer=answer,
+        answer=answer_text,
     )
 
     try:
         await bot.send_message(
             question["from_user"],
-            f"""
-<b>💬 На твой вопрос ответили</b>
-
-<b>Вопрос:</b>
-{question["text"]}
-
-<b>Ответ:</b>
-{answer}
-""",
+            "<b>💬 На твой вопрос ответили!</b>\n\n"
+            f"<b>Вопрос:</b>\n{question['text']}\n\n"
+            f"<b>Ответ:</b>\n{answer_text}",
         )
     except Exception:
         pass
+
+    return True
