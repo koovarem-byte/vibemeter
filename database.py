@@ -268,14 +268,16 @@ async def delete_user(telegram_id: int):
 
 # LIKES
 
-async def add_like(from_user: int, to_user: int):
+async def add_like(from_user: int, to_user: int) -> bool:
+    """True, если лайк новый."""
     db = await get_pool()
     async with db.acquire() as conn:
-        await conn.execute("""
+        result = await conn.execute("""
             INSERT INTO likes (from_user, to_user)
             VALUES ($1, $2)
             ON CONFLICT (from_user, to_user) DO NOTHING
         """, from_user, to_user)
+        return result.endswith(" 1")
 
 
 async def has_like(from_user: int, to_user: int):

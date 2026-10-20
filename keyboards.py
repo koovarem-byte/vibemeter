@@ -442,6 +442,23 @@ def admin_report_keyboard(person_id: int):
 # ВОПРОСЫ
 # =========================================================
 
+def liked_you_keyboard():
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="Посмотреть",
+                    callback_data="my_vibes",
+                ),
+                InlineKeyboardButton(
+                    text="Позже",
+                    callback_data="dismiss",
+                ),
+            ]
+        ]
+    )
+
+
 def question_answer_keyboard(question_id: int):
     return InlineKeyboardMarkup(
         inline_keyboard=[

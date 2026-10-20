@@ -50,6 +50,7 @@ from keyboards import (
     back_keyboard,
     consent_keyboard,
     question_answer_keyboard,
+    liked_you_keyboard,
     report_reasons_keyboard,
     admin_report_keyboard,
     REPORT_REASONS,
@@ -331,6 +332,19 @@ async def user_profile_message(message, user, user_id):
             text,
             reply_markup=after_profile(),
         )
+
+
+async def notify_liked(bot, person_id):
+    """Тебя оценили: без имени, чтобы сохранить интригу."""
+    try:
+        await bot.send_message(
+            person_id,
+            "🩷 <b>Тебя оценили</b>\n\n"
+            "Кто-то поймал твой вайб. Загляни, вдруг это взаимно.",
+            reply_markup=liked_you_keyboard(),
+        )
+    except Exception:
+        logging.exception("Не удалось отправить уведомление %s", person_id)
 
 
 async def notify_mutual(bot, user_id, person_id, title):
@@ -811,9 +825,24 @@ async def find_vibe_handler(message: Message):
 
 @router.message(F.text == "💜 Мои вайбы")
 async def my_vibes_handler(message: Message):
-    likes = await get_incoming_likes(
-        message.from_user.id
-    )
+    await show_incoming_likes(message, message.from_user.id)
+
+
+@router.callback_query(F.data == "my_vibes")
+async def my_vibes_callback(callback: CallbackQuery):
+    await callback.answer()
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await show_incoming_likes(callback.message, callback.from_user.id)
+
+
+@router.callback_query(F.data == "dismiss")
+async def dismiss_callback(callback: CallbackQuery):
+    await callback.answer()
+    await callback.message.delete()
+
+
+async def show_incoming_likes(message, user_id):
+    likes = await get_incoming_likes(user_id)
 
     if not likes:
         await message.answer(
@@ -1039,8 +1068,10 @@ async def like_callback(callback: CallbackQuery):
         to_user=person_id,
     )
 
+    is_new = False
+
     if not already_liked:
-        await add_like(
+        is_new = await add_like(
             from_user=user_id,
             to_user=person_id,
         )
@@ -1061,6 +1092,9 @@ async def like_callback(callback: CallbackQuery):
             callback.bot, user_id, person_id, "ВАЙБ ВЗАИМНЫЙ"
         )
         return
+
+    if is_new:
+        await notify_liked(callback.bot, person_id)
 
     await show_next_profile(callback.message, user_id)
 
@@ -1725,7 +1759,7 @@ async def game_like_callback(callback: CallbackQuery):
     person_id = int(callback.data.split(":")[1])
     user_id = callback.from_user.id
 
-    await add_like(
+    is_new = await add_like(
         from_user=user_id,
         to_user=person_id,
     )
@@ -1734,6 +1768,9 @@ async def game_like_callback(callback: CallbackQuery):
         from_user=person_id,
         to_user=user_id,
     )
+
+    if not mutual and is_new:
+        await notify_liked(callback.bot, person_id)
 
     if mutual:
         await callback.answer(
