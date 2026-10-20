@@ -45,7 +45,6 @@ from keyboards import (
     settings_keyboard,
     delete_confirm_keyboard,
     stats_keyboard,
-    game_actions,
     game_keyboard,
     game_result_actions,
     question_answer_keyboard,
@@ -65,6 +64,7 @@ from utils import (
     MAX_AGE,
 )
 from questions import send_question, submit_answer, get_question_data
+from database import get_game
 from games import (
     start_game,
     get_current_question,
@@ -1077,43 +1077,51 @@ async def vibe_games_handler(message: Message):
 
     game = await start_game(opponent_id, user_id)
 
-    await message.answer(ui.GAME_FOUND, reply_markup=game_actions(game["id"]))
+    # Первый вопрос сразу обоим — без лишней кнопки «Начать»
+    for player_id in (user_id, opponent_id):
+        await send_game_question(
+            message.bot, player_id, game["id"], intro=ui.GAME_FOUND
+        )
+
+
+async def send_game_question(bot, chat_id, game_id, intro=None):
+    """Шлёт игроку его текущий вопрос. False — вопросов не осталось."""
+    question = await get_current_question(game_id, chat_id)
+
+    if not question:
+        return False
 
     try:
-        await message.bot.send_message(
-            opponent_id,
-            ui.GAME_FOUND,
-            reply_markup=game_actions(game["id"]),
+        if intro:
+            await bot.send_message(chat_id, intro)
+
+        await bot.send_message(
+            chat_id,
+            ui.game_question(question["index"], question["question"]),
+            reply_markup=game_keyboard(
+                game_id,
+                question["index"],
+                question["a"],
+                question["b"],
+            ),
         )
     except Exception:
-        pass
+        logging.exception("Не удалось отправить вопрос игры %s", chat_id)
 
-
-async def send_game_question(message, game_id, question):
-    await message.answer(
-        ui.game_question(question["index"], question["question"]),
-        reply_markup=game_keyboard(
-            game_id,
-            question["index"],
-            question["a"],
-            question["b"],
-        ),
-    )
+    return True
 
 
 @router.callback_query(F.data.startswith("game_start:"))
 async def game_start_callback(callback: CallbackQuery):
     game_id = int(callback.data.split(":")[1])
 
-    question = await get_current_question(game_id, callback.from_user.id)
-
-    if not question:
+    if not await get_current_question(game_id, callback.from_user.id):
         await callback.answer(ui.GAME_NOT_FOUND, show_alert=True)
         return
 
     await callback.answer()
     await callback.message.edit_reply_markup(reply_markup=None)
-    await send_game_question(callback.message, game_id, question)
+    await send_game_question(callback.bot, callback.from_user.id, game_id)
 
 
 @router.callback_query(F.data.startswith("game_answer:"))
@@ -1129,16 +1137,23 @@ async def game_answer_callback(callback: CallbackQuery):
     await callback.answer(ui.TOAST_ANSWER)
     await callback.message.edit_reply_markup(reply_markup=None)
 
-    next_question = await get_current_question(game_id, user_id)
-
-    if next_question:
-        await send_game_question(callback.message, game_id, next_question)
+    if await send_game_question(callback.bot, user_id, game_id):
         return
 
     result = await complete_game(game_id)
 
     if not result:
         await callback.message.answer(ui.GAME_WAIT_OTHER)
+
+        # напоминаем сопернику, что ждут его
+        game = await get_game(game_id)
+        opponent_id = (
+            game["user_two"] if game["user_one"] == user_id
+            else game["user_one"]
+        )
+        await send_game_question(
+            callback.bot, opponent_id, game_id, intro=ui.GAME_YOUR_TURN
+        )
         return
 
     text = ui.game_result(result["matches"], result["percentage"])
