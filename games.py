@@ -88,10 +88,14 @@ async def start_game(user_one: int, user_two: int):
     }
 
 
+def is_player(game, user_id: int) -> bool:
+    return user_id in (game["user_one"], game["user_two"])
+
+
 async def get_current_question(game_id: int, user_id: int):
     game = await get_game(game_id)
 
-    if not game:
+    if not game or not is_player(game, user_id):
         return None
 
     answers = await get_game_answers(
@@ -112,6 +116,8 @@ async def get_current_question(game_id: int, user_id: int):
     question["index"] = index
 
     return question
+
+
 async def save_answer(
     game_id: int,
     user_id: int,
@@ -123,7 +129,11 @@ async def save_answer(
 
     game = await get_game(game_id)
 
-    if not game or game["status"] == "finished":
+    if (
+        not game
+        or not is_player(game, user_id)
+        or game["status"] == "finished"
+    ):
         return False
 
     answers = await get_game_answers(

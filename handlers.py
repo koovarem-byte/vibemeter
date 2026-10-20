@@ -1590,81 +1590,34 @@ async def vibe_games_handler(message: Message):
 
 @router.callback_query(F.data.startswith("game_start:"))
 async def game_start_callback(callback: CallbackQuery):
-    target_id = int(callback.data.split(":")[1])
-    user_id = callback.from_user.id
-
-    # Сначала проверяем: это уже созданная игра?
-    question = await get_current_question(
-        target_id,
-        user_id,
-    )
-
-    if question:
-        await callback.answer()
-
-        await callback.message.answer(
-            f"<b>🎮 ВОПРОС "
-            f"{question['index'] + 1}/5</b>\n\n"
-            f"{esc(question['question'])}",
-            reply_markup=game_keyboard(
-                target_id,
-                question["index"],
-                question["a"],
-                question["b"],
-            ),
-        )
-        return
-
-    # Иначе считаем, что это ID пользователя
-    opponent = await get_user(target_id)
-    user = await get_user(user_id)
-
-    if not opponent or not user:
-        await callback.answer(
-            "Пользователь не найден.",
-            show_alert=True,
-        )
-        return
-
-    if not is_adult(user["age"]) or not is_adult(opponent["age"]):
-        await callback.answer(
-            "Сначала нужно заполнить профиль.",
-            show_alert=True,
-        )
-        return
-
-    game = await start_game(user_id, target_id)
-    game_id = game["id"]
-
-    await callback.answer("Игра создана!")
+    game_id = int(callback.data.split(":")[1])
 
     question = await get_current_question(
         game_id,
-        user_id,
+        callback.from_user.id,
     )
 
-    if question:
-        await callback.message.answer(
-            "<b>🎮 ВАЙБ-ИГРА</b>\n\n"
-            f"<b>ВОПРОС 1/5</b>\n\n"
-            f"{esc(question['question'])}",
-            reply_markup=game_keyboard(
-                game_id,
-                question["index"],
-                question["a"],
-                question["b"],
-            ),
+    if not question:
+        await callback.answer(
+            "Игра не найдена или ты уже ответил на все вопросы.",
+            show_alert=True,
         )
+        return
 
-    try:
-        await callback.bot.send_message(
-            target_id,
-            "<b>🎮 ТЕБЯ ПРИГЛАСИЛИ В ВАЙБ-ИГРУ</b>\n\n"
-            "Нажми кнопку, чтобы ответить на первый вопрос.",
-            reply_markup=game_actions(game_id),
-        )
-    except Exception:
-        pass
+    await callback.answer()
+
+    await callback.message.answer(
+        f"<b>🎮 ВОПРОС "
+        f"{question['index'] + 1}/5</b>\n\n"
+        f"{esc(question['question'])}",
+        reply_markup=game_keyboard(
+            game_id,
+            question["index"],
+            question["a"],
+            question["b"],
+        ),
+    )
+
 
 @router.callback_query(F.data.startswith("game_answer:"))
 async def game_answer_callback(callback: CallbackQuery):
@@ -1685,7 +1638,7 @@ async def game_answer_callback(callback: CallbackQuery):
 
     if not success:
         await callback.answer(
-            "Этот вопрос уже отвечен.",
+            "Ответ не принят: вопрос уже отвечен или игра закрыта.",
             show_alert=True,
         )
         return
