@@ -13,7 +13,7 @@
 - [x] Вызывать `close_db()` при остановке (`bot.py`).
 
 ### Фаза 2. P0 — без этого не выпускаем
-- [ ] Только 18+: отказ при возрасте < 18, убрать ветки «возрастных групп» (`utils.valid_age`, `profile_age`, `get_candidates`, `show_next_profile`, `vibe_games_handler`, `game_start_callback`).
+- [x] Только 18+: отказ при возрасте < 18, убрать ветки «возрастных групп» (`utils.valid_age`, `profile_age`, `get_candidates`, `show_next_profile`, `vibe_games_handler`, `game_start_callback`).
 - [ ] Открытие фото после взаимного лайка: отправлять каждому фото второго в `like_callback`, `incoming_like_callback`, `game_like_callback`.
 - [ ] Экран согласия и короткая политика конфиденциальности при `/start`.
 - [ ] Жалобы: таблица `reports`, кнопка «Пожаловаться» на карточке, уведомление админу, флаг бана в `users`, бан-пользователи не попадают в `get_candidates` и не пользуются ботом.

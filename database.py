@@ -352,14 +352,9 @@ async def get_candidates(user_id: int):
             FROM users WHERE telegram_id = $1
         """, user_id)
 
-        if not current or current["age"] is None:
+        # Бот только для 18+
+        if not current or current["age"] is None or current["age"] < 18:
             return []
-
-        age_condition = (
-            "u.age BETWEEN 16 AND 17"
-            if current["age"] < 18
-            else "u.age >= 18"
-        )
 
         gender_condition = ""
         search_gender = current["search_gender"] or "all"
@@ -375,7 +370,7 @@ async def get_candidates(user_id: int):
             WHERE u.telegram_id != $1
               AND u.age IS NOT NULL
               AND u.photo_id IS NOT NULL
-              AND {age_condition}
+              AND u.age >= 18
               {gender_condition}
               AND NOT EXISTS (
                   SELECT 1 FROM likes l

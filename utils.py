@@ -69,13 +69,22 @@ def valid_name(name: str) -> bool:
     )
 
 
+MIN_AGE = 18
+MAX_AGE = 99
+
+
+def is_adult(age) -> bool:
+    """Бот только для 18+. Пустой возраст — не взрослый."""
+    return age is not None and age >= MIN_AGE
+
+
 def valid_age(age: str) -> bool:
     if not age.isdigit():
         return False
 
     value = int(age)
 
-    return 16 <= value <= 99
+    return MIN_AGE <= value <= MAX_AGE
 
 
 def valid_city(city: str) -> bool:

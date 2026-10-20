@@ -25,7 +25,8 @@ from database import (
     add_block,
     get_incoming_likes,
     get_stats,
-    get_blocked_users
+    get_blocked_users,
+    delete_user,
 )
 
 from keyboards import (
@@ -52,6 +53,9 @@ from utils import (
     valid_age,
     valid_city,
     valid_description,
+    is_adult,
+    MIN_AGE,
+    MAX_AGE,
 )
 
 from questions import send_question, submit_answer
@@ -215,23 +219,15 @@ async def show_next_profile(message, user_id):
         )
         return
 
-    # Дополнительная проверка пола и возрастной группы
-    viewer_age = viewer.get("age") or 0
+    # Дополнительная проверка пола
     viewer_gender = viewer.get("search_gender") or "all"
 
     filtered = []
 
     for person in candidates:
         person_id = person.get("telegram_id")
-        person_age = person.get("age") or 0
 
-        if person_id == user_id:
-            continue
-
-        # Не показываем несовместимую возрастную группу
-        if (viewer_age < 18 and person_age >= 18) or (
-            viewer_age >= 18 and person_age < 18
-        ):
+        if person_id == user_id or not is_adult(person.get("age")):
             continue
 
         # Фильтр по полу, если поле есть в данных анкеты
@@ -430,9 +426,20 @@ async def profile_age(message: Message, state: FSMContext):
 
     age = int(age_digits)
 
-    if age < 16 or age > 99:
+    if age < MIN_AGE:
+        # Анкету младше 18 не сохраняем
+        await state.clear()
+        await delete_user(message.from_user.id)
         await message.answer(
-            "❌ Укажи возраст от 16 до 99 лет."
+            "Извини, Вайбометр только для тех, кому есть 18. "
+            "Твои данные мы не сохранили.\n\n"
+            "Будем рады видеть тебя, когда исполнится 18 💜"
+        )
+        return
+
+    if age > MAX_AGE:
+        await message.answer(
+            f"❌ Укажи настоящий возраст числом, до {MAX_AGE}."
         )
         return
 
@@ -1253,7 +1260,7 @@ async def vibe_games_handler(message: Message):
 
     user = await get_user(user_id)
 
-    if not user:
+    if not user or not is_adult(user["age"]):
         await message.answer(
             "Сначала создай профиль через /start."
         )
@@ -1270,14 +1277,7 @@ async def vibe_games_handler(message: Message):
     for candidate_id in waiting_players:
         candidate = await get_user(candidate_id)
 
-        if not candidate:
-            continue
-
-        if (
-            (user["age"] < 18 and candidate["age"] < 18)
-            or
-            (user["age"] >= 18 and candidate["age"] >= 18)
-        ):
+        if candidate and is_adult(candidate["age"]):
             opponent_id = candidate_id
             break
 
@@ -1363,13 +1363,9 @@ async def game_start_callback(callback: CallbackQuery):
         )
         return
 
-    if (
-        (user["age"] < 18 and opponent["age"] >= 18)
-        or
-        (user["age"] >= 18 and opponent["age"] < 18)
-    ):
+    if not is_adult(user["age"]) or not is_adult(opponent["age"]):
         await callback.answer(
-            "Играть можно только в своей возрастной группе.",
+            "Сначала нужно заполнить профиль.",
             show_alert=True,
         )
         return
