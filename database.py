@@ -402,6 +402,19 @@ async def get_incoming_likes(user_id: int):
             ORDER BY l.created_at DESC
         """, user_id)
 
+
+# QUESTIONS
+
+async def add_question(from_user: int, to_user: int, text: str):
+    db = await get_pool()
+    async with db.acquire() as conn:
+        return await conn.fetchval("""
+            INSERT INTO questions (from_user, to_user, text)
+            VALUES ($1, $2, $3)
+            RETURNING id
+        """, from_user, to_user, text)
+
+
 async def get_question(question_id: int):
     db = await get_pool()
     async with db.acquire() as conn:

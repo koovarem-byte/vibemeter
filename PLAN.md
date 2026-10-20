@@ -8,7 +8,7 @@
 - [x] Создать venv, поставить зависимости, прогнать `check_db.py` (ждём `NEON CONNECTED`).
 
 ### Фаза 1. Бот запускается
-- [ ] Добавить `add_question` в `database.py` (код выше).
+- [x] Добавить `add_question` в `database.py` (код выше).
 - [ ] `python3 -m py_compile *.py`, затем `python3 bot.py`. Исправлять ошибки по одной, пока бот не ответит на `/start`.
 - [ ] Вызывать `close_db()` при остановке (`bot.py`).
 
