@@ -27,7 +27,7 @@
 - Репозиторий: https://github.com/koovarem-byte/vibemeter
 - Локальная папка: `/Users/mac/PycharmProjects/вайбометр`
 - ID администратора — `ADMIN_ID` в `.env` / переменных хостинга (`/admin` — статистика, сюда же приходят жалобы).
-- Хостинг: VPS Timeweb Cloud в Амстердаме (оплата СБП/МИР), бот — служба systemd `vibemeter`, режим polling. Деплой с Mac: `./deploy/deploy.sh IP` (копирует закоммиченный код, секреты — в `/etc/vibemeter/env` на сервере). Серверы в РФ не годятся: с марта 2026 `api.telegram.org` с российских IP недоступен. Apply.build не пускает из РФ, Render не используем.
+- Хостинг: Bothost (Нидерланды, 99 ₽/мес), сборка по `Dockerfile` из ветки `main`, переменные окружения в панели. Запасной вариант: VPS 4VPS/Timeweb за ~150 ₽ и `./deploy/deploy.sh IP` (systemd, секреты в `/etc/vibemeter/env`). Серверы в РФ не годятся: с марта 2026 `api.telegram.org` с российских IP недоступен. Apply.build не пускает из РФ, Render не используем.
 
 ## Карта кода
 | Файл | Что делает |
@@ -66,9 +66,9 @@
 6. Вопросы: человек пишет вопрос, получатель отвечает обычным сообщением боту, ответ уходит автору.
 
 ## Статус запуска (обновлено 20.10.2026 вечером, ветка `fix/launch`; последние коммиты не запушены)
-- Отчёт за день и план на завтра: `docs/otchet-2026-10-20.md`.
+- Отчёты: `docs/otchet-2026-10-20.md` (Mini App), `docs/otchet-2026-10-21.md` (хостинг Bothost и план).
 - Фазы 0–4 и 8 (дизайн v2, серия, зал славы) выполнены, отметки в `PLAN.md`. Фаза 5 (ручной тест на двух аккаунтах) идёт.
-- Бот работает **только локально на Mac** (`caffeinate -dimsu .venv/bin/python -u bot.py`, polling). Хостинга пока нет — см. фазу 6б в `PLAN.md`.
+- **Хостинг: Bothost** (bothost.ru, Нидерланды, тариф «Базовый» 99 ₽). Деплой из GitHub, ветка `main`, свой Dockerfile, polling. Бот отвечает без Mac. Адрес Mini App ещё не заработал (домен Bothost отдаёт 404, нужно пересоздать бота), см. `docs/otchet-2026-10-21.md`. Локально бота запускать только при выключенном боте на Bothost (один токен).
 - Скрипты деплоя на VPS готовы: `deploy/deploy.sh IP` (копирует закоммиченный код), `deploy/setup_server.sh` (Python, venv, секреты в `/etc/vibemeter/env`, служба systemd `vibemeter`).
 - Окружение: `.venv` (Python 3.13, aiogram 3.22.0). Старый `.venv313` не использовать.
 - В Neon применены: `reports`, `users.is_banned`, `users.streak_days/best_streak/last_active`.
