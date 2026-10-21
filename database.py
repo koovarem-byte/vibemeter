@@ -611,6 +611,29 @@ async def create_game(
         """, user_one, user_two, questions_json)
 
 
+async def get_latest_game(user_id: int):
+    """Последняя игра пользователя (для Mini App)."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        return await conn.fetchrow("""
+            SELECT * FROM games
+            WHERE user_one = $1 OR user_two = $1
+            ORDER BY id DESC
+            LIMIT 1
+        """, user_id)
+
+
+async def abandon_game(game_id: int):
+    """Бросить игру (статус не 'finished', в статистику не попадёт)."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        await conn.execute(
+            "UPDATE games SET status = 'abandoned' "
+            "WHERE id = $1 AND status = 'waiting'",
+            game_id,
+        )
+
+
 async def get_game(game_id: int):
     db = await get_pool()
     async with db.acquire() as conn:

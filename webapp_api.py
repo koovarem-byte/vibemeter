@@ -8,9 +8,11 @@ API и статика Telegram Mini App.
 
 import asyncio
 import io
+import json
 import re
 import logging
 import time
+from datetime import timezone
 from pathlib import Path
 
 from aiohttp import web
@@ -21,11 +23,13 @@ import ui
 from config import BOT_TOKEN
 from database import (
     add_like,
+    abandon_game,
     add_report,
     add_skip,
     delete_skip,
     get_candidates,
     get_incoming_likes,
+    get_latest_game,
     get_mutual_likes,
     get_stats,
     get_user,
@@ -41,6 +45,14 @@ from handlers import (
     notify_liked,
     notify_mutual,
 )
+from games import (
+    calculate_result,
+    complete_game,
+    get_current_question,
+    save_answer,
+    start_game,
+)
+from keyboards import open_app_keyboard
 from questions import MAX_QUESTION_LENGTH, send_question
 from utils import (
     is_adult,
@@ -402,6 +414,188 @@ async def api_upload_photo(request):
     return web.json_response({"ok": True})
 
 
+# =========================================================
+# Игра «Что выберешь?» (единая очередь для всех игроков Mini App)
+# =========================================================
+
+# user_id -> время входа в очередь
+game_queue: dict[int, float] = {}
+QUEUE_TTL = 15 * 60          # дольше не ждём
+RESULT_TTL = 15 * 60         # результат показываем 15 минут после игры
+STUCK_AFTER = 10 * 60        # соперник молчит дольше — можно начать новую
+
+
+def _clean_queue():
+    now = time.time()
+    for uid in [u for u, t in game_queue.items() if now - t > QUEUE_TTL]:
+        game_queue.pop(uid, None)
+
+
+def _age_seconds(game) -> float:
+    created = game["created_at"]
+    if created is None:
+        return 0
+    if created.tzinfo is None:
+        # в базе время без пояса, Neon пишет его в UTC
+        created = created.replace(tzinfo=timezone.utc)
+    return max(0, time.time() - created.timestamp())
+
+
+async def _opponent_json(user, opponent_id: int):
+    person = await get_user(opponent_id)
+    if not person:
+        return None
+    return person_json(person, viewer=user)
+
+
+async def game_state_for(request) -> dict:
+    """Что показывать игроку: idle / waiting / playing / waiting_opponent / finished."""
+    user = request["user"]
+    user_id = user["telegram_id"]
+    _clean_queue()
+
+    game = await get_latest_game(user_id)
+
+    if game and game["status"] == "waiting":
+        opponent_id = (
+            game["user_two"] if game["user_one"] == user_id else game["user_one"]
+        )
+        question = await get_current_question(game["id"], user_id)
+        answered = 5 if question is None else question["index"]
+        result = await complete_game(game["id"]) if question is None else None
+        if result:
+            return await _finished_state(user, game, result)
+        base = {
+            "game_id": game["id"],
+            "opponent": await _opponent_json(user, opponent_id),
+            "answered": answered,
+            "total": 5,
+        }
+        if question is None:
+            base["state"] = "waiting_opponent"
+            base["stuck"] = _age_seconds(game) > STUCK_AFTER
+            return base
+        base["state"] = "playing"
+        base["question"] = {
+            "index": question["index"],
+            "text": question["question"],
+            "a": question["a"],
+            "b": question["b"],
+        }
+        return base
+
+    if game and game["status"] == "finished" and _age_seconds(game) < RESULT_TTL:
+        result = await calculate_result(game["id"])
+        if result:
+            return await _finished_state(user, game, result)
+
+    if user_id in game_queue:
+        return {"state": "waiting"}
+    return {"state": "idle"}
+
+
+async def _finished_state(user, game, result):
+    user_id = user["telegram_id"]
+    opponent_id = (
+        game["user_two"] if game["user_one"] == user_id else game["user_one"]
+    )
+    return {
+        "state": "finished",
+        "game_id": game["id"],
+        "opponent": await _opponent_json(user, opponent_id),
+        "matches": result["matches"],
+        "total": result["total"],
+        "percentage": result["percentage"],
+    }
+
+
+async def api_game_state(request):
+    return web.json_response(await game_state_for(request))
+
+
+async def api_game_join(request):
+    user = request["user"]
+    user_id = user["telegram_id"]
+    _clean_queue()
+
+    game = await get_latest_game(user_id)
+    if game and game["status"] == "waiting":
+        # уже играет; новую можно, только если соперник завис
+        if _age_seconds(game) > STUCK_AFTER:
+            await abandon_game(game["id"])
+        else:
+            return web.json_response(await game_state_for(request))
+
+    # свободный соперник: взрослый, не забаненный, не заблокированный
+    opponent_id = None
+    for uid in list(game_queue):
+        if uid == user_id:
+            continue
+        other = await get_user(uid)
+        if (
+            other and not other["is_banned"] and is_adult(other["age"])
+            and not await is_blocked(user_id, uid)
+            and not await is_blocked(uid, user_id)
+        ):
+            opponent_id = uid
+            break
+        game_queue.pop(uid, None)
+
+    if opponent_id is None:
+        game_queue[user_id] = time.time()
+        return web.json_response({"state": "waiting"})
+
+    game_queue.pop(opponent_id, None)
+    game_queue.pop(user_id, None)
+    await start_game(opponent_id, user_id)
+
+    # соперник мог закрыть приложение: зовём его обратно через бота
+    keyboard = open_app_keyboard("games")
+    try:
+        await request.app["bot"].send_message(
+            opponent_id,
+            ui.GAME_FOUND_PING,
+            reply_markup=keyboard,
+        )
+    except Exception:
+        logging.info("Не удалось позвать соперника %s", opponent_id)
+
+    return web.json_response(await game_state_for(request))
+
+
+async def api_game_leave(request):
+    user_id = request["user"]["telegram_id"]
+    game_queue.pop(user_id, None)
+    return web.json_response({"state": "idle"})
+
+
+async def api_game_answer(request):
+    user_id = request["user"]["telegram_id"]
+    try:
+        body = await request.json()
+        game_id = int(body["game_id"])
+        index = int(body["index"])
+        answer = body["answer"]
+    except (ValueError, KeyError, TypeError):
+        return error("bad_request", 400)
+
+    if not await save_answer(game_id, user_id, index, answer):
+        return error("rejected", 409)
+
+    state = await game_state_for(request)
+    # второму игроку напомним через бота, что результат готов
+    if state.get("state") == "finished" and state.get("opponent"):
+        try:
+            await request.app["bot"].send_message(
+                state["opponent"]["id"],
+                ui.GAME_RESULT_PING,
+                reply_markup=open_app_keyboard("games"),
+            )
+        except Exception:
+            pass
+    return web.json_response(state)
+
+
 async def api_vibes(request):
     user = request["user"]
     user_id = user["telegram_id"]
@@ -504,6 +698,10 @@ def setup_webapp(app: web.Application, bot):
     app.router.add_get("/app/api/me", api_me)
     app.router.add_get("/app/api/next", api_next)
     app.router.add_post("/app/api/vibe", api_vibe)
+    app.router.add_get("/app/api/game/state", api_game_state)
+    app.router.add_post("/app/api/game/join", api_game_join)
+    app.router.add_post("/app/api/game/leave", api_game_leave)
+    app.router.add_post("/app/api/game/answer", api_game_answer)
     app.router.add_post("/app/api/undo", api_undo)
     app.router.add_post("/app/api/profile", api_profile)
     app.router.add_post("/app/api/upload_photo", api_upload_photo)
