@@ -511,3 +511,21 @@ h1 { font-family: var(--head); font-size: 23px; font-weight: 700; margin: 4px 0;
 .g4 .stat small { font-size: 10.5px; }
 .btn-sm { white-space: nowrap; }
 .save-bar { padding-top: 14px; background: linear-gradient(180deg, rgba(7, 6, 13, 0), rgba(7, 6, 13, .95) 40%); }
+
+/* ---------- Игра в приложении ---------- */
+.game-dots { display: flex; justify-content: center; gap: 8px; }
+.game-dots i { width: 28px; height: 5px; border-radius: 4px; background: rgba(196, 140, 255, .2); }
+.game-dots i.done { background: var(--brand); box-shadow: 0 0 8px rgba(255, 61, 154, .6); }
+.game-dots i.on { background: #c084fc; box-shadow: 0 0 8px #9b5cff; }
+.game-q { font-family: var(--head); font-size: 20px; text-align: center; margin: 0 0 20px; }
+.game-opt {
+  width: 100%; min-height: 84px; padding: 16px; border-radius: 16px;
+  font-size: 18px; font-weight: 800; text-align: center;
+  border: 1.5px solid transparent;
+  background: linear-gradient(var(--panel), var(--panel)) padding-box, var(--edge) border-box;
+  box-shadow: 0 0 18px rgba(155, 92, 255, .14);
+  transition: transform .12s, box-shadow .2s;
+}
+.game-opt:active, .game-opt.picked { transform: scale(.97); box-shadow: 0 0 22px rgba(255, 61, 154, .5); }
+.game-opt:disabled { opacity: .7; }
+.game-or { text-align: center; color: var(--dim); font-size: 12px; font-weight: 800; letter-spacing: .2em; text-transform: uppercase; }

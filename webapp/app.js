@@ -187,6 +187,10 @@ const api = DEMO ? makeDemoApi() : {
     if (!res.ok) throw Object.assign(new Error(data.error), { code: data.error });
     return data;
   },
+  gameState() { return this.call("game/state"); },
+  gameJoin() { return this.call("game/join", {}); },
+  gameLeave() { return this.call("game/leave", {}); },
+  gameAnswer(game_id, index, answer) { return this.call("game/answer", { game_id, index, answer }); },
   async photo(id) {
     const res = await fetch(`api/photo/${id}`, { headers: { "X-Init-Data": tg.initData } });
     if (!res.ok) return null;
@@ -268,6 +272,45 @@ function makeDemoApi() {
     async report(id) { await wait(200); queue = queue.filter((x) => x.id !== id); return { ok: true }; },
     async uploadPhoto() { await wait(600); return { ok: true }; },
     async photo() { return null; },
+    ...makeDemoGame(wait, people),
+  };
+}
+
+// Игра в демо: «соперник» находится через 2 секунды и отвечает так же быстро
+function makeDemoGame(wait, people) {
+  const Q = [
+    ["🌊 Жить у моря", "🏔️ Жить в горах"],
+    ["🌙 Не спать ночью", "☀️ Не спать днём"],
+    ["💰 Много денег", "⏳ Много свободного времени"],
+    ["🎬 Смотреть фильмы", "🎮 Играть в игры"],
+    ["👥 Большая компания", "🤝 Несколько близких друзей"],
+  ];
+  const opp = people[0];
+  let g = { state: "idle" }, since = 0, answers = [];
+  const snap = () => {
+    if (g.state === "waiting" && Date.now() - since > 2000) {
+      g = { state: "playing", game_id: 1, opponent: opp, answered: 0, total: 5 };
+    }
+    if (g.state === "playing") {
+      const i = answers.length;
+      return { ...g, answered: i, question: { index: i, text: "Что выберешь?", a: Q[i][0], b: Q[i][1] } };
+    }
+    if (g.state === "waiting_opponent" && Date.now() - since > 2500) {
+      const pct = [40, 60, 80, 100][Math.floor(Math.random() * 4)];
+      g = { state: "finished", game_id: 1, opponent: opp, matches: pct / 20, total: 5, percentage: pct };
+    }
+    return g;
+  };
+  return {
+    async gameState() { await wait(120); return snap(); },
+    async gameJoin() { await wait(150); answers = []; g = { state: "waiting" }; since = Date.now(); return g; },
+    async gameLeave() { g = { state: "idle" }; return g; },
+    async gameAnswer(id, index, answer) {
+      await wait(150);
+      answers.push(answer);
+      if (answers.length >= 5) { g = { state: "waiting_opponent", game_id: 1, opponent: opp, answered: 5, total: 5 }; since = Date.now(); }
+      return snap();
+    },
   };
 }
 
@@ -463,16 +506,7 @@ const screens = {
     return `
       <h1>Игры</h1>
       <p class="sub">Быстрый способ понять, на одной ли вы волне</p>
-      <div class="hero">
-        <h2 style="max-width:none">🍭 Что выберешь?</h2>
-        <p style="max-width:none">5 вопросов «то или это» с человеком на одной волне. В конце — процент совпадения и шанс на вайб</p>
-        <button class="btn btn-fill" id="play-game">${svg("game")} Играть</button>
-      </div>
-      <p class="label mt-l">Скоро</p>
-      <div class="list">
-        <div class="game soon"><div class="gi">🎯</div><div class="grow"><b>Викторина вайба</b><small>Угадай ответы друг друга</small></div></div>
-        <div class="game soon"><div class="gi">🔥</div><div class="grow"><b>Правда или действие</b><small>Для тех, у кого уже взаимно</small></div></div>
-      </div>`;
+      <div id="game-root"></div>`;
   },
 
   profile() {
@@ -1171,10 +1205,170 @@ function invite() {
   tg.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(text)}`);
 }
 
-function playGame() {
-  haptic("medium");
-  if (DEMO) { toast("Откроется бот и начнётся поиск соперника"); return; }
-  tg.openTelegramLink(`https://t.me/${state.me.bot_username}?start=game`);
+// =========================================================
+// Игра «Что выберешь?» прямо в приложении
+// =========================================================
+const game = { data: { state: "idle" }, timer: null, busy: false, liked: false };
+
+function stopGamePolling() { clearInterval(game.timer); game.timer = null; }
+
+function startGamePolling() {
+  stopGamePolling();
+  game.timer = setInterval(async () => {
+    if (route() !== "games") return stopGamePolling();
+    if (!["waiting", "waiting_opponent"].includes(game.data.state) || game.busy) return;
+    try { applyGame(await api.gameState()); } catch (_) {}
+  }, 2500);
+}
+
+function applyGame(next) {
+  const prev = game.data.state;
+  game.data = next;
+  if (next.state === "finished" && prev !== "finished") { game.liked = false; haptic("success"); }
+  if (next.state === "playing" && prev === "waiting") haptic("medium");
+  renderGame();
+  if (["waiting", "waiting_opponent"].includes(next.state)) startGamePolling(); else stopGamePolling();
+}
+
+function gameVerdict(p) {
+  if (p >= 80) return "💎 Редкое совпадение!";
+  if (p >= 60) return "Хороший общий вайб 🙌";
+  if (p >= 40) return "Кое-что общее точно есть";
+  return "Вы довольно разные, и это тоже интересно";
+}
+
+function oppChip(o) {
+  if (!o) return "";
+  return `<div class="row" style="justify-content:center;gap:10px;margin-bottom:14px">
+    <div class="avatar sm">${esc((o.name || "?")[0])}</div>
+    <div><b>${esc(o.name)}, ${o.age}</b><div class="small muted">📍 ${esc(o.city || "")}</div></div></div>`;
+}
+
+function renderGame() {
+  const root = $("#game-root");
+  if (!root) return;
+  const g = game.data;
+
+  if (g.state === "idle") {
+    root.innerHTML = `
+      <div class="hero">
+        <h2 style="max-width:none">🍭 Что выберешь?</h2>
+        <p style="max-width:none">5 вопросов «то или это» с человеком на одной волне. В конце: процент совпадения и шанс на вайб</p>
+        <button class="btn btn-fill" id="game-join">${svg("game")} Играть</button>
+      </div>
+      <p class="label mt-l">Скоро</p>
+      <div class="list">
+        <div class="game soon"><div class="gi">🎯</div><div class="grow"><b>Викторина вайба</b><small>Угадай ответы друг друга</small></div></div>
+        <div class="game soon"><div class="gi">🔥</div><div class="grow"><b>Правда или действие</b><small>Для тех, у кого уже взаимно</small></div></div>
+      </div>`;
+    $("#game-join").onclick = joinGame;
+  }
+
+  if (g.state === "waiting") {
+    root.innerHTML = `
+      <div class="card strong" style="text-align:center;padding:26px 16px">
+        ${gauge(60, 150, "ищем пару")}
+        <h2 style="font-family:var(--head);font-size:17px;margin:14px 0 6px">Ищем тебе пару для игры</h2>
+        <p class="muted small" style="margin:0 auto 16px;max-width:280px">Можно закрыть приложение: как только найдём человека, бот пришлёт сообщение</p>
+        <button class="btn btn-ghost btn-sm" id="game-leave">Отменить</button>
+      </div>`;
+    animateGauges(root);
+    $("#game-leave").onclick = leaveGame;
+    // стрелка шкалы «ищет»: плавно ходит туда-сюда
+    const needle = $(".gauge .needle", root);
+    if (needle) { let t = 0; const id = setInterval(() => { if (!$(".gauge .needle")) return clearInterval(id); t += 1; needle.style.transform = `rotate(${-90 + 180 * (0.5 + 0.45 * Math.sin(t / 2))}deg)`; }, 500); }
+  }
+
+  if (g.state === "playing") {
+    const q = g.question;
+    const dots = Array.from({ length: g.total }, (_, i) => `<i class="${i < q.index ? "done" : i === q.index ? "on" : ""}"></i>`).join("");
+    root.innerHTML = `
+      ${oppChip(g.opponent)}
+      <div class="game-dots">${dots}</div>
+      <p class="label" style="text-align:center;margin:16px 0 6px">Вопрос ${q.index + 1} из ${g.total}</p>
+      <h2 class="game-q">${esc(q.text)}</h2>
+      <div class="list" style="gap:12px">
+        <button class="game-opt" data-ans="a"><span>${esc(q.a)}</span></button>
+        <div class="game-or">или</div>
+        <button class="game-opt" data-ans="b"><span>${esc(q.b)}</span></button>
+      </div>`;
+    $$("[data-ans]", root).forEach((b) => b.onclick = () => answerGame(b, q.index));
+  }
+
+  if (g.state === "waiting_opponent") {
+    root.innerHTML = `
+      <div class="card strong" style="text-align:center;padding:26px 16px">
+        ${oppChip(g.opponent)}
+        ${gauge(80, 130, "ты закончил")}
+        <h2 style="font-family:var(--head);font-size:17px;margin:14px 0 6px">Ждём ${esc(g.opponent ? g.opponent.name : "соперника")}</h2>
+        <p class="muted small" style="margin:0 auto 6px;max-width:280px">Как только ответит, покажем, насколько вы совпали. Бот напомнит</p>
+        ${g.stuck ? `<button class="btn btn-violet btn-sm mt" id="game-join">Найти другого</button>` : ""}
+      </div>`;
+    animateGauges(root);
+    const j = $("#game-join"); if (j) j.onclick = joinGame;
+  }
+
+  if (g.state === "finished") {
+    root.innerHTML = `
+      <div class="card strong" style="text-align:center;padding:24px 16px">
+        ${oppChip(g.opponent)}
+        <div style="display:flex;justify-content:center">${gauge(g.percentage, 180, "совпадение")}</div>
+        <h2 style="font-family:var(--head);font-size:18px;margin:16px 0 4px">${gameVerdict(g.percentage)}</h2>
+        <p class="muted" style="margin:0">Совпали в ${g.matches} из ${g.total} вопросов</p>
+        <div class="grid g2 mt-l">
+          <button class="btn btn-pink" id="game-like" ${game.liked ? "disabled" : ""}>${svg("heart")} ${game.liked ? "Отправлено" : "Вайб"}</button>
+          <button class="btn btn-violet" id="game-join">${svg("game")} Ещё раз</button>
+        </div>
+      </div>`;
+    animateGauges(root);
+    $("#game-join").onclick = joinGame;
+    $("#game-like").onclick = likeOpponent;
+  }
+}
+
+async function joinGame() {
+  if (game.busy) return;
+  game.busy = true; haptic("medium");
+  try { applyGame(await api.gameJoin()); } catch (e) { toast(errorText(e)); }
+  game.busy = false;
+}
+
+async function leaveGame() {
+  try { await api.gameLeave(); } catch (_) {}
+  applyGame({ state: "idle" });
+}
+
+async function answerGame(btn, index) {
+  if (game.busy) return;
+  game.busy = true; haptic("light");
+  btn.classList.add("picked");
+  $$(".game-opt").forEach((b) => b.disabled = true);
+  try {
+    const next = await api.gameAnswer(game.data.game_id, index, btn.dataset.ans);
+    game.busy = false;
+    applyGame(next);
+  } catch (e) {
+    game.busy = false;
+    toast(e.code === "rejected" ? "Этот вопрос уже отвечен" : errorText(e));
+    try { applyGame(await api.gameState()); } catch (_) {}
+  }
+}
+
+async function likeOpponent() {
+  const o = game.data.opponent;
+  if (!o || game.liked) return;
+  game.liked = true; renderGame(); haptic("medium");
+  try {
+    const res = await api.vibe(o.id, "like");
+    if (res.mutual) { showMatch(res.match || o); refreshSoft(); }
+    else toast("Вайб отправлен 💜");
+  } catch (e) { game.liked = false; renderGame(); toast(errorText(e)); }
+}
+
+async function openGames() {
+  stopGamePolling();
+  renderGame();
+  try { applyGame(await api.gameState()); } catch (_) { applyGame({ state: "idle" }); }
 }
 
 const ONB = [
@@ -1237,6 +1431,7 @@ async function refreshSoft() {
 
 function render() {
   if (!state.me) return;
+  stopGamePolling();
   let r = route();
   if (!screens[r]) r = "home";
   if (r !== "edit") state.form = null;
@@ -1273,7 +1468,7 @@ function render() {
     $$("[data-details]").forEach((row) => row.onclick = () => openDetails(state.vibes.incoming.find((p) => String(p.id) === row.dataset.details), "vibes"));
     state.vibes.mutual.forEach(withPhoto);
   }
-  if (r === "games") $("#play-game").onclick = playGame;
+  if (r === "games") openGames();
   if (r === "profile") bindPhotoButton();
   if (r === "edit") { bindEdit(); bindPhotoButton(); }
   if (r === "fame") $$("[data-fame]").forEach((b) => b.onclick = () => { state.fameFilter = b.dataset.fame; haptic("select"); render(); });

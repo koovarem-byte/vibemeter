@@ -1102,6 +1102,12 @@ async def find_game(message: Message, user_id: int):
         await message.answer(ui.GAME_NEED_PROFILE)
         return
 
+    # Игры живут в Mini App: бот только открывает приложение
+    app_keyboard = open_app_keyboard("games")
+    if app_keyboard:
+        await message.answer(ui.GAME_OPEN_APP, reply_markup=app_keyboard)
+        return
+
     # Убираем пользователя из старой очереди
     waiting_players[:] = [x for x in waiting_players if x != user_id]
 
