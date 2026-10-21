@@ -1,9 +1,12 @@
 from aiogram.types import (
+    WebAppInfo,
     ReplyKeyboardMarkup,
     KeyboardButton,
     InlineKeyboardMarkup,
     InlineKeyboardButton,
 )
+
+import os
 
 import ui
 
@@ -25,6 +28,20 @@ def rows(*rows_):
 # =========================================================
 # ГЛАВНОЕ МЕНЮ
 # =========================================================
+
+def open_app_keyboard(page: str = ""):
+    """Кнопка «Открыть Вайбометр» (Mini App). None, если адрес не задан.
+    Именно inline-кнопка: через неё Telegram передаёт initData."""
+    base = (os.getenv("WEBAPP_URL") or "").rstrip("/")
+    if not base:
+        return None
+    url = f"{base}/app/" + (f"#{page}" if page else "")
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(
+            text=ui.BTN_OPEN_APP, web_app=WebAppInfo(url=url)
+        )
+    ]])
+
 
 def main_menu():
     return ReplyKeyboardMarkup(

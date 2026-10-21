@@ -33,6 +33,7 @@ from database import (
 )
 from keyboards import (
     main_menu,
+    open_app_keyboard,
     cancel_keyboard,
     profile_actions,
     incoming_actions,
@@ -360,6 +361,9 @@ async def start_handler(
             ui.welcome_back(user["streak_days"]),
             reply_markup=main_menu(),
         )
+        app_keyboard = open_app_keyboard()
+        if app_keyboard:
+            await message.answer(ui.OPEN_APP_HINT, reply_markup=app_keyboard)
         return
 
     current_state = await state.get_state()
@@ -1113,6 +1117,9 @@ async def find_game(message: Message, user_id: int):
     if opponent_id is None:
         waiting_players.append(user_id)
         await message.answer(ui.GAME_WAITING, reply_markup=main_menu())
+        app_keyboard = open_app_keyboard("games")
+        if app_keyboard:
+            await message.answer(ui.OPEN_APP_HINT, reply_markup=app_keyboard)
         return
 
     waiting_players.remove(opponent_id)
