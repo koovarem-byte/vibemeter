@@ -80,7 +80,7 @@ def profile_actions(person_id: int):
     return rows(
         [
             btn(ui.BTN_LIKE, f"like:{person_id}", neon="heart"),
-            btn(ui.BTN_SKIP, f"skip:{person_id}"),
+            btn(ui.BTN_SKIP, f"skip:{person_id}", neon="speed"),
         ],
         [
             btn(ui.BTN_QUESTION, f"question:{person_id}", neon="bolt"),
@@ -94,7 +94,7 @@ def incoming_actions(person_id: int):
     return rows(
         [
             btn(ui.BTN_LIKE, f"incoming_like:{person_id}", neon="heart"),
-            btn(ui.BTN_SKIP, f"incoming_skip:{person_id}"),
+            btn(ui.BTN_SKIP, f"incoming_skip:{person_id}", neon="speed"),
         ],
         [
             btn(ui.BTN_QUESTION, f"question:{person_id}", neon="bolt"),
@@ -109,17 +109,17 @@ def mutual_actions(person_id: int, username: str | None):
         write = btn(
             ui.BTN_WRITE,
             url=f"https://t.me/{username.lstrip('@')}",
-            neon="heart",
+            neon="hands",
         )
     else:
-        write = btn(ui.BTN_WRITE, f"contact:{person_id}", neon="heart")
+        write = btn(ui.BTN_WRITE, f"contact:{person_id}", neon="hands")
 
     return rows([write, btn(ui.BTN_NEXT, "browse")])
 
 
 def contact_keyboard(username: str):
     return rows([
-        btn(ui.BTN_WRITE, url=f"https://t.me/{username}", neon="heart"),
+        btn(ui.BTN_WRITE, url=f"https://t.me/{username}", neon="hands"),
     ])
 
 
@@ -169,7 +169,7 @@ def consent_keyboard():
 def settings_keyboard():
     return rows(
         [
-            btn(ui.BTN_EDIT, "edit_profile"),
+            btn(ui.BTN_EDIT, "edit_profile", neon="pencil"),
             btn(ui.BTN_SEARCH, "search_settings"),
         ],
         [
@@ -187,7 +187,7 @@ def delete_confirm_keyboard():
 
 
 def stats_keyboard():
-    return rows([btn(ui.BTN_ACHIEVEMENTS, "achievements", neon="crown")])
+    return rows([btn(ui.BTN_ACHIEVEMENTS, "achievements", neon="trophy")])
 
 
 # =========================================================
