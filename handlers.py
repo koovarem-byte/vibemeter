@@ -1019,10 +1019,7 @@ async def statistics_handler(message: Message):
         await message.answer(ui.NEED_START)
         return
 
-    await message.answer(
-        ui.stats(await get_stats(message.from_user.id)),
-        reply_markup=stats_keyboard(),
-    )
+    await message.answer(ui.stats_full(await get_stats(message.from_user.id)))
 
 
 @router.callback_query(F.data == "achievements")

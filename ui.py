@@ -666,3 +666,32 @@ def admin_unbanned(person_id: int) -> str:
 
 ADMIN_USER_GONE = "Пользователь не найден или уже удалён"
 ADMIN_DISMISSED = "Жалобы отклонены"
+
+
+def _bar(value: int, goal: int, width: int = 8) -> str:
+    filled = round(min(value, goal) / goal * width) if goal else width
+    return "▰" * filled + "▱" * (width - filled)
+
+
+def stats_full(s) -> str:
+    """Статистика и Зал славы в одном сообщении."""
+    done, total = achievements_progress(s)
+    n, name, next_at = level(done, total)
+    lines = [
+        stats(s),
+        "",
+        f"{title('crown', 'Зал славы')} · {done} из {total}",
+        f"Уровень {n} · <b>{name}</b>"
+        + (f" · до следующего {next_at - done}" if next_at > done else ""),
+        "",
+    ]
+    for a in sorted(ACHIEVEMENTS, key=lambda a: not achieved(s, a)):
+        emoji, ach_name, hint, key, goal = a
+        if achieved(s, a):
+            lines.append(f"{e(emoji)} <b>{ach_name}</b> · {hint}")
+        else:
+            lines.append(
+                f"🔒 {ach_name} · {hint}\n"
+                f"      {_bar(s[key], goal)} {min(s[key], goal)}/{goal}"
+            )
+    return "\n".join(lines)
