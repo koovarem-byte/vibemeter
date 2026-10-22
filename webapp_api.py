@@ -9,8 +9,10 @@ API и статика Telegram Mini App.
 import asyncio
 import io
 import json
+import os
 import random
 import re
+import secrets
 import logging
 import time
 from datetime import timezone
@@ -411,6 +413,70 @@ async def api_profile(request):
 
 _share_last: dict[int, float] = {}
 
+# Картинки для сторис: Telegram берёт их по публичной ссылке с неугадываемым токеном
+_story_cache: dict[str, tuple[float, bytes]] = {}
+STORY_TTL = 15 * 60
+STORY_MAX = 100
+
+
+async def read_png_upload(request):
+    """Тело multipart-поля photo (PNG/JPEG) или None."""
+    if request.content_length and request.content_length > MAX_PHOTO_BYTES + 4096:
+        return None
+    try:
+        reader = await request.multipart()
+        part = await reader.next()
+    except Exception:
+        return None
+    if part is None or part.name != "photo":
+        return None
+    chunks, size = [], 0
+    while chunk := await part.read_chunk(64 * 1024):
+        size += len(chunk)
+        if size > MAX_PHOTO_BYTES:
+            return None
+        chunks.append(chunk)
+    data = b"".join(chunks)
+    if data[:3] == b"\xff\xd8\xff" or data[:8] == b"\x89PNG\r\n\x1a\n":
+        return data
+    return None
+
+
+async def api_story(request):
+    """Кладёт картинку во временный кеш и отдаёт публичную ссылку для shareToStory."""
+    user_id = request["user"]["telegram_id"]
+    now = time.time()
+    if now - _share_last.get(user_id, 0) < 5:
+        return error("too_fast", 429)
+    _share_last[user_id] = now
+
+    data = await read_png_upload(request)
+    if not data:
+        return error("bad_request", 400)
+
+    for token in [t for t, (ts, _) in _story_cache.items() if now - ts > STORY_TTL]:
+        _story_cache.pop(token, None)
+    while len(_story_cache) >= STORY_MAX:
+        _story_cache.pop(next(iter(_story_cache)))
+
+    token = secrets.token_urlsafe(24)
+    _story_cache[token] = (now, data)
+
+    base = (os.getenv("WEBAPP_URL") or f"https://{request.host}").rstrip("/")
+    bot_username = (await request.app["bot"].me()).username
+    return web.json_response({
+        "url": f"{base}/app/share/{token}.png",
+        "link": f"https://t.me/{bot_username}?start=ref_{user_id}",
+    })
+
+
+async def story_image(request):
+    token = request.match_info["token"]
+    item = _story_cache.get(token)
+    if not item or time.time() - item[0] > STORY_TTL:
+        raise web.HTTPNotFound()
+    return web.Response(body=item[1], content_type="image/png", headers={"Cache-Control": "no-store"})
+
 
 async def api_share_card(request):
     """Картинка «мы совпали на N%» для сторис: бот присылает её в чат."""
@@ -799,6 +865,8 @@ def setup_webapp(app: web.Application, bot):
     app.router.add_post("/app/api/profile", api_profile)
     app.router.add_post("/app/api/upload_photo", api_upload_photo)
     app.router.add_post("/app/api/share_card", api_share_card)
+    app.router.add_post("/app/api/story", api_story)
+    app.router.add_get("/app/share/{token}.png", story_image)
     app.router.add_post("/app/api/question", api_question)
     app.router.add_post("/app/api/report", api_report)
     app.router.add_get("/app/api/vibes", api_vibes)

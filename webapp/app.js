@@ -188,6 +188,14 @@ const api = DEMO ? makeDemoApi() : {
     if (!res.ok) throw Object.assign(new Error(data.error), { code: data.error });
     return data;
   },
+  async story(blob) {
+    const fd = new FormData();
+    fd.append("photo", blob, "vibe.png");
+    const res = await fetch("api/story", { method: "POST", headers: { "X-Init-Data": tg.initData }, body: fd });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw Object.assign(new Error(data.error), { code: data.error });
+    return data;
+  },
   async shareCard(blob) {
     const fd = new FormData();
     fd.append("photo", blob, "vibe.png");
@@ -1529,8 +1537,15 @@ async function shareGameCard() {
       matches: g.matches, total: g.total, verdict: vibeWord(g.percentage),
     });
     const blob = await new Promise((res) => canvas.toBlob(res, "image/png"));
-    await api.shareCard(blob);
-    toast(DEMO ? "Картинка готова (в демо не отправляется)" : "Картинка пришла в чат с ботом");
+    if (DEMO) { toast("Картинка готова (в демо не отправляется)"); }
+    else if (tg.shareToStory && tg.isVersionAtLeast && tg.isVersionAtLeast("7.8")) {
+      // сразу открываем редактор сторис Telegram
+      const { url, link } = await api.story(blob);
+      tg.shareToStory(url, { text: "Мы совпали! Проверь свой вайб", widget_link: { url: link, name: "Проверь вайб" } });
+    } else {
+      await api.shareCard(blob);
+      toast("Картинка пришла в чат с ботом");
+    }
   } catch (e) { toast(errorText(e)); }
   if (btn) btn.disabled = false;
 }
