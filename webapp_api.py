@@ -9,6 +9,7 @@ API и статика Telegram Mini App.
 import asyncio
 import io
 import json
+import random
 import re
 import logging
 import time
@@ -233,7 +234,16 @@ async def api_next(request):
     candidates = await get_candidates(user["telegram_id"])
     if not candidates:
         return web.json_response({"candidate": None})
-    person = candidates[0]
+    # Умная выдача: сначала те, кто уже лайкнул тебя (шанс на взаимность),
+    # дальше по вайбу, с небольшим случайным шумом, чтобы лента не была одинаковой
+    liked_me = {p["telegram_id"] for p in await get_incoming_likes(user["telegram_id"])}
+    person = max(
+        candidates[:50],
+        key=lambda p: (
+            p["telegram_id"] in liked_me,
+            calculate_vibe(user, p)[0] + random.random() * 12,
+        ),
+    )
     data = person_json(person, viewer=user)
     answers = await get_daily_answers([user["telegram_id"], person["telegram_id"]])
     theirs = answers.get(person["telegram_id"])
