@@ -84,7 +84,7 @@ INIT_DATA_TTL = 24 * 60 * 60
 
 ICONS = {
     "heart": "🩷", "diamond": "💎", "fire": "🔥", "crown": "👑",
-    "candy": "🍭", "bolt": "⚡", "star": "⭐", "trophy": "🏆",
+    "candy": "🍭", "bolt": "⚡", "star": "⭐", "trophy": "🏆", "chat": "💬", "gamepad": "🎮",
 }
 
 MAX_PHOTO_BYTES = 8 * 1024 * 1024

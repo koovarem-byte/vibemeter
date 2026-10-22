@@ -80,10 +80,10 @@ def profile_actions(person_id: int):
     return rows(
         [
             btn(ui.BTN_LIKE, f"like:{person_id}", neon="heart"),
-            btn(ui.BTN_SKIP, f"skip:{person_id}", neon="speed"),
+            btn(ui.BTN_SKIP, f"skip:{person_id}", neon="speedo"),
         ],
         [
-            btn(ui.BTN_QUESTION, f"question:{person_id}", neon="bolt"),
+            btn(ui.BTN_QUESTION, f"question:{person_id}", neon="chat"),
             btn(ui.BTN_REPORT, f"report:{person_id}"),
         ],
     )
@@ -94,10 +94,10 @@ def incoming_actions(person_id: int):
     return rows(
         [
             btn(ui.BTN_LIKE, f"incoming_like:{person_id}", neon="heart"),
-            btn(ui.BTN_SKIP, f"incoming_skip:{person_id}", neon="speed"),
+            btn(ui.BTN_SKIP, f"incoming_skip:{person_id}", neon="speedo"),
         ],
         [
-            btn(ui.BTN_QUESTION, f"question:{person_id}", neon="bolt"),
+            btn(ui.BTN_QUESTION, f"question:{person_id}", neon="chat"),
             btn(ui.BTN_REPORT, f"report:{person_id}"),
         ],
     )
@@ -169,7 +169,7 @@ def consent_keyboard():
 def settings_keyboard():
     return rows(
         [
-            btn(ui.BTN_EDIT, "edit_profile", neon="pencil"),
+            btn(ui.BTN_EDIT, "edit_profile", neon="gear"),
             btn(ui.BTN_SEARCH, "search_settings"),
         ],
         [
@@ -196,7 +196,7 @@ def stats_keyboard():
 
 def game_actions(game_id: int):
     return rows([
-        btn(ui.BTN_START_GAME, f"game_start:{game_id}", neon="candy"),
+        btn(ui.BTN_START_GAME, f"game_start:{game_id}", neon="gamepad"),
     ])
 
 
@@ -212,7 +212,7 @@ def game_result_actions(person_id: int):
     return rows(
         [
             btn(ui.BTN_LIKE, f"game_like:{person_id}", neon="heart"),
-            btn(ui.BTN_PLAY_AGAIN, "play_again", neon="candy"),
+            btn(ui.BTN_PLAY_AGAIN, "play_again", neon="gamepad"),
         ],
         [btn(ui.BTN_NEXT, "browse")],
     )
@@ -224,7 +224,7 @@ def game_result_actions(person_id: int):
 
 def question_answer_keyboard(question_id: int):
     return rows([
-        btn(ui.BTN_ANSWER, f"answer_q:{question_id}", neon="bolt"),
+        btn(ui.BTN_ANSWER, f"answer_q:{question_id}", neon="chat"),
     ])
 
 

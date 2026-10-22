@@ -27,15 +27,15 @@ NEON = {
     "diamond": ("5377538692292323573", "💎"),  # редкое
     "star": ("5375383215710185869", "⭐"),     # своё, возвращение
     "candy": ("5377631863017875753", "🍭"),    # игры
-    "eye": ("5391254726186677649", "👀"),      # тебя выбрали, просмотры
+    "spark": ("5391274195273426031", "⚡"),    # искры: «вас объединяют»
+    "eye": ("5391254726186677649", "👀"),      # тебя выбрали
     "trophy": ("5393164242876670090", "🏆"),   # победы, высшее достижение
-    "pencil": ("5391094644165619750", "✏️"),   # редактирование
-    "speed": ("5391035472401182432", "💨"),    # «Дальше»
+    "gamepad": ("5391094644165619750", "🎮"),  # игры
+    "chat": ("5391035472401182432", "💬"),     # вопросы, общение
     "hands": ("5391048713785360965", "🙌"),    # взаимный вайб
-    "car": ("5391075621755468408", "🚘"),      # про запас
-    "scroll": ("5393273798902457402", "📜"),   # политика, правила
-    "globe": ("5391026517394370172", "🌐"),    # про запас: город, ссылки
-    "bolt2": ("5391274195273426031", "⚡"),    # про запас
+    "speedo": ("5391075621755468408", "⏱"),    # спидометр: «Дальше»
+    "lock": ("5393273798902457402", "🔒"),     # закрытое фото, приватность
+    "gear": ("5391026517394370172", "⚙️"),     # настройки
 }
 
 
@@ -172,7 +172,7 @@ CONSENT = (
 )
 
 PRIVACY = (
-    f"{title('scroll', 'Политика конфиденциальности')}\n\n"
+    f"{title('lock', 'Политика конфиденциальности')}\n\n"
     "<b>Что храним:</b> Telegram ID и username, имя, возраст, пол, "
     "город, интересы, текст о себе, фото, кого ты ищешь; "
     "лайки, пропуски, блокировки, жалобы, вопросы и ответы, "
@@ -236,20 +236,20 @@ ASK_INTERESTS = (
 ASK_ABOUT = step(6, "Что о тебе стоит знать за 10 секунд?") + "\nДо 500 символов"
 ASK_PHOTO = (
     step(7, "Пришли своё фото")
-    + "\nОно спрятано, пока вайб не станет взаимным 🔒"
+    + f"\nОно спрятано, пока вайб не станет взаимным {e('lock')}"
 )
 ASK_SEARCH = step(8, "Кого тебе показывать?")
 
 PROFILE_CONTINUE = "Продолжим анкету 👇"
 PROFILE_RESTART = f"{title('star', 'Давай закончим анкету')}\n\n{ASK_NAME}"
 PROFILE_START = f"Супер, начнём 🙌\n\n{ASK_NAME}"
-EDIT_START = f"{title('pencil', 'Заполним анкету заново')}\n\n{ASK_NAME}"
+EDIT_START = f"{title('gear', 'Заполним анкету заново')}\n\n{ASK_NAME}"
 PROFILE_DONE = (
     f"{title('heart', 'Готово, ты на радаре')}\n\n"
     "Жми «Найти вайб» и смотри, с кем совпадёшь"
 )
 SEARCH_SAVED = "Готово, поиск обновили 👌"
-SEARCH_CHOOSE = plain_title("⚙️", "Кого показывать в поиске?")
+SEARCH_CHOOSE = title("gear", "Кого показывать в поиске?")
 
 ERR_NAME = "Имя от 2 до 30 символов, давай ещё раз"
 ERR_AGE_FORMAT = "Нужна цифра, например 21"
@@ -321,7 +321,7 @@ def profile_card(person, vibe=None, common=None, same_city=False) -> str:
 
     if common:
         lines.append("")
-        lines.append("✨ Вас объединяют: " + esc(", ".join(common)))
+        lines.append(f"{e('spark')} Вас объединяют: " + esc(", ".join(common)))
     elif same_city:
         lines.append("")
         lines.append("✨ Вы из одного города")
@@ -332,7 +332,7 @@ def profile_card(person, vibe=None, common=None, same_city=False) -> str:
 def search_card(person, vibe, common, same_city=False) -> str:
     return (
         profile_card(person, vibe=vibe, common=common, same_city=same_city)
-        + "\n🔒 Фото откроется, если вайб взаимный"
+        + f"\n{e('lock')} Фото откроется, если вайб взаимный"
     )
 
 
@@ -435,7 +435,7 @@ def contact_text(username: str) -> str:
 # =========================================================
 
 ASK_QUESTION = (
-    f"{title('bolt', 'Задай вопрос')}\n\n"
+    f"{title('chat', 'Задай вопрос')}\n\n"
     "Напиши его одним сообщением. Человек увидит его и сможет ответить"
 )
 QUESTION_SENT = "Вопрос ушёл ⚡ Ответ пришлю сюда"
@@ -452,12 +452,12 @@ REPLY_FAILED = "Не получилось отправить ответ, воз�
 
 
 def incoming_question(text: str) -> str:
-    return f"{title('bolt', 'Тебе задали вопрос')}\n\n«{esc(text)}»"
+    return f"{title('chat', 'Тебе задали вопрос')}\n\n«{esc(text)}»"
 
 
 def question_answered(question: str, answer: str) -> str:
     return (
-        f"{title('bolt', 'Тебе ответили')}\n\n"
+        f"{title('chat', 'Тебе ответили')}\n\n"
         f"❓ «{esc(question)}»\n"
         f"💬 «{esc(answer)}»"
     )
@@ -501,9 +501,9 @@ def stats(s) -> str:
         f"{e('heart')} Лайков поставлено: {s['likes_sent']}\n"
         f"{e('eye')} Тебя выбрали: {s['likes_received']}\n"
         f"{e('hands')} Взаимных вайбов: <b>{s['mutual_likes']}</b>\n"
-        f"{e('bolt')} Вопросов: задано {s['questions_sent']}, "
+        f"{e('chat')} Вопросов: задано {s['questions_sent']}, "
         f"получено {s['questions_received']}\n"
-        f"{e('candy')} Игр сыграно: {s['games']}"
+        f"{e('gamepad')} Игр сыграно: {s['games']}"
     )
 
 
@@ -514,8 +514,8 @@ ACHIEVEMENTS = (
     ("fire", "В огне", "серия 7 дней", "best_streak", 7),
     ("heart", "Сердцеед", "25 лайков", "likes_sent", 25),
     ("trophy", "Легенда", "серия 30 дней", "best_streak", 30),
-    ("candy", "Душа компании", "10 игр", "games", 10),
-    ("bolt", "Болтун", "10 вопросов", "questions_sent", 10),
+    ("gamepad", "Душа компании", "10 игр", "games", 10),
+    ("chat", "Болтун", "10 вопросов", "questions_sent", 10),
     ("star", "Магнит", "тебя выбрали 25 раз", "likes_received", 25),
     ("star", "Лидер вайба", "3 друга по твоей ссылке", "referrals", 3),
 )
@@ -573,7 +573,7 @@ def hall_of_fame(s) -> str:
 # НАСТРОЙКИ
 # =========================================================
 
-SETTINGS = plain_title("⚙️", "Настройки")
+SETTINGS = title("gear", "Настройки")
 DELETE_ASK = (
     f"{plain_title('⚠️', 'Точно удалить профиль?')}\n\n"
     "Анкета, фото, лайки, вопросы и игры удалятся насовсем"
