@@ -188,6 +188,14 @@ const api = DEMO ? makeDemoApi() : {
     if (!res.ok) throw Object.assign(new Error(data.error), { code: data.error });
     return data;
   },
+  async shareCard(blob) {
+    const fd = new FormData();
+    fd.append("photo", blob, "vibe.png");
+    const res = await fetch("api/share_card", { method: "POST", headers: { "X-Init-Data": tg.initData }, body: fd });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw Object.assign(new Error(data.error), { code: data.error });
+    return data;
+  },
   gameState() { return this.call("game/state"); },
   gameJoin() { return this.call("game/join", {}); },
   gameLeave() { return this.call("game/leave", {}); },
@@ -276,6 +284,7 @@ function makeDemoApi() {
     async question() { await wait(300); stats.questions_sent++; return { ok: true }; },
     async report(id) { await wait(200); queue = queue.filter((x) => x.id !== id); return { ok: true }; },
     async uploadPhoto() { await wait(600); return { ok: true }; },
+    async shareCard() { await wait(500); return { ok: true }; },
     async photo() { return null; },
     ...makeDemoGame(wait, people),
   };
@@ -1214,6 +1223,83 @@ function compressImage(file) {
   });
 }
 
+
+// =========================================================
+// Карточка для сторис: «Мы совпали на N%»
+// =========================================================
+async function drawShareCard({ pct, name, matches, total, verdict }) {
+  try { await Promise.all([document.fonts.load('700 100px "Unbounded"'), document.fonts.load('600 40px "Manrope"')]); } catch (_) {}
+  const W = 1080, H = 1920;
+  const c = document.createElement("canvas");
+  c.width = W; c.height = H;
+  const g = c.getContext("2d");
+  const head = '"Unbounded", "Manrope", system-ui, sans-serif';
+  const body = '"Manrope", system-ui, sans-serif';
+
+  // фон и неоновое свечение
+  g.fillStyle = "#07060d"; g.fillRect(0, 0, W, H);
+  let r = g.createRadialGradient(W / 2, 760, 40, W / 2, 760, 760);
+  r.addColorStop(0, "rgba(255,61,154,.38)"); r.addColorStop(1, "rgba(255,61,154,0)");
+  g.fillStyle = r; g.fillRect(0, 0, W, H);
+  r = g.createRadialGradient(W * 0.1, H * 0.95, 40, W * 0.1, H * 0.95, 700);
+  r.addColorStop(0, "rgba(155,92,255,.35)"); r.addColorStop(1, "rgba(155,92,255,0)");
+  g.fillStyle = r; g.fillRect(0, 0, W, H);
+
+  g.textAlign = "center";
+  // бренд сверху
+  g.fillStyle = "#fff"; g.font = `700 54px ${head}`;
+  g.shadowColor = "#ff3d9a"; g.shadowBlur = 28;
+  g.fillText("Вайбометр", W / 2, 190);
+  g.shadowBlur = 0;
+  g.fillStyle = "rgba(255,255,255,.55)"; g.font = `600 34px ${body}`;
+  g.fillText("СНАЧАЛА ВАЙБ, ПОТОМ ФОТО", W / 2, 250);
+
+  // шкала
+  const cx = W / 2, cy = 900, R = 360, sw = 54;
+  g.lineCap = "round";
+  g.lineWidth = sw; g.strokeStyle = "rgba(255,255,255,.09)";
+  g.beginPath(); g.arc(cx, cy, R, Math.PI, 2 * Math.PI); g.stroke();
+  const grad = g.createLinearGradient(cx - R, 0, cx + R, 0);
+  grad.addColorStop(0, "#9b5cff"); grad.addColorStop(1, "#ff3d9a");
+  g.strokeStyle = grad; g.shadowColor = "rgba(255,61,154,.8)"; g.shadowBlur = 40;
+  g.beginPath(); g.arc(cx, cy, R, Math.PI, Math.PI + Math.PI * Math.min(pct, 100) / 100); g.stroke();
+  g.shadowBlur = 0;
+  // риски
+  g.lineWidth = 3; g.strokeStyle = "rgba(196,140,255,.5)";
+  for (let i = 0; i <= 10; i++) {
+    const a = Math.PI + (Math.PI * i) / 10, r1 = R - sw * 0.95, r2 = R - sw * (i % 5 ? 1.45 : 1.9);
+    g.beginPath(); g.moveTo(cx + r1 * Math.cos(a), cy + r1 * Math.sin(a)); g.lineTo(cx + r2 * Math.cos(a), cy + r2 * Math.sin(a)); g.stroke();
+  }
+  // стрелка
+  const na = Math.PI + Math.PI * Math.min(pct, 100) / 100;
+  g.lineWidth = 12; g.strokeStyle = "#fff"; g.shadowColor = "#fff"; g.shadowBlur = 18;
+  g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx + (R - sw * 1.2) * Math.cos(na), cy + (R - sw * 1.2) * Math.sin(na)); g.stroke();
+  g.shadowBlur = 0; g.fillStyle = "#ff3d9a"; g.shadowColor = "#ff3d9a"; g.shadowBlur = 24;
+  g.beginPath(); g.arc(cx, cy, 30, 0, 2 * Math.PI); g.fill(); g.shadowBlur = 0;
+
+  // процент и подпись
+  g.fillStyle = "#fff"; g.font = `700 230px ${head}`;
+  g.shadowColor = "#ff3d9a"; g.shadowBlur = 36;
+  g.fillText(`${pct}%`, cx, 1250); g.shadowBlur = 0;
+  g.fillStyle = "#ffd4ea"; g.font = `600 44px ${body}`;
+  g.fillText("СОВПАДЕНИЕ", cx, 1320);
+
+  g.fillStyle = "#fff"; g.font = `700 64px ${head}`;
+  g.fillText(`Я и ${name}`, cx, 1470);
+  g.fillStyle = "rgba(255,255,255,.7)"; g.font = `600 44px ${body}`;
+  g.fillText(`${verdict} · ${matches} из ${total} ответов`, cx, 1545);
+
+  // призыв
+  const bw = 760, bh = 110, bx = (W - bw) / 2, by = 1660;
+  const bg = g.createLinearGradient(bx, 0, bx + bw, 0);
+  bg.addColorStop(0, "#9b5cff"); bg.addColorStop(1, "#ff3d9a");
+  g.fillStyle = bg; g.shadowColor = "rgba(255,61,154,.6)"; g.shadowBlur = 36;
+  g.beginPath(); g.roundRect(bx, by, bw, bh, 55); g.fill(); g.shadowBlur = 0;
+  g.fillStyle = "#fff"; g.font = `700 40px ${head}`;
+  g.fillText("Проверь вайб: @vibemeter_bot", cx, by + 71);
+  return c;
+}
+
 // =========================================================
 // Друзья, игры, онбординг
 // =========================================================
@@ -1343,11 +1429,30 @@ function renderGame() {
           <button class="btn btn-pink" id="game-like" ${game.liked ? "disabled" : ""}>${svg("heart")} ${game.liked ? "Отправлено" : "Вайб"}</button>
           <button class="btn btn-violet" id="game-join">${svg("game")} Ещё раз</button>
         </div>
+        <button class="btn btn-ghost mt" id="game-share" style="width:100%">${svg("share")} Картинка для сторис</button>
       </div>`;
     animateGauges(root);
     $("#game-join").onclick = joinGame;
     $("#game-like").onclick = likeOpponent;
+    $("#game-share").onclick = shareGameCard;
   }
+}
+
+async function shareGameCard() {
+  const g = game.data;
+  const btn = $("#game-share");
+  if (btn) btn.disabled = true;
+  haptic("medium");
+  try {
+    const canvas = await drawShareCard({
+      pct: g.percentage, name: (g.opponent && g.opponent.name) || "незнакомцем",
+      matches: g.matches, total: g.total, verdict: vibeWord(g.percentage),
+    });
+    const blob = await new Promise((res) => canvas.toBlob(res, "image/png"));
+    await api.shareCard(blob);
+    toast(DEMO ? "Картинка готова (в демо не отправляется)" : "Картинка пришла в чат с ботом");
+  } catch (e) { toast(errorText(e)); }
+  if (btn) btn.disabled = false;
 }
 
 async function joinGame() {

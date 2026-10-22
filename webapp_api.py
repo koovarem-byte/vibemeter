@@ -409,6 +409,52 @@ async def api_profile(request):
     return web.json_response({"ok": True})
 
 
+_share_last: dict[int, float] = {}
+
+
+async def api_share_card(request):
+    """Картинка «мы совпали на N%» для сторис: бот присылает её в чат."""
+    user_id = request["user"]["telegram_id"]
+
+    now = time.time()
+    if now - _share_last.get(user_id, 0) < 10:
+        return error("too_fast", 429)
+    _share_last[user_id] = now
+
+    if request.content_length and request.content_length > MAX_PHOTO_BYTES + 4096:
+        return error("too_big", 413)
+    try:
+        reader = await request.multipart()
+        part = await reader.next()
+    except Exception:
+        return error("bad_request", 400)
+    if part is None or part.name != "photo":
+        return error("bad_request", 400)
+
+    chunks, size = [], 0
+    while chunk := await part.read_chunk(64 * 1024):
+        size += len(chunk)
+        if size > MAX_PHOTO_BYTES:
+            return error("too_big", 413)
+        chunks.append(chunk)
+    data = b"".join(chunks)
+    if not (data[:3] == b"\xff\xd8\xff" or data[:8] == b"\x89PNG\r\n\x1a\n"):
+        return error("bad_type", 415)
+
+    bot = request.app["bot"]
+    try:
+        username = (await bot.me()).username
+        await bot.send_photo(
+            user_id,
+            photo=BufferedInputFile(data, filename="vibe.jpg"),
+            caption=ui.SHARE_CARD_CAPTION.format(link=f"https://t.me/{username}?start=ref_{user_id}"),
+        )
+    except Exception:
+        logging.exception("Не удалось отправить карточку %s", user_id)
+        return error("upload_failed", 502)
+    return web.json_response({"ok": True})
+
+
 async def api_upload_photo(request):
     """Новое фото анкеты: шлём его пользователю в чат с ботом и берём file_id."""
     user_id = request["user"]["telegram_id"]
@@ -752,6 +798,7 @@ def setup_webapp(app: web.Application, bot):
     app.router.add_post("/app/api/undo", api_undo)
     app.router.add_post("/app/api/profile", api_profile)
     app.router.add_post("/app/api/upload_photo", api_upload_photo)
+    app.router.add_post("/app/api/share_card", api_share_card)
     app.router.add_post("/app/api/question", api_question)
     app.router.add_post("/app/api/report", api_report)
     app.router.add_get("/app/api/vibes", api_vibes)
