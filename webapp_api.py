@@ -48,15 +48,17 @@ from handlers import (
     notify_admin_report,
     notify_liked,
     notify_mutual,
+    send_game_question,
 )
 from games import (
+    game_queue,
     calculate_result,
     complete_game,
     get_current_question,
     save_answer,
     start_game,
 )
-from keyboards import open_app_keyboard
+from keyboards import game_result_actions, open_app_keyboard
 from questions import MAX_QUESTION_LENGTH, send_question
 from utils import (
     is_adult,
@@ -449,8 +451,7 @@ async def api_upload_photo(request):
 # Игра «Что выберешь?» (единая очередь для всех игроков Mini App)
 # =========================================================
 
-# user_id -> время входа в очередь
-game_queue: dict[int, float] = {}
+# очередь общая с ботом (games.game_queue): user_id -> (время входа, "bot"/"app")
 QUEUE_TTL = 15 * 60          # дольше не ждём
 RESULT_TTL = 15 * 60         # результат показываем 15 минут после игры
 STUCK_AFTER = 10 * 60        # соперник молчит дольше — можно начать новую
@@ -458,7 +459,7 @@ STUCK_AFTER = 10 * 60        # соперник молчит дольше — м
 
 def _clean_queue():
     now = time.time()
-    for uid in [u for u, t in game_queue.items() if now - t > QUEUE_TTL]:
+    for uid in [u for u, (t, _) in game_queue.items() if now - t > QUEUE_TTL]:
         game_queue.pop(uid, None)
 
 
@@ -573,23 +574,27 @@ async def api_game_join(request):
         game_queue.pop(uid, None)
 
     if opponent_id is None:
-        game_queue[user_id] = time.time()
+        game_queue[user_id] = (time.time(), "app")
         return web.json_response({"state": "waiting"})
 
-    game_queue.pop(opponent_id, None)
+    _, opponent_channel = game_queue.pop(opponent_id, (0, "app"))
     game_queue.pop(user_id, None)
-    await start_game(opponent_id, user_id)
+    game = await start_game(opponent_id, user_id)
 
-    # соперник мог закрыть приложение: зовём его обратно через бота
-    keyboard = open_app_keyboard("games")
-    try:
-        await request.app["bot"].send_message(
-            opponent_id,
-            ui.GAME_FOUND_PING,
-            reply_markup=keyboard,
-        )
-    except Exception:
-        logging.info("Не удалось позвать соперника %s", opponent_id)
+    bot = request.app["bot"]
+    if opponent_channel == "bot":
+        # соперник ждал в чате с ботом: вопросы придут туда
+        await send_game_question(bot, opponent_id, game["id"], intro=ui.GAME_FOUND)
+    else:
+        # соперник мог закрыть приложение: зовём его обратно через бота
+        try:
+            await bot.send_message(
+                opponent_id,
+                ui.GAME_FOUND_PING,
+                reply_markup=open_app_keyboard("games"),
+            )
+        except Exception:
+            logging.info("Не удалось позвать соперника %s", opponent_id)
 
     return web.json_response(await game_state_for(request))
 
@@ -619,8 +624,8 @@ async def api_game_answer(request):
         try:
             await request.app["bot"].send_message(
                 state["opponent"]["id"],
-                ui.GAME_RESULT_PING,
-                reply_markup=open_app_keyboard("games"),
+                ui.game_result(state["matches"], state["percentage"]),
+                reply_markup=game_result_actions(user_id),
             )
         except Exception:
             pass

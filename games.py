@@ -10,6 +10,10 @@ from database import (
 )
 
 
+# Общая очередь поиска пары для бота и Mini App:
+# user_id -> (время входа, откуда пришёл: "bot" или "app")
+game_queue: dict[int, tuple[float, str]] = {}
+
 GAMES = [
     {
         "question": "Что выберешь?",

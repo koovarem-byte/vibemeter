@@ -1,6 +1,7 @@
 import html
 import logging
 import random
+import time
 
 from aiogram import Router, F
 from aiogram.filters import Command, CommandObject, CommandStart, StateFilter
@@ -14,6 +15,7 @@ from aiogram.types import (
 import ui
 from openers import make_openers
 from database import (
+    is_blocked,
     add_referral,
     count_referrals,
     get_inviter,
@@ -72,6 +74,8 @@ from utils import (
 from questions import send_question, submit_answer, get_question_data
 from database import get_game
 from games import (
+    game_queue,
+    calculate_result,
     start_game,
     get_current_question,
     save_answer,
@@ -83,8 +87,6 @@ router = Router()
 # Временные данные активных просмотров
 current_profile = {}
 
-# Очередь для вайб-игры
-waiting_players = []
 
 
 # =========================================================
@@ -1097,7 +1099,7 @@ async def delete_confirm_callback(
 
     await state.clear()
     current_profile.pop(user_id, None)
-    waiting_players[:] = [x for x in waiting_players if x != user_id]
+    game_queue.pop(user_id, None)
 
     await callback.answer()
     await callback.message.edit_reply_markup(reply_markup=None)
@@ -1134,41 +1136,58 @@ async def find_game(message: Message, user_id: int):
         await message.answer(ui.GAME_NEED_PROFILE)
         return
 
-    # Игры живут в Mini App: бот только открывает приложение
-    app_keyboard = open_app_keyboard("games")
-    if app_keyboard:
-        await message.answer(ui.GAME_OPEN_APP, reply_markup=app_keyboard)
-        return
-
     # Убираем пользователя из старой очереди
-    waiting_players[:] = [x for x in waiting_players if x != user_id]
+    game_queue.pop(user_id, None)
+
+    # чистим протухшие записи
+    now = time.time()
+    for uid in [u for u, (t, _) in game_queue.items() if now - t > 15 * 60]:
+        game_queue.pop(uid, None)
 
     opponent_id = None
 
-    for candidate_id in waiting_players:
+    for candidate_id in list(game_queue):
         candidate = await get_user(candidate_id)
 
-        if candidate and is_adult(candidate["age"]):
+        if (
+            candidate and not candidate["is_banned"]
+            and is_adult(candidate["age"])
+            and not await is_blocked(user_id, candidate_id)
+            and not await is_blocked(candidate_id, user_id)
+        ):
             opponent_id = candidate_id
             break
 
+        game_queue.pop(candidate_id, None)
+
     if opponent_id is None:
-        waiting_players.append(user_id)
+        game_queue[user_id] = (now, "bot")
         await message.answer(ui.GAME_WAITING, reply_markup=main_menu())
-        app_keyboard = open_app_keyboard("games")
-        if app_keyboard:
-            await message.answer(ui.OPEN_APP_HINT, reply_markup=app_keyboard)
         return
 
-    waiting_players.remove(opponent_id)
+    _, opponent_channel = game_queue.pop(opponent_id)
 
     game = await start_game(opponent_id, user_id)
 
-    # Первый вопрос сразу обоим — без лишней кнопки «Начать»
-    for player_id in (user_id, opponent_id):
+    # Первый вопрос сразу — без лишней кнопки «Начать»
+    await send_game_question(
+        message.bot, user_id, game["id"], intro=ui.GAME_FOUND
+    )
+
+    if opponent_channel == "bot":
         await send_game_question(
-            message.bot, player_id, game["id"], intro=ui.GAME_FOUND
+            message.bot, opponent_id, game["id"], intro=ui.GAME_FOUND
         )
+    else:
+        # соперник ждал в приложении: зовём его обратно
+        try:
+            await message.bot.send_message(
+                opponent_id,
+                ui.GAME_FOUND_PING,
+                reply_markup=open_app_keyboard("games"),
+            )
+        except Exception:
+            logging.info("Не удалось позвать соперника %s", opponent_id)
 
 
 async def send_game_question(bot, chat_id, game_id, intro=None):
@@ -1228,6 +1247,11 @@ async def game_answer_callback(callback: CallbackQuery):
         return
 
     result = await complete_game(game_id)
+    if not result:
+        # игру могли закрыть из приложения за долю секунды до нас
+        finished = await get_game(game_id)
+        if finished and finished["status"] == "finished":
+            result = await calculate_result(game_id)
 
     if not result:
         await callback.message.answer(ui.GAME_WAIT_OTHER)
