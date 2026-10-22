@@ -539,3 +539,6 @@ h1 { font-family: var(--head); font-size: 23px; font-weight: 700; margin: 4px 0;
 .opener:active { border-color: #ff4fa8; }
 
 .bubble { padding: 12px 14px; border-radius: 14px; background: rgba(155, 92, 255, .12); border: 1px solid rgba(196, 140, 255, .3); white-space: pre-wrap; word-break: break-word; }
+
+.item .ii svg, .stat .si svg { width: 20px; height: 20px; color: #c9a4ff; }
+.stat .si svg { width: 18px; height: 18px; }

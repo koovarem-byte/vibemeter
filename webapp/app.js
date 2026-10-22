@@ -79,6 +79,11 @@ const I = {
   edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/>',
   share: '<circle cx="18" cy="5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="19" r="2.5"/><path d="M8.2 10.8l7.6-4.4M8.2 13.2l7.6 4.4"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
+  fire: '<path d="M12 3c1 3 4 4.5 4 8.5a4 4 0 0 1-8 0c0-1.5.6-2.5 1.5-3.5C9.5 9.5 11 8 12 3z"/><path d="M10.5 16.5a1.6 1.6 0 0 0 3 0c0-1-.8-1.6-1.5-2.4-.7.8-1.5 1.4-1.5 2.4z"/>',
+  mail: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/>',
+  help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.4-1 .9-1 1.7M12 17h.01"/>',
+  ban: '<circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/>',
+  spark: '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/>',
 };
 const svg = (name, cls = "") =>
   `<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${I[name]}</svg>`;
@@ -595,10 +600,10 @@ const screens = {
       </div>
 
       <div class="grid g4 mt">
-        ${statTile("🩷", stats.likes_sent, "лайков")}
-        ${statTile("💞", stats.mutual_likes, "взаимных")}
-        ${statTile("🎮", stats.games, "игр")}
-        ${statTile("🔥", stats.streak_days, "серия")}
+        ${statTile(svg("heart"), stats.likes_sent, "лайков")}
+        ${statTile(svg("heart"), stats.mutual_likes, "взаимных")}
+        ${statTile(svg("game"), stats.games, "игр")}
+        ${statTile(svg("fire"), stats.streak_days, "серия")}
       </div>
 
       <div class="card mt">
@@ -680,12 +685,12 @@ const screens = {
         <p class="muted small" style="margin:10px 0 0">Уровень ${level.n} · ${level.name} · ${level.done} из ${level.total} достижений</p>
       </div>
       <div class="grid g2 mt">
-        ${statTile("🩷", stats.likes_sent, "лайков поставил")}
-        ${statTile("💌", stats.likes_received, "тебя выбрали")}
-        ${statTile("💞", stats.mutual_likes, "взаимных вайбов")}
-        ${statTile("🎮", stats.games, "игр сыграно")}
-        ${statTile("❓", `${stats.questions_sent} / ${stats.questions_received}`, "вопросов задал / получил")}
-        ${statTile("🔥", days(stats.best_streak), "рекорд серии")}
+        ${statTile(svg("heart"), stats.likes_sent, "лайков поставил")}
+        ${statTile(svg("mail"), stats.likes_received, "тебя выбрали")}
+        ${statTile(svg("heart"), stats.mutual_likes, "взаимных вайбов")}
+        ${statTile(svg("game"), stats.games, "игр сыграно")}
+        ${statTile(svg("chat"), `${stats.questions_sent} / ${stats.questions_received}`, "вопросов задал / получил")}
+        ${statTile(svg("fire"), days(stats.best_streak), "рекорд серии")}
       </div>`;
   },
 
@@ -700,11 +705,11 @@ const screens = {
           `<button data-sg="${v}" class="${sg === v ? "on" : ""}">${l}</button>`).join("")}</div>
       </div>
       <div class="list mt">
-        ${item("✏️", "Анкета и фото", "Имя, город, о себе, интересы", "set-edit")}
-        ${item("✨", "Как работает Вайбометр", "Коротко за 15 секунд", "set-onb")}
-        ${item("📤", "Позвать друга", "Чем больше своих, тем больше вайба", "set-invite")}
-        ${item("🔒", "Приватность", "Кто видит твоё фото и данные", "set-privacy")}
-        ${item("🚫", "Заблокированные и удаление", "В чате с ботом → ⚙️ Настройки", "set-bot")}
+        ${item(svg("edit"), "Анкета и фото", "Имя, город, о себе, интересы", "set-edit")}
+        ${item(svg("spark"), "Как работает Вайбометр", "Коротко за 15 секунд", "set-onb")}
+        ${item(svg("share"), "Позвать друга", "Чем больше своих, тем больше вайба", "set-invite")}
+        ${item(svg("lock"), "Приватность", "Кто видит твоё фото и данные", "set-privacy")}
+        ${item(svg("ban"), "Заблокированные и удаление", "В чате с ботом → ⚙️ Настройки", "set-bot")}
       </div>
       <p class="small muted" style="text-align:center;margin-top:22px">Вайбометр · только 18+ · <span class="grad-text" style="font-weight:800">Твой круг. Твой вайб.</span></p>`;
   },
