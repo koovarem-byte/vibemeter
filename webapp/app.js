@@ -204,6 +204,10 @@ const api = DEMO ? makeDemoApi() : {
     if (!res.ok) throw Object.assign(new Error(data.error), { code: data.error });
     return data;
   },
+  duoList() { return this.call("duo/list"); },
+  duoStart(kind, id) { return this.call("duo/start", { kind, id }); },
+  duoState(id) { return this.call(`duo/state?id=${id}`); },
+  duoAct(id, body) { return this.call("duo/act", { id, ...body }); },
   gameState() { return this.call("game/state"); },
   gameJoin() { return this.call("game/join", {}); },
   gameLeave() { return this.call("game/leave", {}); },
@@ -294,7 +298,41 @@ function makeDemoApi() {
     async uploadPhoto() { await wait(600); return { ok: true }; },
     async shareCard() { await wait(500); return { ok: true }; },
     async photo() { return null; },
+    ...makeDemoDuo(wait, mutual),
     ...makeDemoGame(wait, people),
+  };
+}
+
+// Игры на двоих в демо: партнёр отвечает мгновенно, чтобы можно было пройти всё до конца
+function makeDemoDuo(wait, mutual) {
+  const demo = { games: [] };
+  const partner = () => ({ ...mutual[0], vibe: 80 });
+  const QUIZ = [["Утро или ночь?", "Утро", "Ночь"], ["Горы или море?", "Горы", "Море"], ["Кофе или чай?", "Кофе", "Чай"], ["Собака или кот?", "Собака", "Кот"], ["Лето или зима?", "Лето", "Зима"]];
+  const mk = (kind) => ({
+    id: demo.games.length + 1, kind, title: kind === "quiz" ? "Викторина вайба" : "Правда или действие", status: "active", partner: partner(),
+    my_turn: true, mine: [], log: [],
+    view: kind === "quiz"
+      ? { kind, phase: "answer", index: 0, total: 5, i_am_author: true, question: { q: QUIZ[0][0], a: QUIZ[0][1], b: QUIZ[0][2] } }
+      : { kind, phase: "choose", round: 0, rounds: 6, my_turn: true, log: [] },
+  });
+  const find = (id) => demo.games.find((g) => g.id === id);
+  return {
+    async duoList() { await wait(120); return { games: demo.games }; },
+    async duoStart(kind) { await wait(200); const g = mk(kind); demo.games.unshift(g); return g; },
+    async duoState(id) { await wait(100); return find(id); },
+    async duoAct(id, body) {
+      await wait(250);
+      const g = find(id), v = g.view;
+      if (g.kind === "quiz") {
+        g.mine.push(body.answer);
+        if (g.mine.length < 5) { const q = QUIZ[g.mine.length]; v.index = g.mine.length; v.question = { q: q[0], a: q[1], b: q[2] }; }
+        else { v.phase = "done"; v.index = 5; v.matches = 4; v.percentage = 80; v.items = QUIZ.map((q, i) => ({ q: q[0], a: q[1], b: q[2], self: g.mine[i], guess: i === 2 ? (g.mine[i] === "a" ? "b" : "a") : g.mine[i] })); g.my_turn = false; g.status = "finished"; }
+        return g;
+      }
+      if (body.action === "choose") { v.phase = "answer"; v.pick = body.pick; v.prompt = body.pick === "truth" ? "Какая песня у тебя на повторе последние дни?" : "Опиши свой идеальный вечер одним предложением без слова «фильм»"; }
+      else { v.log.push({ mine: true, pick: v.pick, prompt: v.prompt, answer: body.text || null, score: "fire" }); v.round += 2; v.phase = v.round >= 6 ? "done" : "choose"; v.pick = null; v.prompt = null; if (v.phase === "done") { g.status = "finished"; g.my_turn = false; } }
+      return g;
+    },
   };
 }
 
@@ -1444,7 +1482,7 @@ function oppChip(o) {
 
 function renderGame() {
   const root = $("#game-root");
-  if (!root) return;
+  if (!root || duo.cur) return;
   const g = game.data;
 
   if (g.state === "idle") {
@@ -1454,12 +1492,9 @@ function renderGame() {
         <p style="max-width:none">5 вопросов «то или это» с человеком на одной волне. В конце: процент совпадения и шанс на вайб</p>
         <button class="btn btn-fill" id="game-join">${svg("game")} Играть</button>
       </div>
-      <p class="label mt-l">Скоро</p>
-      <div class="list">
-        <div class="game soon"><div class="gi">🎯</div><div class="grow"><b>Викторина вайба</b><small>Угадай ответы друг друга</small></div></div>
-        <div class="game soon"><div class="gi">🔥</div><div class="grow"><b>Правда или действие</b><small>Для тех, у кого уже взаимно</small></div></div>
-      </div>`;
+      ${duoHome()}`;
     $("#game-join").onclick = joinGame;
+    bindDuoHome(root);
   }
 
   if (g.state === "waiting") {
@@ -1589,9 +1624,178 @@ async function likeOpponent() {
   } catch (e) { game.liked = false; renderGame(); toast(errorText(e)); }
 }
 
+// =========================================================
+// Игры на двоих: «Правда или действие» и «Викторина вайба»
+// =========================================================
+const duo = { list: [], cur: null, timer: null, busy: false };
+const DUO_KINDS = {
+  truth_dare: { icon: "🔥", title: "Правда или действие", hint: "Вопросы и задания по очереди. Только с теми, у кого взаимно" },
+  quiz: { icon: "🎯", title: "Викторина вайба", hint: "Один отвечает про себя, второй угадывает" },
+};
+
+function duoHome() {
+  const active = duo.list.filter((d) => d.status === "active");
+  const mine = active.filter((d) => d.my_turn);
+  const rows = (list) => list.map((d) => `
+    <button class="game" data-duo-open="${d.id}" style="text-align:left;width:100%">
+      <div class="gi">${DUO_KINDS[d.kind].icon}</div>
+      <div class="grow"><b>${esc(d.title)} · ${esc(d.partner.name)}</b><small>${d.my_turn ? "Твой ход" : "Ждём ответ"}</small></div>
+      ${d.my_turn ? `<span class="badge" style="position:static">!</span>` : svg("chev", "chev")}
+    </button>`).join("");
+  const kinds = Object.entries(DUO_KINDS).map(([k, v]) => `
+    <button class="game" data-duo-kind="${k}" style="text-align:left;width:100%">
+      <div class="gi">${v.icon}</div><div class="grow"><b>${v.title}</b><small>${v.hint}</small></div>${svg("chev", "chev")}
+    </button>`).join("");
+  return `
+    ${active.length ? `<p class="label mt-l">Твои игры${mine.length ? ` · ходов ждут: ${mine.length}` : ""}</p><div class="list">${rows(active)}</div>` : ""}
+    <p class="label mt-l">С людьми, у кого взаимно</p>
+    <div class="list">${kinds}</div>`;
+}
+
+function bindDuoHome(root) {
+  $$("[data-duo-open]", root).forEach((b) => b.onclick = () => openDuo(Number(b.dataset.duoOpen)));
+  $$("[data-duo-kind]", root).forEach((b) => b.onclick = () => pickPartner(b.dataset.duoKind));
+}
+
+function pickPartner(kind) {
+  haptic("select");
+  const people = state.vibes.mutual;
+  if (!people.length) {
+    openSheet(`<h2 style="font-family:var(--head);font-size:17px;margin:4px 0 8px">${DUO_KINDS[kind].title}</h2>
+      <p class="muted" style="margin:0 0 14px">Эта игра для пар, где вайб взаимный. Лайкай анкеты, и первый партнёр скоро появится</p>
+      <button class="btn btn-fill" data-close>Понятно</button>`);
+    return;
+  }
+  const sheet = openSheet(`<h2 style="font-family:var(--head);font-size:17px;margin:4px 0 12px">С кем играем?</h2>
+    <div class="list">${people.map((p) => `<button class="person" data-duo-with="${p.id}" style="width:100%;text-align:left">
+      ${avatarFor(p, "pink")}<div class="grow"><b>${esc(p.name)}, ${p.age}</b><small>📍 ${esc(p.city || "")}</small></div>${svg("chev", "chev")}</button>`).join("")}</div>`);
+  people.forEach(withPhoto);
+  $$("[data-duo-with]", sheet).forEach((b) => b.onclick = async () => {
+    closeSheet();
+    try { openDuoData(await api.duoStart(kind, Number(b.dataset.duoWith))); } catch (e) { toast(errorText(e)); }
+  });
+}
+
+async function openDuo(id) {
+  try { openDuoData(await api.duoState(id)); } catch (e) { toast(errorText(e)); }
+}
+
+function openDuoData(data) {
+  duo.cur = data;
+  renderDuo();
+  startDuoPolling();
+}
+
+function stopDuoPolling() { clearInterval(duo.timer); duo.timer = null; }
+function startDuoPolling() {
+  stopDuoPolling();
+  duo.timer = setInterval(async () => {
+    if (route() !== "games" || !duo.cur || duo.busy) return stopDuoPolling();
+    if (duo.cur.my_turn) return;
+    try {
+      const next = await api.duoState(duo.cur.id);
+      const before = JSON.stringify(duo.cur.view);
+      duo.cur = next;
+      if (JSON.stringify(next.view) !== before) { haptic("light"); renderDuo(); }
+    } catch (_) {}
+  }, 3000);
+}
+
+function closeDuo() {
+  stopDuoPolling();
+  duo.cur = null;
+  openGames();
+}
+
+async function duoAct(body) {
+  if (duo.busy || !duo.cur) return;
+  duo.busy = true; haptic("medium");
+  try {
+    duo.cur = await api.duoAct(duo.cur.id, body);
+    renderDuo();
+  } catch (e) { toast(errorText(e)); }
+  duo.busy = false;
+}
+
+function duoWait(text) {
+  return `<div class="card strong" style="text-align:center;padding:24px 16px"><div style="font-size:30px">⏳</div>
+    <p class="muted" style="margin:10px auto 0;max-width:280px">${text}</p></div>`;
+}
+
+function renderDuo() {
+  const root = $("#game-root");
+  if (!root || !duo.cur) return;
+  const d = duo.cur, v = d.view, p = d.partner;
+  const name = esc(p.name);
+  const head = `<button class="btn btn-ghost btn-sm" id="duo-back" style="margin-bottom:12px">← К играм</button>${oppChip(p)}`;
+  let body = "";
+
+  if (d.kind === "truth_dare") {
+    const prog = `<p class="label" style="text-align:center;margin:0 0 10px">Раунд ${Math.min(v.round + 1, v.rounds)} из ${v.rounds}</p>`;
+    if (v.phase === "choose") {
+      body = v.my_turn
+        ? `${prog}<h2 class="game-q">Твой ход. Что выбираешь?</h2>
+           <div class="list" style="gap:12px"><button class="game-opt" data-pick="truth"><span>💬 Правда</span></button><div class="game-or">или</div><button class="game-opt" data-pick="dare"><span>🔥 Действие</span></button></div>`
+        : prog + duoWait(`${name} выбирает: правду или действие`);
+    } else if (v.phase === "answer") {
+      body = v.my_turn
+        ? `${prog}<div class="card strong"><p class="label">${v.pick === "truth" ? "Правда" : "Действие"}</p>
+            <h2 class="game-q" style="margin-bottom:12px">${esc(v.prompt)}</h2>
+            <textarea class="field" id="duo-text" rows="3" maxlength="300" placeholder="${v.pick === "truth" ? "Твой честный ответ" : "Что ты сделал(а)? Опиши в паре слов"}"></textarea></div>
+           <div class="grid g2 mt"><button class="btn btn-ghost" id="duo-skip">Пропустить</button><button class="btn btn-fill" id="duo-send">Отправить</button></div>`
+        : prog + `<div class="card"><p class="label">${v.pick === "truth" ? "Правда" : "Действие"} для ${name}</p><p style="margin:0">${esc(v.prompt)}</p></div>` + duoWait(`${name} отвечает`);
+    } else if (v.phase === "rate") {
+      body = !v.my_turn
+        ? `${prog}<div class="card strong"><p class="label">${v.pick === "truth" ? "Правда" : "Действие"}</p><p style="margin:0 0 12px"><b>${esc(v.prompt)}</b></p>
+            <div class="bubble">${v.answer ? esc(v.answer) : "<i class='muted'>Пропустил(а)</i>"}</div></div>
+           <div class="grid g2 mt"><button class="btn btn-ghost" data-rate="ok">👌 Ок</button><button class="btn btn-pink" data-rate="fire">🔥 Огонь</button></div>`
+        : prog + duoWait(`${name} оценивает твой ответ`);
+    } else {
+      body = `<div class="card strong" style="text-align:center"><div style="font-size:34px">🎉</div><h2 class="game-q" style="margin:6px 0">Игра окончена</h2>
+          <p class="muted" style="margin:0">${v.log.length} ходов. Вот что вы пережили</p></div>
+        <div class="list mt">${v.log.map((x) => `<div class="card"><p class="label">${x.mine ? "Ты" : name} · ${x.pick === "truth" ? "правда" : "действие"} ${x.score === "fire" ? "🔥" : "👌"}</p>
+          <p style="margin:0 0 6px"><b>${esc(x.prompt)}</b></p><p class="muted" style="margin:0">${x.answer ? esc(x.answer) : "Пропущено"}</p></div>`).join("")}</div>
+        <div class="grid g2 mt"><button class="btn btn-ghost" id="duo-again">Ещё раз</button><button class="btn btn-pink" id="duo-write">${svg("chat")} Написать</button></div>`;
+    }
+  } else {
+    const q = v.question;
+    const opts = q ? `<h2 class="game-q">${esc(q.q)}</h2><div class="list" style="gap:12px"><button class="game-opt" data-ans="a"><span>${esc(q.a)}</span></button><div class="game-or">или</div><button class="game-opt" data-ans="b"><span>${esc(q.b)}</span></button></div>` : "";
+    const dots = (n) => `<div class="game-dots">${Array.from({ length: v.total }, (_, i) => `<i class="${i < n ? "done" : i === n ? "on" : ""}"></i>`).join("")}</div>`;
+    if (v.phase === "answer") body = `${dots(v.index)}<p class="label" style="text-align:center;margin:14px 0 6px">Отвечай про себя, честно · ${v.index + 1} из ${v.total}</p>${opts}`;
+    else if (v.phase === "wait_author") body = duoWait(`${name} отвечает на 5 вопросов про себя. Потом ты будешь угадывать`);
+    else if (v.phase === "guess") body = `${dots(v.index)}<p class="label" style="text-align:center;margin:14px 0 6px">Как ответил(а) ${name}? · ${v.index + 1} из ${v.total}</p>${opts}`;
+    else if (v.phase === "wait_guess") body = duoWait(`${name} угадывает твои ответы. Результат придёт сюда`);
+    else body = `<div class="card strong" style="text-align:center;padding:24px 16px"><div style="display:flex;justify-content:center">${gauge(v.percentage, 170, "знаете друг друга")}</div>
+        <h2 class="game-q" style="margin:14px 0 4px">${v.percentage >= 80 ? "Вы читаете друг друга" : v.percentage >= 60 ? "Неплохо знаете друг друга" : v.percentage >= 40 ? "Есть что узнать" : "Вы загадка друг для друга"}</h2>
+        <p class="muted" style="margin:0">Угадано ${v.matches} из ${v.total}</p></div>
+      <div class="list mt">${v.items.map((it) => `<div class="card"><p style="margin:0 0 6px"><b>${esc(it.q)}</b></p>
+        <p class="muted small" style="margin:0">${v.i_am_author ? "Ты ответил(а)" : name + " ответил(а)"}: <b>${esc(it[it.self])}</b> · ${v.i_am_author ? name + " думал(а)" : "ты думал(а)"}: <b>${esc(it[it.guess])}</b> ${it.self === it.guess ? "✅" : "❌"}</p></div>`).join("")}</div>
+      <div class="grid g2 mt"><button class="btn btn-ghost" id="duo-again">Поменяться ролями</button><button class="btn btn-pink" id="duo-write">${svg("chat")} Написать</button></div>`;
+  }
+
+  root.innerHTML = head + body;
+  if (v.phase === "done") animateGauges(root);
+  $("#duo-back").onclick = closeDuo;
+  $$("[data-pick]", root).forEach((b) => b.onclick = () => duoAct({ action: "choose", pick: b.dataset.pick }));
+  $$("[data-rate]", root).forEach((b) => b.onclick = () => duoAct({ action: "rate", score: b.dataset.rate }));
+  $$("[data-ans]", root).forEach((b) => b.onclick = () => duoAct({ action: "answer", answer: b.dataset.ans }));
+  const send = $("#duo-send"), skip = $("#duo-skip");
+  if (send) send.onclick = () => {
+    const t = $("#duo-text").value.trim();
+    if (!t) { toast("Напиши ответ"); return; }
+    duoAct({ action: "answer", text: t });
+  };
+  if (skip) skip.onclick = () => duoAct({ action: "skip" });
+  const again = $("#duo-again"), write = $("#duo-write");
+  if (again) again.onclick = async () => { try { openDuoData(await api.duoStart(d.kind, p.id)); } catch (e) { toast(errorText(e)); } };
+  if (write) write.onclick = () => writeTo(p);
+}
 async function openGames() {
   stopGamePolling();
+  stopDuoPolling();
+  duo.cur = null;
   renderGame();
+  try { duo.list = (await api.duoList()).games; } catch (_) { duo.list = []; }
   try { applyGame(await api.gameState()); } catch (_) { applyGame({ state: "idle" }); }
 }
 
@@ -1656,6 +1860,7 @@ async function refreshSoft() {
 function render() {
   if (!state.me) return;
   stopGamePolling();
+  stopDuoPolling();
   let r = route();
   if (!screens[r]) r = "home";
   if (r !== "edit") state.form = null;
