@@ -1227,76 +1227,141 @@ function compressImage(file) {
 // =========================================================
 // Карточка для сторис: «Мы совпали на N%»
 // =========================================================
+function loadImage(src) {
+  return new Promise((resolve) => {
+    const im = new Image();
+    im.onload = () => resolve(im);
+    im.onerror = () => resolve(null);
+    im.src = src;
+  });
+}
+
+// Текст с разрядкой (letterSpacing в canvas есть не везде, считаем сами)
+function spaced(g, text, x, y, gap) {
+  const chars = [...text];
+  const widths = chars.map((ch) => g.measureText(ch).width);
+  const total = widths.reduce((a, b) => a + b, 0) + gap * (chars.length - 1);
+  const align = g.textAlign;
+  g.textAlign = "left";
+  let cx = align === "center" ? x - total / 2 : align === "right" ? x - total : x;
+  chars.forEach((ch, i) => { g.fillText(ch, cx, y); cx += widths[i] + gap; });
+  g.textAlign = align;
+}
+
+function heartPath(g, x, y, s) {
+  g.beginPath();
+  g.moveTo(x, y + s * 0.9);
+  g.bezierCurveTo(x - s * 1.5, y - s * 0.1, x - s * 0.7, y - s * 0.9, x, y - s * 0.3);
+  g.bezierCurveTo(x + s * 0.7, y - s * 0.9, x + s * 1.5, y - s * 0.1, x, y + s * 0.9);
+  g.closePath();
+}
+
+// Картинка для сторис: «Я и Анастасия · 80%». Фон: webapp/share-bg.jpg, если лежит, иначе неоновый градиент
 async function drawShareCard({ pct, name, matches, total, verdict }) {
-  try { await Promise.all([document.fonts.load('700 100px "Unbounded"'), document.fonts.load('600 40px "Manrope"')]); } catch (_) {}
+  try { await Promise.all([document.fonts.load('700 100px "Unbounded"'), document.fonts.load('500 40px "Manrope"')]); } catch (_) {}
+  const bg = await loadImage("share-bg.jpg");
   const W = 1080, H = 1920;
   const c = document.createElement("canvas");
   c.width = W; c.height = H;
   const g = c.getContext("2d");
   const head = '"Unbounded", "Manrope", system-ui, sans-serif';
   const body = '"Manrope", system-ui, sans-serif';
+  const cx = W / 2;
 
-  // фон и неоновое свечение
+  // фон
   g.fillStyle = "#07060d"; g.fillRect(0, 0, W, H);
-  let r = g.createRadialGradient(W / 2, 760, 40, W / 2, 760, 760);
-  r.addColorStop(0, "rgba(255,61,154,.38)"); r.addColorStop(1, "rgba(255,61,154,0)");
-  g.fillStyle = r; g.fillRect(0, 0, W, H);
-  r = g.createRadialGradient(W * 0.1, H * 0.95, 40, W * 0.1, H * 0.95, 700);
-  r.addColorStop(0, "rgba(155,92,255,.35)"); r.addColorStop(1, "rgba(155,92,255,0)");
-  g.fillStyle = r; g.fillRect(0, 0, W, H);
+  if (bg) {
+    const k = Math.max(W / bg.width, H / bg.height);
+    g.drawImage(bg, (W - bg.width * k) / 2, (H - bg.height * k) / 2, bg.width * k, bg.height * k);
+  } else {
+    let r = g.createRadialGradient(cx, 560, 40, cx, 560, 900);
+    r.addColorStop(0, "rgba(155,92,255,.40)"); r.addColorStop(1, "rgba(155,92,255,0)");
+    g.fillStyle = r; g.fillRect(0, 0, W, H);
+  }
+  // затемнение сверху и снизу, чтобы текст читался
+  let v = g.createLinearGradient(0, 0, 0, H);
+  v.addColorStop(0, "rgba(7,6,13,.55)"); v.addColorStop(0.25, "rgba(7,6,13,.05)");
+  v.addColorStop(0.45, "rgba(7,6,13,.55)"); v.addColorStop(1, "rgba(7,6,13,.92)");
+  g.fillStyle = v; g.fillRect(0, 0, W, H);
 
   g.textAlign = "center";
-  // бренд сверху
-  g.fillStyle = "#fff"; g.font = `700 54px ${head}`;
-  g.shadowColor = "#ff3d9a"; g.shadowBlur = 28;
-  g.fillText("Вайбометр", W / 2, 190);
-  g.shadowBlur = 0;
-  g.fillStyle = "rgba(255,255,255,.55)"; g.font = `600 34px ${body}`;
-  g.fillText("СНАЧАЛА ВАЙБ, ПОТОМ ФОТО", W / 2, 250);
+  // бренд
+  g.strokeStyle = "#c084fc"; g.lineWidth = 7; g.lineCap = "round";
+  g.beginPath(); g.arc(cx, 110, 34, Math.PI, 2 * Math.PI); g.stroke();
+  g.strokeStyle = "#fff"; g.beginPath(); g.moveTo(cx, 110); g.lineTo(cx + 22, 86); g.stroke();
+  g.fillStyle = "#fff"; g.font = `500 34px ${body}`;
+  spaced(g, "ВАЙБОМЕТР", cx, 190, 9);
+  g.textAlign = "right"; g.fillStyle = "rgba(255,255,255,.75)"; g.font = `600 22px ${body}`;
+  ["РЯДОМ", "НА ОДНОЙ", "ВОЛНЕ"].forEach((t, i) => spaced(g, t, W - 60, 70 + i * 34, 5));
+  g.textAlign = "center";
 
-  // шкала
-  const cx = W / 2, cy = 900, R = 360, sw = 54;
-  g.lineCap = "round";
-  g.lineWidth = sw; g.strokeStyle = "rgba(255,255,255,.09)";
-  g.beginPath(); g.arc(cx, cy, R, Math.PI, 2 * Math.PI); g.stroke();
-  const grad = g.createLinearGradient(cx - R, 0, cx + R, 0);
-  grad.addColorStop(0, "#9b5cff"); grad.addColorStop(1, "#ff3d9a");
-  g.strokeStyle = grad; g.shadowColor = "rgba(255,61,154,.8)"; g.shadowBlur = 40;
-  g.beginPath(); g.arc(cx, cy, R, Math.PI, Math.PI + Math.PI * Math.min(pct, 100) / 100); g.stroke();
-  g.shadowBlur = 0;
-  // риски
-  g.lineWidth = 3; g.strokeStyle = "rgba(196,140,255,.5)";
-  for (let i = 0; i <= 10; i++) {
-    const a = Math.PI + (Math.PI * i) / 10, r1 = R - sw * 0.95, r2 = R - sw * (i % 5 ? 1.45 : 1.9);
-    g.beginPath(); g.moveTo(cx + r1 * Math.cos(a), cy + r1 * Math.sin(a)); g.lineTo(cx + r2 * Math.cos(a), cy + r2 * Math.sin(a)); g.stroke();
+  // кольцо шкалы
+  const ry = 790, R = 290, sw = 40;
+  const a0 = Math.PI * 0.75, span = Math.PI * 1.5;
+  const aEnd = a0 + span * Math.min(pct, 100) / 100;
+  g.fillStyle = "rgba(7,6,13,.55)";
+  g.beginPath(); g.arc(cx, ry, R + 38, 0, 2 * Math.PI); g.fill();
+  g.lineWidth = sw; g.strokeStyle = "rgba(255,255,255,.12)";
+  g.beginPath(); g.arc(cx, ry, R, a0, a0 + span); g.stroke();
+  const grad = g.createLinearGradient(cx - R, ry + R, cx + R, ry - R);
+  grad.addColorStop(0, "#ff7ac3"); grad.addColorStop(0.5, "#9b5cff"); grad.addColorStop(1, "#d9b3ff");
+  g.strokeStyle = grad; g.shadowColor = "rgba(168,85,247,.9)"; g.shadowBlur = 44;
+  g.beginPath(); g.arc(cx, ry, R, a0, aEnd); g.stroke(); g.shadowBlur = 0;
+  g.fillStyle = "#fff"; g.shadowColor = "#fff"; g.shadowBlur = 24;
+  g.beginPath(); g.arc(cx + R * Math.cos(aEnd), ry + R * Math.sin(aEnd), 17, 0, 2 * Math.PI); g.fill(); g.shadowBlur = 0;
+
+  g.fillStyle = "rgba(255,255,255,.7)"; g.font = `500 30px ${body}`;
+  spaced(g, "ВАШ ВАЙБ", cx, ry - 120, 9);
+  g.fillStyle = "#fff"; g.font = `500 190px ${head}`;
+  g.shadowColor = "rgba(255,61,154,.55)"; g.shadowBlur = 30;
+  g.fillText(`${pct}`, cx - 28, ry + 80);
+  const wNum = g.measureText(`${pct}`).width;
+  g.font = `500 80px ${head}`; g.textAlign = "left";
+  g.fillText("%", cx - 28 + wNum / 2 + 6, ry + 80); g.textAlign = "center"; g.shadowBlur = 0;
+  // пульс
+  g.strokeStyle = "#d9b3ff"; g.lineWidth = 5; g.lineJoin = "round";
+  g.beginPath(); g.moveTo(cx - 60, ry + 170); g.lineTo(cx - 28, ry + 170); g.lineTo(cx - 14, ry + 140);
+  g.lineTo(cx + 4, ry + 205); g.lineTo(cx + 18, ry + 165); g.lineTo(cx + 60, ry + 170); g.stroke();
+
+  // имя и вердикт
+  g.fillStyle = "#fff"; g.font = `500 70px ${body}`;
+  spaced(g, `Я И ${name.toUpperCase()}`, cx, 1215, 8);
+  g.fillStyle = "#b983ff"; g.font = `600 56px ${body}`;
+  spaced(g, verdict.toUpperCase(), cx, 1310, 14);
+
+  // сердца
+  for (let i = 0; i < total; i++) {
+    const hx = cx + (i - (total - 1) / 2) * 92;
+    heartPath(g, hx, 1405, 30);
+    if (i < matches) {
+      const hg = g.createLinearGradient(hx - 30, 1380, hx + 30, 1440);
+      hg.addColorStop(0, "#c084fc"); hg.addColorStop(1, "#ff7ac3");
+      g.fillStyle = hg; g.shadowColor = "#b983ff"; g.shadowBlur = 22; g.fill(); g.shadowBlur = 0;
+    } else {
+      g.strokeStyle = "rgba(255,255,255,.6)"; g.lineWidth = 4; g.stroke();
+    }
   }
-  // стрелка
-  const na = Math.PI + Math.PI * Math.min(pct, 100) / 100;
-  g.lineWidth = 12; g.strokeStyle = "#fff"; g.shadowColor = "#fff"; g.shadowBlur = 18;
-  g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx + (R - sw * 1.2) * Math.cos(na), cy + (R - sw * 1.2) * Math.sin(na)); g.stroke();
-  g.shadowBlur = 0; g.fillStyle = "#ff3d9a"; g.shadowColor = "#ff3d9a"; g.shadowBlur = 24;
-  g.beginPath(); g.arc(cx, cy, 30, 0, 2 * Math.PI); g.fill(); g.shadowBlur = 0;
+  g.fillStyle = "rgba(255,255,255,.75)"; g.font = `500 34px ${body}`;
+  spaced(g, `${matches} ИЗ ${total}`, cx, 1500, 8);
+  g.strokeStyle = "rgba(255,255,255,.3)"; g.lineWidth = 2;
+  g.beginPath(); g.moveTo(cx - 330, 1490); g.lineTo(cx - 140, 1490); g.moveTo(cx + 140, 1490); g.lineTo(cx + 330, 1490); g.stroke();
 
-  // процент и подпись
-  g.fillStyle = "#fff"; g.font = `700 230px ${head}`;
-  g.shadowColor = "#ff3d9a"; g.shadowBlur = 36;
-  g.fillText(`${pct}%`, cx, 1250); g.shadowBlur = 0;
-  g.fillStyle = "#ffd4ea"; g.font = `600 44px ${body}`;
-  g.fillText("СОВПАДЕНИЕ", cx, 1320);
+  // кнопка внизу
+  const bw = 920, bh = 130, bx = (W - bw) / 2, by = 1650;
+  const bgr = g.createLinearGradient(bx, 0, bx + bw, 0);
+  bgr.addColorStop(0, "#5b3bd6"); bgr.addColorStop(1, "#b04ad8");
+  g.fillStyle = "rgba(20,12,40,.85)"; g.beginPath(); g.roundRect(bx, by, bw, bh, 65); g.fill();
+  g.lineWidth = 4; g.strokeStyle = bgr; g.shadowColor = "rgba(168,85,247,.8)"; g.shadowBlur = 30; g.stroke(); g.shadowBlur = 0;
+  g.fillStyle = "#fff"; g.font = `600 38px ${body}`; g.textAlign = "center";
+  g.fillText("Проверь вайб: @vibemeter_bot", cx, by + 80);
+  g.strokeStyle = "#fff"; g.lineWidth = 5;
+  g.beginPath(); g.moveTo(bx + bw - 110, by + 65); g.lineTo(bx + bw - 66, by + 65);
+  g.moveTo(bx + bw - 86, by + 47); g.lineTo(bx + bw - 66, by + 65); g.lineTo(bx + bw - 86, by + 83); g.stroke();
+  g.fillStyle = "#fff"; g.beginPath(); g.moveTo(bx + 70, by + 66); g.lineTo(bx + 125, by + 42); g.lineTo(bx + 108, by + 92);
+  g.lineTo(bx + 94, by + 74); g.closePath(); g.fill();
 
-  g.fillStyle = "#fff"; g.font = `700 64px ${head}`;
-  g.fillText(`Я и ${name}`, cx, 1470);
-  g.fillStyle = "rgba(255,255,255,.7)"; g.font = `600 44px ${body}`;
-  g.fillText(`${verdict} · ${matches} из ${total} ответов`, cx, 1545);
-
-  // призыв
-  const bw = 760, bh = 110, bx = (W - bw) / 2, by = 1660;
-  const bg = g.createLinearGradient(bx, 0, bx + bw, 0);
-  bg.addColorStop(0, "#9b5cff"); bg.addColorStop(1, "#ff3d9a");
-  g.fillStyle = bg; g.shadowColor = "rgba(255,61,154,.6)"; g.shadowBlur = 36;
-  g.beginPath(); g.roundRect(bx, by, bw, bh, 55); g.fill(); g.shadowBlur = 0;
-  g.fillStyle = "#fff"; g.font = `700 40px ${head}`;
-  g.fillText("Проверь вайб: @vibemeter_bot", cx, by + 71);
+  g.fillStyle = "rgba(255,255,255,.55)"; g.font = `500 22px ${body}`;
+  spaced(g, "ТОЛЬКО 18+", cx, 1860, 6);
   return c;
 }
 
