@@ -24,6 +24,7 @@ from aiogram.utils.web_app import safe_parse_webapp_init_data
 
 import ui
 from daily import today_question
+import duo
 from openers import make_openers
 from config import BOT_TOKEN
 from database import (
@@ -33,6 +34,11 @@ from database import (
     add_skip,
     delete_skip,
     get_candidates,
+    create_duo,
+    find_active_duo,
+    get_duo,
+    list_duos,
+    mutate_duo,
     get_daily_answers,
     set_daily_answer,
     get_incoming_likes,
@@ -754,6 +760,126 @@ async def api_game_answer(request):
     return web.json_response(state)
 
 
+# =========================================================
+# Игры на двоих (только для взаимного вайба)
+# =========================================================
+
+def _duo_partner_id(game, user_id: int) -> int:
+    return game["user_two"] if game["user_one"] == user_id else game["user_one"]
+
+
+async def _duo_response(user, game):
+    user_id = user["telegram_id"]
+    partner = await get_user(_duo_partner_id(game, user_id))
+    return {
+        "id": game["id"],
+        "kind": game["kind"],
+        "title": duo.TITLES[game["kind"]],
+        "status": game["status"],
+        "partner": person_json(partner, viewer=user) if partner else None,
+        "view": duo.view(game["kind"], game, game["state"], user_id),
+    }
+
+
+def _needs_action(v: dict) -> bool:
+    """Нужен ли от игрока ход прямо сейчас."""
+    if v["kind"] == duo.KIND_TRUTH:
+        if v["phase"] in ("choose", "answer"):
+            return v["my_turn"]
+        return v["phase"] == "rate" and not v["my_turn"]
+    return v["phase"] in ("answer", "guess")
+
+
+async def _ping_partner(request, user, game, text):
+    try:
+        await request.app["bot"].send_message(
+            _duo_partner_id(game, user["telegram_id"]),
+            text.format(name=ui.esc(user["full_name"]), game=duo.TITLES[game["kind"]]),
+            reply_markup=open_app_keyboard("games"),
+        )
+    except Exception:
+        logging.info("Не удалось позвать партнёра по игре")
+
+
+async def api_duo_list(request):
+    user = request["user"]
+    result = []
+    for game in await list_duos(user["telegram_id"]):
+        data = await _duo_response(user, game)
+        if data["partner"] is None:
+            continue
+        data["my_turn"] = game["status"] == "active" and _needs_action(data["view"])
+        result.append(data)
+    return web.json_response({"games": result})
+
+
+async def api_duo_start(request):
+    user = request["user"]
+    user_id = user["telegram_id"]
+    try:
+        body = await request.json()
+        kind = body["kind"]
+        partner_id = int(body["id"])
+    except (ValueError, KeyError, TypeError):
+        return error("bad_request", 400)
+    if kind not in duo.KINDS:
+        return error("bad_request", 400)
+
+    partner = await get_target(user_id, partner_id)
+    if not partner or not await is_mutual(user_id, partner_id):
+        return error("not_mutual", 403)
+
+    game = await find_active_duo(kind, user_id, partner_id)
+    if not game or game["state"].get("phase") == "done" or len(game["state"].get("guess", [])) >= duo.QUIZ_LEN:
+        game = await create_duo(kind, user_id, partner_id, duo.new_state(kind, user_id, partner_id))
+        await _ping_partner(request, user, game, ui.DUO_INVITE)
+    return web.json_response(await _duo_response(user, game))
+
+
+async def api_duo_state(request):
+    user = request["user"]
+    try:
+        game = await get_duo(int(request.query["id"]))
+    except (ValueError, KeyError):
+        return error("bad_request", 400)
+    if not game or user["telegram_id"] not in (game["user_one"], game["user_two"]):
+        return error("not_found", 404)
+    return web.json_response(await _duo_response(user, game))
+
+
+async def api_duo_act(request):
+    user = request["user"]
+    user_id = user["telegram_id"]
+    try:
+        body = await request.json()
+        duo_id = int(body["id"])
+    except (ValueError, KeyError, TypeError):
+        return error("bad_request", 400)
+
+    def step(game, state):
+        if user_id not in (game["user_one"], game["user_two"]):
+            return None, None, "not_found"
+        if game["status"] != "active":
+            return None, None, "finished"
+        new_state, err = duo.apply(game["kind"], game, state, user_id, body)
+        if err:
+            return None, None, err
+        finished = new_state.get("phase") == "done" or len(new_state.get("guess", [])) >= duo.QUIZ_LEN
+        return new_state, ("finished" if finished else "active"), None
+
+    game, err, _ = await mutate_duo(duo_id, step)
+    if err:
+        return error(err, 404 if err == "not_found" else 409)
+
+    # партнёру напомним, что очередь за ним (когда ход перешёл)
+    v = duo.view(game["kind"], game, game["state"], _duo_partner_id(game, user_id))
+    if game["status"] != "active":
+        await _ping_partner(request, user, game, ui.DUO_DONE)
+    elif _needs_action(v):
+        await _ping_partner(request, user, game, ui.DUO_YOUR_TURN)
+    return web.json_response(await _duo_response(user, game))
+
+
 async def api_vibes(request):
     user = request["user"]
     user_id = user["telegram_id"]
@@ -857,6 +983,10 @@ def setup_webapp(app: web.Application, bot):
     app.router.add_get("/app/api/next", api_next)
     app.router.add_post("/app/api/vibe", api_vibe)
     app.router.add_post("/app/api/daily", api_daily)
+    app.router.add_get("/app/api/duo/list", api_duo_list)
+    app.router.add_post("/app/api/duo/start", api_duo_start)
+    app.router.add_get("/app/api/duo/state", api_duo_state)
+    app.router.add_post("/app/api/duo/act", api_duo_act)
     app.router.add_get("/app/api/game/state", api_game_state)
     app.router.add_post("/app/api/game/join", api_game_join)
     app.router.add_post("/app/api/game/leave", api_game_leave)

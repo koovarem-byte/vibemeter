@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import os
 import asyncpg
@@ -169,6 +170,18 @@ async def init_db():
         """)
 
         await conn.execute("""
+            CREATE TABLE IF NOT EXISTS duo_games (
+                id BIGSERIAL PRIMARY KEY,
+                kind TEXT NOT NULL,
+                user_one BIGINT NOT NULL,
+                user_two BIGINT NOT NULL,
+                state JSONB NOT NULL DEFAULT '{}',
+                status TEXT NOT NULL DEFAULT 'active',
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        await conn.execute("""
             CREATE TABLE IF NOT EXISTS referrals (
                 invitee BIGINT PRIMARY KEY,
                 inviter BIGINT NOT NULL,
@@ -187,6 +200,77 @@ async def init_db():
                 UNIQUE(game_id, user_id, question_index)
             )
         """)
+
+
+# DUO GAMES (правда или действие, викторина)
+
+def _duo(row):
+    if row is None:
+        return None
+    d = dict(row)
+    if isinstance(d["state"], str):
+        d["state"] = json.loads(d["state"])
+    return d
+
+
+async def create_duo(kind: str, user_one: int, user_two: int, state: dict):
+    db = await get_pool()
+    async with db.acquire() as conn:
+        row = await conn.fetchrow("""
+            INSERT INTO duo_games (kind, user_one, user_two, state)
+            VALUES ($1, $2, $3, $4::jsonb) RETURNING *
+        """, kind, user_one, user_two, json.dumps(state))
+    return _duo(row)
+
+
+async def get_duo(duo_id: int):
+    db = await get_pool()
+    async with db.acquire() as conn:
+        return _duo(await conn.fetchrow("SELECT * FROM duo_games WHERE id = $1", duo_id))
+
+
+async def find_active_duo(kind: str, a: int, b: int):
+    db = await get_pool()
+    async with db.acquire() as conn:
+        return _duo(await conn.fetchrow("""
+            SELECT * FROM duo_games
+            WHERE kind = $1 AND status = 'active'
+              AND ((user_one = $2 AND user_two = $3) OR (user_one = $3 AND user_two = $2))
+              AND updated_at > now() - interval '7 days'
+            ORDER BY id DESC LIMIT 1
+        """, kind, a, b))
+
+
+async def list_duos(user_id: int):
+    db = await get_pool()
+    async with db.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT * FROM duo_games
+            WHERE (user_one = $1 OR user_two = $1)
+              AND updated_at > now() - interval '7 days'
+            ORDER BY updated_at DESC LIMIT 20
+        """, user_id)
+    return [_duo(r) for r in rows]
+
+
+async def mutate_duo(duo_id: int, fn):
+    """Блокирует строку, зовёт fn(game, state) -> (новое состояние, статус, ошибка)."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        async with conn.transaction():
+            row = _duo(await conn.fetchrow(
+                "SELECT * FROM duo_games WHERE id = $1 FOR UPDATE", duo_id))
+            if row is None:
+                return None, "not_found", None
+            state, status, err = fn(row, row["state"])
+            if err:
+                return row, err, None
+            await conn.execute("""
+                UPDATE duo_games SET state = $2::jsonb, status = $3, updated_at = now()
+                WHERE id = $1
+            """, duo_id, json.dumps(state), status)
+            row["state"], row["status"] = state, status
+            return row, None, state
 
 
 # REFERRALS
