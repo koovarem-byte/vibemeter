@@ -542,3 +542,6 @@ h1 { font-family: var(--head); font-size: 23px; font-weight: 700; margin: 4px 0;
 
 .item .ii svg, .stat .si svg { width: 20px; height: 20px; color: #c9a4ff; }
 .stat .si svg { width: 18px; height: 18px; }
+
+.chip.daily-chip { border-color: rgba(255, 200, 97, .6); color: #ffe3a8; background: rgba(255, 200, 97, .08); }
+.chip.daily-chip.common { border-color: #ffc861; box-shadow: 0 0 10px rgba(255, 200, 97, .3); }

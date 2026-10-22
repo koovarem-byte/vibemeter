@@ -166,7 +166,7 @@ def achievements_json(stats):
     for emoji, name, hint, key, goal in ui.ACHIEVEMENTS:
         value = min(stats[key], goal)
         result.append({
-            "icon": "💘" if name == "Сердцеед" else ICONS.get(emoji, "⭐"),
+            "icon": {"Сердцеед": "💘", "Лидер вайба": "🚀"}.get(name) or ICONS.get(emoji, "⭐"),
             "name": name,
             "hint": hint,
             "value": value,
