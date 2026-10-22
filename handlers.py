@@ -296,6 +296,27 @@ async def admin_handler(message: Message):
     await message.answer(ui.admin_stats(await get_admin_stats()))
 
 
+@router.message(Command("emojiset"))
+async def emoji_set_handler(message: Message, command: CommandObject):
+    """Админу: список эмодзи набора с их id, чтобы подключить в ui.NEON."""
+    if message.from_user.id != ADMIN_ID:
+        return
+
+    name = (command.args or "VibemeterNeon").strip().split("/")[-1]
+    try:
+        sticker_set = await message.bot.get_sticker_set(name)
+    except Exception as err:
+        await message.answer(f"Не получилось открыть набор {html.escape(name)}: {html.escape(str(err))}")
+        return
+
+    lines = [f"Набор {html.escape(sticker_set.title)}: {len(sticker_set.stickers)} шт.", ""]
+    for i, sticker in enumerate(sticker_set.stickers, 1):
+        lines.append(f"{i}. {sticker.emoji or '?'} <code>{sticker.custom_emoji_id}</code>")
+    # у Telegram лимит на длину сообщения
+    for start in range(0, len(lines), 40):
+        await message.answer("\n".join(lines[start:start + 40]))
+
+
 # =========================================================
 # СОГЛАСИЕ И ПОЛИТИКА
 # =========================================================
