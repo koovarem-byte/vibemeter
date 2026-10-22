@@ -160,6 +160,15 @@ async def init_db():
         """)
 
         await conn.execute("""
+            CREATE TABLE IF NOT EXISTS daily_answers (
+                user_id BIGINT NOT NULL,
+                day DATE NOT NULL,
+                answer TEXT NOT NULL CHECK (answer IN ('a', 'b')),
+                PRIMARY KEY (user_id, day)
+            )
+        """)
+
+        await conn.execute("""
             CREATE TABLE IF NOT EXISTS game_answers (
                 id BIGSERIAL PRIMARY KEY,
                 game_id BIGINT NOT NULL,
@@ -170,6 +179,35 @@ async def init_db():
                 UNIQUE(game_id, user_id, question_index)
             )
         """)
+
+
+# DAILY VIBE
+
+async def get_daily_answers(user_ids: list[int]) -> dict[int, str]:
+    """Ответы на вайб дня за сегодня (по Москве): {user_id: 'a'|'b'}."""
+    if not user_ids:
+        return {}
+    db = await get_pool()
+    async with db.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT user_id, answer FROM daily_answers
+            WHERE user_id = ANY($1::bigint[])
+              AND day = (now() AT TIME ZONE 'Europe/Moscow')::date
+        """, user_ids)
+    return {r["user_id"]: r["answer"] for r in rows}
+
+
+async def set_daily_answer(user_id: int, answer: str) -> bool:
+    """Один ответ в день. False, если уже отвечал."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        row = await conn.fetchrow("""
+            INSERT INTO daily_answers (user_id, day, answer)
+            VALUES ($1, (now() AT TIME ZONE 'Europe/Moscow')::date, $2)
+            ON CONFLICT DO NOTHING
+            RETURNING user_id
+        """, user_id, answer)
+    return row is not None
 
 
 # USERS

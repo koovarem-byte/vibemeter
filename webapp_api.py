@@ -20,6 +20,7 @@ from aiogram.types import BufferedInputFile
 from aiogram.utils.web_app import safe_parse_webapp_init_data
 
 import ui
+from daily import today_question
 from config import BOT_TOKEN
 from database import (
     add_like,
@@ -28,6 +29,8 @@ from database import (
     add_skip,
     delete_skip,
     get_candidates,
+    get_daily_answers,
+    set_daily_answer,
     get_incoming_likes,
     get_latest_game,
     get_mutual_likes,
@@ -205,9 +208,11 @@ async def api_me(request):
     me["search_gender"] = user["search_gender"] or "all"
 
     bot_info = await request.app["bot"].me()
+    mine = (await get_daily_answers([user["telegram_id"]])).get(user["telegram_id"])
 
     return web.json_response({
         "bot_username": bot_info.username,
+        "daily": {**today_question(), "answer": mine},
         "user": me,
         "stats": {k: int(v or 0) for k, v in stats.items()},
         "achievements": achievements_json(stats),
@@ -220,7 +225,27 @@ async def api_next(request):
     candidates = await get_candidates(user["telegram_id"])
     if not candidates:
         return web.json_response({"candidate": None})
-    return web.json_response({"candidate": person_json(candidates[0], viewer=user)})
+    person = candidates[0]
+    data = person_json(person, viewer=user)
+    answers = await get_daily_answers([user["telegram_id"], person["telegram_id"]])
+    theirs = answers.get(person["telegram_id"])
+    if theirs:
+        q = today_question()
+        data["daily"] = {"q": q["text"], "label": q[theirs], "match": answers.get(user["telegram_id"]) == theirs}
+    return web.json_response({"candidate": data})
+
+
+async def api_daily(request):
+    user = request["user"]
+    try:
+        body = await request.json()
+        answer = body["answer"]
+    except (ValueError, KeyError, TypeError):
+        return error("bad_request", 400)
+    if answer not in ("a", "b"):
+        return error("bad_request", 400)
+    saved = await set_daily_answer(user["telegram_id"], answer)
+    return web.json_response({"ok": True, "saved": saved})
 
 
 async def api_vibe(request):
@@ -698,6 +723,7 @@ def setup_webapp(app: web.Application, bot):
     app.router.add_get("/app/api/me", api_me)
     app.router.add_get("/app/api/next", api_next)
     app.router.add_post("/app/api/vibe", api_vibe)
+    app.router.add_post("/app/api/daily", api_daily)
     app.router.add_get("/app/api/game/state", api_game_state)
     app.router.add_post("/app/api/game/join", api_game_join)
     app.router.add_post("/app/api/game/leave", api_game_leave)

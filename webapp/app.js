@@ -179,6 +179,7 @@ const api = DEMO ? makeDemoApi() : {
   saveProfile(data) { return this.call("profile", data); },
   question(id, text) { return this.call("question", { id, text }); },
   report(id, reason) { return this.call("report", { id, reason }); },
+  daily(answer) { return this.call("daily", { answer }); },
   async uploadPhoto(blob) {
     const fd = new FormData();
     fd.append("photo", blob, "photo.jpg");
@@ -223,6 +224,8 @@ function makeDemoApi() {
     ["⚡", "Болтун", "10 вопросов", "questions_sent", 10],
     ["⭐", "Магнит", "тебя выбрали 25 раз", "likes_received", 25],
   ];
+  const dailyDemo = { text: "Утро или ночь?", a: "Утро", b: "Ночь", answer: null };
+  people[0].daily = { q: "Утро или ночь?", label: "Ночь", match: false };
   let queue = people.slice();
   const skipped = new Map();
   const mutual = [{ id: 15, name: "Соня", age: 20, city: "Псков", interests: ["музыка"], about: "", username: "demo", has_photo: false }];
@@ -231,7 +234,7 @@ function makeDemoApi() {
     const achievements = defs.map(([icon, name, hint, key, goal]) =>
       ({ icon, name, hint, value: Math.min(stats[key], goal), goal, done: stats[key] >= goal }));
     const done = achievements.filter((a) => a.done).length;
-    return { bot_username: "vibemeter_bot", user: { ...me }, stats: { ...stats }, achievements, level: levelFor(done, achievements.length) };
+    return { bot_username: "vibemeter_bot", daily: dailyDemo, user: { ...me }, stats: { ...stats }, achievements, level: levelFor(done, achievements.length) };
   };
 
   return {
@@ -268,6 +271,7 @@ function makeDemoApi() {
       if (data.search_gender !== undefined) me.search_gender = data.search_gender;
       return { ok: true };
     },
+    async daily(answer) { await wait(150); dailyDemo.answer = answer; return { ok: true, saved: true }; },
     async question() { await wait(300); stats.questions_sent++; return { ok: true }; },
     async report(id) { await wait(200); queue = queue.filter((x) => x.id !== id); return { ok: true }; },
     async uploadPhoto() { await wait(600); return { ok: true }; },
@@ -434,6 +438,8 @@ const screens = {
         <button class="btn btn-fill" data-go="search">${svg("heart")} Найти вайб</button>
         <div class="hero-mark" style="position:absolute;right:16px;top:20px;opacity:.95">${brandMark().replace('class="brand-mark"', 'class="brand-mark" style="width:96px;height:62px"')}</div>
       </div>
+
+      ${dailyHtml()}
 
       <div class="tiles">
         <button class="tile" data-go="vibes"><div class="ti c-pink">${svg("heart")}</div>${inc ? `<span class="badge">${inc}</span>` : ""}<div><b>Мои вайбы</b><small>${inc ? `${inc} ${plural(inc, "новый", "новых", "новых")}` : `${mut.length} взаимных`}</small></div></button>
@@ -756,6 +762,15 @@ function tagsHtml(p) {
   return list.map((t) => `<span class="chip ${common.has(t.toLowerCase()) ? "common" : ""}">${common.has(t.toLowerCase()) ? "✦ " : ""}${esc(t)}</span>`).join("");
 }
 
+function dailyHtml() {
+  const d = state.me.daily;
+  if (!d) return "";
+  const body = d.answer
+    ? `<p class="muted" style="margin:0">Твой ответ: <b>${esc(d[d.answer])}</b>. Его увидят в поиске. Завтра будет новый вопрос</p>`
+    : `<div class="daily-btns"><button class="btn btn-ghost" data-daily="a">${esc(d.a)}</button><button class="btn btn-ghost" data-daily="b">${esc(d.b)}</button></div>`;
+  return `<div class="card daily"><p class="label">Вайб дня</p><b class="daily-q">${esc(d.text)}</b>${body}</div>`;
+}
+
 function cardHtml(c) {
   const [a1, a2] = hue(c.id);
   return `
@@ -773,6 +788,7 @@ function cardHtml(c) {
           <div class="grow"><div class="pname">${esc(c.name)}, ${c.age}</div><div class="pcity">📍 ${esc(c.city || "")}</div></div>
           ${gauge(c.vibe, 78)}
         </div>
+        ${c.daily ? `<div class="chips" style="margin-bottom:8px"><span class="chip ${c.daily.match ? "common" : ""}">${c.daily.match ? "✦ " : ""}Вайб дня: ${esc(c.daily.label)}</span></div>` : ""}
         <div class="chips">${tagsHtml(c)}</div>
         ${c.about ? `<p class="pabout">${esc(c.about)}</p>` : ""}
         <div class="more-hint">Нажми, чтобы открыть анкету целиком</div>
@@ -1444,6 +1460,14 @@ function render() {
   if (tg && tg.BackButton) (r === "home" ? tg.BackButton.hide() : tg.BackButton.show());
 
   $$("#invite-btn").forEach((b) => b.onclick = invite);
+  $$("[data-daily]").forEach((b) => b.onclick = async () => {
+    haptic("select");
+    try {
+      await api.daily(b.dataset.daily);
+      state.me.daily.answer = b.dataset.daily;
+      render();
+    } catch (e) { toast(errorText(e)); }
+  });
   $$("[data-sg]").forEach((b) => b.onclick = async () => {
     haptic("select");
     try {
