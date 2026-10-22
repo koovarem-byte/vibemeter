@@ -21,6 +21,7 @@ from aiogram.utils.web_app import safe_parse_webapp_init_data
 
 import ui
 from daily import today_question
+from openers import make_openers
 from config import BOT_TOKEN
 from database import (
     add_like,
@@ -137,6 +138,11 @@ def person_json(person, viewer=None, full=False):
         data["vibe"] = vibe
         data["common"] = common
         data["same_city"] = same_city(viewer, person)
+    if full and viewer is not None:
+        data["openers"] = make_openers(
+            data["common"], data["city"], data["same_city"],
+            seed=viewer["telegram_id"] + person["telegram_id"],
+        )
     if full:
         # только себе и при взаимном вайбе
         data["username"] = person["username"]
@@ -630,7 +636,7 @@ async def api_vibes(request):
 
     return web.json_response({
         "incoming": [person_json(p, viewer=user) for p in incoming[:30]],
-        "mutual": [person_json(p, full=True) for p in mutual],
+        "mutual": [person_json(p, viewer=user, full=True) for p in mutual],
     })
 
 

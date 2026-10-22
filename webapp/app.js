@@ -249,7 +249,7 @@ function makeDemoApi() {
       stats.likes_sent++;
       if (p && p.likes_me) {
         stats.mutual_likes++;
-        const m = { ...p, username: "demo", has_photo: false };
+        const m = { ...p, username: "demo", has_photo: false, openers: ["Вижу, ты тоже про «музыка». Как давно этим увлекаешься?", "Мы из одного города (Псков)! Какое у тебя любимое место здесь?", "Привет! Утро или ночь, какой ты человек?"] };
         mutual.unshift(m);
         return { mutual: true, match: m };
       }
@@ -1058,6 +1058,7 @@ function showMatch(m) {
       <div class="who">${avatarFor(m, "xl pink")}<b>${esc(m.name)}</b><small>${m.age}</small></div>
     </div>
     ${m.vibe ? `<div style="margin-top:6px">${gauge(m.vibe, 120, vibeWord(m.vibe))}</div>` : ""}
+    ${(m.openers || []).length ? `<div class="openers"><p class="label">С чего начать</p>${m.openers.map((t, i) => `<button class="opener" data-op="${i}">${esc(t)}</button>`).join("")}</div>` : ""}
     <div class="match-actions">
       <button class="btn btn-fill" id="match-write">${svg("chat")} Написать первым</button>
       <button class="btn btn-ghost" id="match-close">Искать дальше</button>
@@ -1065,6 +1066,12 @@ function showMatch(m) {
   ov.classList.remove("hidden");
   animateGauges(ov);
   $("#match-write").onclick = () => writeTo(m);
+  $$("[data-op]").forEach((b) => b.onclick = () => {
+    haptic("select");
+    const text = m.openers[Number(b.dataset.op)];
+    try { navigator.clipboard.writeText(text); toast("Скопировано, вставь в чат"); } catch (_) { toast("Не удалось скопировать"); }
+    writeTo(m);
+  });
   $("#match-close").onclick = () => ov.classList.add("hidden");
   withPhoto(me);
   withPhoto(m);
