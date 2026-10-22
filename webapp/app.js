@@ -1256,6 +1256,23 @@ function heartPath(g, x, y, s) {
   g.closePath();
 }
 
+// Фон без фото: неоновое боке ночного города
+function drawNeonBackdrop(g, W, H) {
+  let seed = 7;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  let r = g.createRadialGradient(W / 2, 520, 40, W / 2, 520, 1000);
+  r.addColorStop(0, "rgba(120,60,220,.45)"); r.addColorStop(1, "rgba(120,60,220,0)");
+  g.fillStyle = r; g.fillRect(0, 0, W, H);
+  const colors = ["255,61,154", "155,92,255", "90,140,255", "255,122,195"];
+  for (let i = 0; i < 46; i++) {
+    const x = rnd() * W, y = rnd() * H * 0.85, rad = 20 + rnd() * 70;
+    const col = colors[Math.floor(rnd() * colors.length)];
+    const bg = g.createRadialGradient(x, y, 0, x, y, rad);
+    bg.addColorStop(0, `rgba(${col},${0.25 + rnd() * 0.3})`); bg.addColorStop(1, `rgba(${col},0)`);
+    g.fillStyle = bg; g.beginPath(); g.arc(x, y, rad, 0, 2 * Math.PI); g.fill();
+  }
+}
+
 // Картинка для сторис: «Я и Анастасия · 80%». Фон: webapp/share-bg.jpg, если лежит, иначе неоновый градиент
 async function drawShareCard({ pct, name, matches, total, verdict }) {
   try { await Promise.all([document.fonts.load('700 100px "Unbounded"'), document.fonts.load('500 40px "Manrope"')]); } catch (_) {}
@@ -1274,9 +1291,7 @@ async function drawShareCard({ pct, name, matches, total, verdict }) {
     const k = Math.max(W / bg.width, H / bg.height);
     g.drawImage(bg, (W - bg.width * k) / 2, (H - bg.height * k) / 2, bg.width * k, bg.height * k);
   } else {
-    let r = g.createRadialGradient(cx, 560, 40, cx, 560, 900);
-    r.addColorStop(0, "rgba(155,92,255,.40)"); r.addColorStop(1, "rgba(155,92,255,0)");
-    g.fillStyle = r; g.fillRect(0, 0, W, H);
+    drawNeonBackdrop(g, W, H);
   }
   // затемнение сверху и снизу, чтобы текст читался
   let v = g.createLinearGradient(0, 0, 0, H);
