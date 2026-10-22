@@ -316,6 +316,14 @@ async def emoji_set_handler(message: Message, command: CommandObject):
     for start in range(0, len(lines), 40):
         await message.answer("\n".join(lines[start:start + 40]))
 
+    # превью: сами картинки рядом с номерами, чтобы понять, какой есть какой
+    preview = ["Превью (номер и картинка):", ""]
+    for i, sticker in enumerate(sticker_set.stickers, 1):
+        preview.append(
+            f'{i}. <tg-emoji emoji-id="{sticker.custom_emoji_id}">{sticker.emoji or "?"}</tg-emoji>'
+        )
+    await message.answer("\n".join(preview))
+
 
 # =========================================================
 # СОГЛАСИЕ И ПОЛИТИКА
