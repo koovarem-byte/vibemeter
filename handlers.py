@@ -12,6 +12,9 @@ from aiogram.types import (
 
 import ui
 from database import (
+    add_referral,
+    count_referrals,
+    get_inviter,
     create_user,
     get_user,
     update_user,
@@ -303,12 +306,15 @@ async def consent_accept_callback(
     state: FSMContext,
 ):
     # Запись создаётся только после согласия
+    ref = (await state.get_data()).get("ref")
     if not await get_user(callback.from_user.id):
         await create_user(
             telegram_id=callback.from_user.id,
             username=callback.from_user.username,
             full_name=callback.from_user.full_name,
         )
+        if ref:
+            await add_referral(callback.from_user.id, ref)
 
     await callback.answer()
     await callback.message.edit_reply_markup(reply_markup=None)
@@ -332,6 +338,10 @@ async def start_handler(
 
     if not user:
         await state.clear()
+        # Ссылка друга: t.me/бот?start=ref_<id>, запоминаем до согласия
+        arg = command.args or ""
+        if arg.startswith("ref_") and arg[4:].isdigit():
+            await state.update_data(ref=int(arg[4:]))
         await message.answer(ui.CONSENT, reply_markup=consent_keyboard())
         return
 
@@ -532,6 +542,19 @@ async def profile_search_gender(
         ui.PROFILE_DONE if creating else ui.SEARCH_SAVED,
         reply_markup=main_menu(),
     )
+
+    if creating:
+        inviter = await get_inviter(callback.from_user.id)
+        if inviter:
+            try:
+                total = await count_referrals(inviter)
+                await callback.bot.send_message(
+                    inviter,
+                    f"🎉 Твой друг в Вайбометре! Приглашено: {total}. "
+                    "Три друга откроют достижение «Лидер вайба»",
+                )
+            except Exception:
+                logging.exception("referral notify failed")
 
 
 @router.message(StateFilter(

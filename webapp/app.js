@@ -213,7 +213,7 @@ function makeDemoApi() {
     { id: 14, name: "Даша", age: 22, city: "Псков", interests: ["бизнес", "музыка", "баскетбол"], about: "Запускаю кофейню и хожу на баскет", vibe: 85, common: ["баскетбол", "бизнес", "музыка"], same_city: true, likes_me: true },
     { id: 16, name: "Лера", age: 19, city: "Великие Луки", interests: ["аниме", "игры", "музыка"], about: "Мемы, аниме и ночные прогулки", vibe: 50, common: ["музыка"], same_city: false },
   ];
-  const stats = { streak_days: 3, best_streak: 3, likes_sent: 1, likes_received: 2, mutual_likes: 1, games: 1, questions_sent: 0, questions_received: 0, skips: 0, blocks: 0 };
+  const stats = { streak_days: 3, best_streak: 3, likes_sent: 1, likes_received: 2, mutual_likes: 1, games: 1, questions_sent: 0, questions_received: 0, skips: 0, blocks: 0, referrals: 1 };
   const defs = [
     ["🩷", "Первый вайб", "первый лайк", "likes_sent", 1],
     ["💎", "Взаимность", "первый взаимный вайб", "mutual_likes", 1],
@@ -223,6 +223,7 @@ function makeDemoApi() {
     ["🍭", "Душа компании", "10 игр", "games", 10],
     ["⚡", "Болтун", "10 вопросов", "questions_sent", 10],
     ["⭐", "Магнит", "тебя выбрали 25 раз", "likes_received", 25],
+    ["⭐", "Лидер вайба", "3 друга по твоей ссылке", "referrals", 3],
   ];
   const dailyDemo = { text: "Утро или ночь?", a: "Утро", b: "Ночь", answer: null };
   people[0].daily = { q: "Утро или ночь?", label: "Ночь", match: false };
@@ -1211,7 +1212,7 @@ function compressImage(file) {
 // =========================================================
 function invite() {
   haptic("light");
-  const link = `https://t.me/${state.me.bot_username || "vibemeter_bot"}`;
+  const link = `https://t.me/${state.me.bot_username || "vibemeter_bot"}?start=ref_${state.me.user.id}`;
   const text = "Залетай в Вайбометр: знакомства, где сначала вайб, а потом фото 💜";
   if (DEMO) {
     try { navigator.clipboard.writeText(link); } catch (_) {}

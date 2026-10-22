@@ -169,6 +169,14 @@ async def init_db():
         """)
 
         await conn.execute("""
+            CREATE TABLE IF NOT EXISTS referrals (
+                invitee BIGINT PRIMARY KEY,
+                inviter BIGINT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        await conn.execute("""
             CREATE TABLE IF NOT EXISTS game_answers (
                 id BIGSERIAL PRIMARY KEY,
                 game_id BIGINT NOT NULL,
@@ -179,6 +187,42 @@ async def init_db():
                 UNIQUE(game_id, user_id, question_index)
             )
         """)
+
+
+# REFERRALS
+
+async def add_referral(invitee: int, inviter: int) -> bool:
+    """Запоминает, кто позвал. Себя звать нельзя, пригласитель должен существовать."""
+    if invitee == inviter:
+        return False
+    db = await get_pool()
+    async with db.acquire() as conn:
+        row = await conn.fetchrow("""
+            INSERT INTO referrals (invitee, inviter)
+            SELECT $1, telegram_id FROM users WHERE telegram_id = $2
+            ON CONFLICT DO NOTHING
+            RETURNING invitee
+        """, invitee, inviter)
+    return row is not None
+
+
+async def get_inviter(invitee: int) -> int | None:
+    db = await get_pool()
+    async with db.acquire() as conn:
+        return await conn.fetchval(
+            "SELECT inviter FROM referrals WHERE invitee = $1", invitee
+        )
+
+
+async def count_referrals(inviter: int) -> int:
+    """Друзья, которые дошли до готовой анкеты с фото."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        return await conn.fetchval("""
+            SELECT COUNT(*) FROM referrals r
+            JOIN users u ON u.telegram_id = r.invitee
+            WHERE r.inviter = $1 AND u.age IS NOT NULL AND u.photo_id IS NOT NULL
+        """, inviter)
 
 
 # DAILY VIBE
@@ -759,6 +803,12 @@ async def get_stats(user_id: int):
               )
         """, user_id)
 
+        referrals = await conn.fetchval("""
+            SELECT COUNT(*) FROM referrals r
+            JOIN users u ON u.telegram_id = r.invitee
+            WHERE r.inviter = $1 AND u.age IS NOT NULL AND u.photo_id IS NOT NULL
+        """, user_id)
+
         streaks = await conn.fetchrow(
             "SELECT streak_days, best_streak FROM users WHERE telegram_id = $1",
             user_id,
@@ -775,6 +825,7 @@ async def get_stats(user_id: int):
             "questions_sent": questions_sent,
             "games": games,
             "mutual_likes": mutual_likes,
+            "referrals": referrals,
         }
 async def get_admin_stats():
     db = await get_pool()
