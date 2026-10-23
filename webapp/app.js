@@ -753,7 +753,7 @@ const screens = {
         <button class="btn btn-pink btn-sm" data-write="${p.id}">${svg("chat")} Написать</button>
       </div>`;
     const list = tab === "in"
-      ? (incoming.length ? incoming.map(inRow).join("") : emptyHtml("💌", "Пока тихо", "Лайкай смелее, и тебя заметят. Входящие вайбы появятся здесь"))
+      ? (incoming.length ? incoming.map(inRow).join("") : emptyHtml("💌", "Пока тихо", "Отправляй вайбы смелее, и тебя заметят. Входящие появятся здесь"))
       : (mutual.length ? mutual.map(mRow).join("") : emptyHtml("💞", "Взаимных пока нет", "Здесь будут люди, с которыми вайб совпал. Им открыто твоё фото, а тебе их"));
     return `
       <h1>Мои вайбы</h1>
@@ -867,7 +867,7 @@ const screens = {
         ${[["all", "Все"], ["open", "Открытые"], ["locked", "Впереди"]].map(([v, l]) =>
           `<button data-fame="${v}" class="${f === v ? "on" : ""}">${l}</button>`).join("")}
       </div>
-      <div class="card">${shown.length ? `<div class="ach-grid">${shown.map(achHtml).join("")}</div>` : emptyHtml("🏆", "Пока пусто", "Лайкай, играй и заходи каждый день — достижения откроются")}</div>`;
+      <div class="card">${shown.length ? `<div class="ach-grid">${shown.map(achHtml).join("")}</div>` : emptyHtml("🏆", "Пока пусто", "Отправляй вайбы, играй и заходи каждый день — достижения откроются")}</div>`;
   },
 
   stats() {
