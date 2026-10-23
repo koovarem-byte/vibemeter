@@ -95,6 +95,11 @@ async def init_db():
             ADD COLUMN IF NOT EXISTS last_seen TIMESTAMPTZ,
             ADD COLUMN IF NOT EXISTS vibe_hour_notify BOOLEAN NOT NULL DEFAULT TRUE
         """)
+        # Награда за друга: до этого времени анкета показывается первой
+        await conn.execute("""
+            ALTER TABLE users
+            ADD COLUMN IF NOT EXISTS boost_until TIMESTAMPTZ
+        """)
         # Служебные отметки (например, в какой день уже напомнили о вайб-часе)
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS app_state (
@@ -1253,3 +1258,20 @@ async def city_counts() -> list[tuple[str, int]]:
             GROUP BY city
         """)
     return [(r["city"], r["n"]) for r in rows]
+
+
+# =========================================================
+# НАГРАДА ЗА ДРУГА
+# =========================================================
+
+async def add_boost(telegram_id: int, hours: int):
+    """Продлевает «анкета первой» на hours часов (складывается)."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        return await conn.fetchval("""
+            UPDATE users
+            SET boost_until = GREATEST(COALESCE(boost_until, now()), now())
+                              + make_interval(hours => $2)
+            WHERE telegram_id = $1
+            RETURNING boost_until
+        """, telegram_id, hours)

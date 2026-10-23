@@ -637,7 +637,8 @@ def city_progress(city: dict) -> str:
 def friend_joined(total: int, city: dict | None) -> str:
     text = (
         f"{title('star', 'Твой друг в Вайбометре')}\n\n"
-        f"Приглашено: {total}. Три друга откроют достижение «Лидер вайба»"
+        f"Приглашено: {total}. В награду твоя анкета сутки показывается "
+        "другим первой. Три друга откроют достижение «Лидер вайба»"
     )
     if city:
         text += f"\n\n{city_progress(city)}\nШкала твоего города сдвинулась"

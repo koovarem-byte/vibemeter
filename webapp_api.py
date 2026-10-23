@@ -80,6 +80,7 @@ import vibetest
 import crush
 import vibehour
 import citygoal
+import boost
 from utils import (
     is_adult,
     normalize_interests,
@@ -269,6 +270,7 @@ async def api_next(request):
         key=lambda p: (
             p["telegram_id"] in liked_me,
             online_first and vibehour.is_online(p),
+            boost.is_boosted(p),
             calculate_vibe(user, p)[0] + random.random() * 12,
         ),
     )

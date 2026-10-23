@@ -15,6 +15,7 @@ from aiogram.types import (
 import ui
 import vibehour
 import citygoal
+import boost
 from database import (
     is_blocked,
     add_referral,
@@ -221,6 +222,8 @@ async def show_next_profile(message, user_id):
     # Вайб-час: сначала те, кто сейчас в сети
     if vibehour.is_active():
         pool = [p for p in pool if vibehour.is_online(p)] or pool
+    # Награда за друга: анкеты с бустом первыми
+    pool = [p for p in pool if boost.is_boosted(p)] or pool
 
     await send_profile(message, random.choice(pool), user_id)
 
@@ -643,6 +646,7 @@ async def profile_search_gender(
         if inviter:
             try:
                 total = await count_referrals(inviter)
+                await boost.reward_inviter(inviter)
                 inviter_user = await get_user(inviter)
                 city = await citygoal.progress(inviter_user["city"] if inviter_user else None)
                 await callback.bot.send_message(

@@ -968,7 +968,7 @@ function achHtml(a) {
 }
 
 function inviteHtml() {
-  return `<button class="invite" id="invite-btn"><span class="ii">📤</span><span class="grow"><b>Позови друзей</b><small>Чем больше своих в Вайбометре, тем больше вайба вокруг</small></span>${svg("chev", "chev")}</button>`;
+  return `<button class="invite" id="invite-btn"><span class="ii">📤</span><span class="grow"><b>Позови друзей</b><small>За каждого друга с анкетой твоя анкета сутки первая в поиске</small></span>${svg("chev", "chev")}</button>`;
 }
 
 const SUGGESTED = ["музыка", "кино", "спорт", "путешествия", "игры", "аниме", "книги", "фотография", "танцы", "кофе",
