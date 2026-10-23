@@ -54,9 +54,8 @@ def open_app_keyboard(page: str = ""):
 
 def menu_btn(text):
     """Кнопка нижнего меню с неоновой иконкой."""
-    extra = {"style": PRIMARY} if text == ui.MENU_FIND else {}
     return KeyboardButton(
-        text=text, icon_custom_emoji_id=ui.icon(ui.MENU_ICONS[text]), **extra
+        text=text, icon_custom_emoji_id=ui.icon(ui.MENU_ICONS[text]), style=PRIMARY,
     )
 
 
