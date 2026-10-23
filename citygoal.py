@@ -8,7 +8,7 @@ import re
 
 from database import city_counts
 
-GOALS = (50, 100, 250, 500, 1000, 2500, 5000, 10000)
+GOALS = (100, 250, 500, 1000, 2500, 5000, 10000)
 
 ALIASES = {
     "спб": "санкт петербург",
