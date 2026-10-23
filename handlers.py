@@ -13,7 +13,6 @@ from aiogram.types import (
 )
 
 import ui
-from openers import make_openers
 from database import (
     is_blocked,
     add_referral,
@@ -256,13 +255,6 @@ async def notify_mutual(bot, user_id, person_id):
             continue
 
         caption = ui.mutual_caption(other)
-        me_side = user if viewer_id == user_id else person
-        _, common = calculate_vibe(me_side, other)
-        hints = make_openers(
-            common, other["city"], same_city(me_side, other),
-            seed=user_id + person_id,
-        )
-        caption += f"\n\n{ui.e('chat')} С чего начать:\n• " + "\n• ".join(html.escape(h) for h in hints[:2])
         keyboard = mutual_actions(other["telegram_id"], other["username"])
 
         try:
