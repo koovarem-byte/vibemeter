@@ -954,6 +954,48 @@ async def api_photo(request):
 
 
 # =========================================================
+# Неоновые эмодзи для Mini App
+# =========================================================
+
+# Кастомные эмодзи Telegram на веб-странице не рисуются,
+# поэтому бот скачивает картинку из набора и отдаёт её как файл.
+_neon_cache: dict[str, tuple[bytes, str]] = {}
+NEON_TYPES = {".webp": "image/webp", ".png": "image/png", ".webm": "video/webm"}
+
+
+async def neon_image(request):
+    name = request.match_info["name"]
+    if name not in ui.NEON:
+        raise web.HTTPNotFound()
+
+    if name not in _neon_cache:
+        bot = request.app["bot"]
+        try:
+            stickers = await bot.get_custom_emoji_stickers(
+                custom_emoji_ids=[ui.icon(name)]
+            )
+            file = await bot.get_file(stickers[0].file_id)
+            buffer = io.BytesIO()
+            await bot.download_file(file.file_path, destination=buffer)
+        except Exception:
+            logging.exception("Не удалось скачать неоновый эмодзи %s", name)
+            raise web.HTTPNotFound()
+
+        content_type = NEON_TYPES.get(Path(file.file_path).suffix.lower())
+        if content_type is None:
+            # анимированный .tgs браузер не покажет — останется обычный эмодзи
+            raise web.HTTPNotFound()
+        _neon_cache[name] = (buffer.getvalue(), content_type)
+
+    body, content_type = _neon_cache[name]
+    return web.Response(
+        body=body,
+        content_type=content_type,
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
+
+
+# =========================================================
 # Статика
 # =========================================================
 
@@ -961,7 +1003,7 @@ async def api_photo(request):
 async def no_cache_middleware(request, handler):
     response = await handler(request)
     # Telegram любит кешировать страницу, обновления должны доходить сразу
-    if request.path.startswith("/app") and not request.path.startswith("/app/api/"):
+    if request.path.startswith("/app") and not request.path.startswith(("/app/api/", "/app/neon/")):
         response.headers["Cache-Control"] = "no-cache"
     return response
 
@@ -1002,6 +1044,7 @@ def setup_webapp(app: web.Application, bot):
     app.router.add_get("/app/api/vibes", api_vibes)
     app.router.add_post("/app/api/settings", api_settings)
     app.router.add_get("/app/api/photo/{person_id}", api_photo)
+    app.router.add_get("/app/neon/{name}", neon_image)
 
     app.router.add_get("/app", to_index)
     app.router.add_get("/app/", index)

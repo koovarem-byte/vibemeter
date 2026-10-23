@@ -460,7 +460,7 @@ h1 { font-family: var(--head); font-size: 23px; font-weight: 700; margin: 4px 0;
 .medal { position: relative; width: 64px; height: 64px; margin: 0 auto 8px; border-radius: 50%; display: grid; place-items: center; font-size: 27px; border: 1.5px solid var(--line); }
 .ach.done .medal { border-color: var(--gold); background: rgba(255, 200, 97, .05); box-shadow: 0 0 0 4px rgba(255, 200, 97, .07), 0 0 14px rgba(255, 200, 97, .35); }
 .ach.locked .medal span { filter: grayscale(1); opacity: .32; }
-.ach.locked .medal::after { content: "🔒"; position: absolute; right: -3px; bottom: -3px; font-size: 13px; }
+.ach.locked .medal::after { content: ""; position: absolute; right: -3px; bottom: -3px; width: 16px; height: 16px; background: url("neon/lock") center / contain no-repeat; }
 .ach b { display: block; font-size: 12.5px; line-height: 1.25; }
 .ach small { color: var(--muted); font-size: 11px; }
 .ach .bar { max-width: 64px; height: 4px; margin: 6px auto 0; }
@@ -545,3 +545,12 @@ h1 { font-family: var(--head); font-size: 23px; font-weight: 700; margin: 4px 0;
 
 .chip.daily-chip { border-color: rgba(255, 200, 97, .6); color: #ffe3a8; background: rgba(255, 200, 97, .08); }
 .chip.daily-chip.common { border-color: #ffc861; box-shadow: 0 0 10px rgba(255, 200, 97, .3); }
+
+/* неоновые эмодзи набора VibemeterNeon вместо обычных */
+img.neon {
+  width: 1.25em;
+  height: 1.25em;
+  vertical-align: -0.25em;
+  object-fit: contain;
+  pointer-events: none;
+}

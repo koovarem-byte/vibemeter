@@ -57,6 +57,62 @@ function toast(text) {
 }
 
 // =========================================================
+// Неоновые эмодзи (набор VibemeterNeon)
+// =========================================================
+// Обычный эмодзи с неоновой парой меняется на картинку из набора,
+// её отдаёт бот (/app/neon/<имя>). Не загрузилась — остаётся обычный.
+const NEON = {
+  "🩷": "heart", "💜": "heart", "💗": "heart", "🔥": "fire", "⚡": "bolt",
+  "👑": "crown", "💎": "diamond", "⭐": "star", "🍭": "candy", "✨": "spark",
+  "👀": "eye", "🏆": "trophy", "🎮": "gamepad", "💬": "chat", "🙌": "hands",
+  "🤝": "hands", "⏱": "speedo", "🔒": "lock", "⚙": "gear",
+};
+const NEON_RE = new RegExp(`(${Object.keys(NEON).join("|")})\uFE0F?`, "gu");
+const NEON_SKIP = new Set(["SCRIPT", "STYLE", "TEXTAREA", "INPUT", "svg", "CANVAS"]);
+
+function neonImg(emoji) {
+  const img = document.createElement("img");
+  img.className = "neon";
+  img.alt = emoji;
+  img.draggable = false;
+  img.src = `neon/${NEON[emoji.replace("\uFE0F", "")]}`;
+  img.onerror = () => img.replaceWith(emoji);
+  return img;
+}
+
+function neonize(root) {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      for (let el = node.parentNode; el && el !== root.parentNode; el = el.parentNode) {
+        if (NEON_SKIP.has(el.nodeName)) return NodeFilter.FILTER_REJECT;
+      }
+      NEON_RE.lastIndex = 0;
+      return NEON_RE.test(node.data) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
+    },
+  });
+  const nodes = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+  for (const node of nodes) {
+    const parts = node.data.split(NEON_RE);
+    const frag = document.createDocumentFragment();
+    // split с группой: чётные — текст, нечётные — эмодзи
+    parts.forEach((part, i) => {
+      if (i % 2) frag.append(neonImg(part));
+      else if (part) frag.append(part);
+    });
+    node.replaceWith(frag);
+  }
+}
+
+new MutationObserver((mutations) => {
+  for (const m of mutations) {
+    if (m.type === "characterData") neonize(m.target.parentNode);
+    else m.addedNodes.forEach((n) => n.nodeType === 1 ? neonize(n) : n.nodeType === 3 && n.parentNode && neonize(n.parentNode));
+  }
+}).observe(document.body, { childList: true, subtree: true, characterData: true });
+neonize(document.body);
+
+// =========================================================
 // Иконки
 // =========================================================
 const I = {
