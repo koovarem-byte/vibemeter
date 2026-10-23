@@ -98,7 +98,7 @@ INIT_DATA_TTL = 24 * 60 * 60
 GUEST_API = ("/app/api/vt/", "/app/api/story", "/app/api/share_card")
 
 ICONS = {
-    "heart": "🩷", "diamond": "💎", "fire": "🔥", "crown": "👑",
+    "heart": "💜", "diamond": "💎", "fire": "🔥", "crown": "👑",
     "candy": "🍭", "bolt": "⚡", "star": "⭐", "trophy": "🏆", "chat": "💬", "gamepad": "🎮",
 }
 

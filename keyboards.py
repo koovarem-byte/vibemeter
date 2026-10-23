@@ -12,9 +12,16 @@ from urllib.parse import quote
 import ui
 
 
-def btn(text, callback_data=None, url=None, neon=None):
-    """Inline-кнопка. neon — имя эмодзи из ui.NEON для иконки."""
+# Цвет кнопки (Telegram даёт только три): синий — главное действие,
+# зелёный — написать/начать, красный — 18+, жалоба, удаление.
+PRIMARY, SUCCESS, DANGER = "primary", "success", "danger"
+
+
+def btn(text, callback_data=None, url=None, neon=None, style=None):
+    """Inline-кнопка. neon — имя эмодзи из ui.NEON для иконки, style — цвет."""
     extra = {"icon_custom_emoji_id": ui.icon(neon)} if neon else {}
+    if style:
+        extra["style"] = style
     if url:
         return InlineKeyboardButton(text=text, url=url, **extra)
     return InlineKeyboardButton(
@@ -40,15 +47,16 @@ def open_app_keyboard(page: str = ""):
     return InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(
             text=ui.BTN_OPEN_APP, web_app=WebAppInfo(url=url),
-            icon_custom_emoji_id=ui.icon("spark"),
+            icon_custom_emoji_id=ui.icon("spark"), style=PRIMARY,
         )
     ]])
 
 
 def menu_btn(text):
     """Кнопка нижнего меню с неоновой иконкой."""
+    extra = {"style": PRIMARY} if text == ui.MENU_FIND else {}
     return KeyboardButton(
-        text=text, icon_custom_emoji_id=ui.icon(ui.MENU_ICONS[text])
+        text=text, icon_custom_emoji_id=ui.icon(ui.MENU_ICONS[text]), **extra
     )
 
 
@@ -71,8 +79,8 @@ def vibe_hour_keyboard():
     """Напоминание о вайб-часе: зайти и отключить."""
     first = open_app_keyboard("search")
     go = (
-        InlineKeyboardButton(text=ui.BTN_VH_GO, web_app=first.inline_keyboard[0][0].web_app, icon_custom_emoji_id=ui.icon("bolt"))
-        if first else btn(ui.BTN_VH_GO, "browse", neon="bolt")
+        InlineKeyboardButton(text=ui.BTN_VH_GO, web_app=first.inline_keyboard[0][0].web_app, icon_custom_emoji_id=ui.icon("bolt"), style=PRIMARY)
+        if first else btn(ui.BTN_VH_GO, "browse", neon="bolt", style=PRIMARY)
     )
     return rows([go], [btn(ui.BTN_VH_OFF, "vh_off")])
 
@@ -117,12 +125,12 @@ def profile_actions(person_id: int):
     """Карточка в поиске."""
     return rows(
         [
-            btn(ui.BTN_LIKE, f"like:{person_id}", neon="heart"),
+            btn(ui.BTN_LIKE, f"like:{person_id}", neon="heart", style=PRIMARY),
             btn(ui.BTN_SKIP, f"skip:{person_id}", neon="speedo"),
         ],
         [
             btn(ui.BTN_QUESTION, f"question:{person_id}", neon="chat"),
-            btn(ui.BTN_REPORT, f"report:{person_id}"),
+            btn(ui.BTN_REPORT, f"report:{person_id}", style=DANGER),
         ],
     )
 
@@ -131,12 +139,12 @@ def incoming_actions(person_id: int):
     """Карточка в «Мои вайбы»."""
     return rows(
         [
-            btn(ui.BTN_LIKE, f"incoming_like:{person_id}", neon="heart"),
+            btn(ui.BTN_LIKE, f"incoming_like:{person_id}", neon="heart", style=PRIMARY),
             btn(ui.BTN_SKIP, f"incoming_skip:{person_id}", neon="speedo"),
         ],
         [
             btn(ui.BTN_QUESTION, f"question:{person_id}", neon="chat"),
-            btn(ui.BTN_REPORT, f"report:{person_id}"),
+            btn(ui.BTN_REPORT, f"report:{person_id}", style=DANGER),
         ],
     )
 
@@ -148,9 +156,10 @@ def mutual_actions(person_id: int, username: str | None, story=None):
             ui.BTN_WRITE,
             url=f"https://t.me/{username.lstrip('@')}",
             neon="hands",
+            style=SUCCESS,
         )
     else:
-        write = btn(ui.BTN_WRITE, f"contact:{person_id}", neon="hands")
+        write = btn(ui.BTN_WRITE, f"contact:{person_id}", neon="hands", style=SUCCESS)
 
     keyboard = [[write, btn(ui.BTN_NEXT, "browse", neon="speedo")]]
     if story:
@@ -160,13 +169,13 @@ def mutual_actions(person_id: int, username: str | None, story=None):
 
 def contact_keyboard(username: str):
     return rows([
-        btn(ui.BTN_WRITE, url=f"https://t.me/{username}", neon="hands"),
+        btn(ui.BTN_WRITE, url=f"https://t.me/{username}", neon="hands", style=SUCCESS),
     ])
 
 
 def liked_you_keyboard():
     return rows([
-        btn(ui.BTN_VIEW, "my_vibes", neon="heart"),
+        btn(ui.BTN_VIEW, "my_vibes", neon="heart", style=PRIMARY),
         btn(ui.BTN_LATER, "dismiss"),
     ])
 
@@ -198,7 +207,7 @@ def search_gender_keyboard():
 
 def consent_keyboard():
     return rows(
-        [btn(ui.BTN_ACCEPT, "consent:accept", neon="heart")],
+        [btn(ui.BTN_ACCEPT, "consent:accept", neon="heart", style=DANGER)],
         [btn(ui.BTN_POLICY, "consent:policy")],
     )
 
@@ -215,14 +224,14 @@ def settings_keyboard():
         ],
         [
             btn(ui.BTN_BLOCKED, "blocked_users"),
-            btn(ui.BTN_DELETE, "delete_profile"),
+            btn(ui.BTN_DELETE, "delete_profile", style=DANGER),
         ],
     )
 
 
 def delete_confirm_keyboard():
     return rows([
-        btn(ui.BTN_DELETE_YES, "delete_confirm"),
+        btn(ui.BTN_DELETE_YES, "delete_confirm", style=DANGER),
         btn(ui.BTN_BACK, "dismiss"),
     ])
 
@@ -237,7 +246,7 @@ def stats_keyboard():
 
 def game_actions(game_id: int):
     return rows([
-        btn(ui.BTN_START_GAME, f"game_start:{game_id}", neon="gamepad"),
+        btn(ui.BTN_START_GAME, f"game_start:{game_id}", neon="gamepad", style=SUCCESS),
     ])
 
 
@@ -252,7 +261,7 @@ def game_keyboard(game_id: int, question_index: int, answer_a: str, answer_b: st
 def game_result_actions(person_id: int, story=None):
     keyboard = [
         [
-            btn(ui.BTN_LIKE, f"game_like:{person_id}", neon="heart"),
+            btn(ui.BTN_LIKE, f"game_like:{person_id}", neon="heart", style=PRIMARY),
             btn(ui.BTN_PLAY_AGAIN, "play_again", neon="gamepad"),
         ],
         [btn(ui.BTN_NEXT, "browse", neon="speedo")],
@@ -268,7 +277,7 @@ def game_result_actions(person_id: int, story=None):
 
 def question_answer_keyboard(question_id: int):
     return rows([
-        btn(ui.BTN_ANSWER, f"answer_q:{question_id}", neon="chat"),
+        btn(ui.BTN_ANSWER, f"answer_q:{question_id}", neon="chat", style=PRIMARY),
     ])
 
 
@@ -287,6 +296,6 @@ def report_reasons_keyboard(person_id: int):
 
 def admin_report_keyboard(person_id: int):
     return rows([
-        btn(ui.BTN_BAN, f"admin_ban:{person_id}"),
+        btn(ui.BTN_BAN, f"admin_ban:{person_id}", style=DANGER),
         btn(ui.BTN_DISMISS, f"admin_dismiss:{person_id}"),
     ])

@@ -303,10 +303,10 @@ function makeDemoApi() {
   ];
   const stats = { streak_days: 3, best_streak: 3, likes_sent: 1, likes_received: 2, mutual_likes: 1, games: 1, questions_sent: 0, questions_received: 0, skips: 0, blocks: 0, referrals: 1 };
   const defs = [
-    ["🩷", "Первый вайб", "первый лайк", "likes_sent", 1],
+    ["💜", "Первый вайб", "отправь первый вайб", "likes_sent", 1],
     ["💎", "Взаимность", "первый взаимный вайб", "mutual_likes", 1],
     ["🔥", "В огне", "серия 7 дней", "best_streak", 7],
-    ["💘", "Сердцеед", "25 лайков", "likes_sent", 25],
+    ["💘", "Сердцеед", "25 вайбов", "likes_sent", 25],
     ["👑", "Легенда", "серия 30 дней", "best_streak", 30],
     ["🍭", "Душа компании", "10 игр", "games", 10],
     ["⚡", "Болтун", "10 вопросов", "questions_sent", 10],
@@ -683,7 +683,7 @@ const screens = {
 
       <div class="hero">
         <h2>Найди тех, кто на одной волне</h2>
-        <p>Сначала вайб, потом фото. Оно откроется, когда лайк взаимный</p>
+        <p>Сначала вайб, потом фото. Оно откроется, когда вайб взаимный</p>
         <button class="btn btn-fill" data-go="search">${svg("heart")} Найти вайб</button>
         <div class="hero-mark" style="position:absolute;right:16px;top:20px;opacity:.95">${brandMark().replace('class="brand-mark"', 'class="brand-mark" style="width:96px;height:62px"')}</div>
       </div>
@@ -796,7 +796,7 @@ const screens = {
       </div>
 
       <div class="grid g4 mt">
-        ${statTile(svg("heart"), stats.likes_sent, "лайков")}
+        ${statTile(svg("heart"), stats.likes_sent, "вайбов")}
         ${statTile(svg("heart"), stats.mutual_likes, "взаимных")}
         ${statTile(svg("game"), stats.games, "игр")}
         ${statTile(svg("fire"), stats.streak_days, "серия")}
@@ -881,7 +881,7 @@ const screens = {
         <p class="muted small" style="margin:10px 0 0">Уровень ${level.n} · ${level.name} · ${level.done} из ${level.total} достижений</p>
       </div>
       <div class="grid g2 mt">
-        ${statTile(svg("heart"), stats.likes_sent, "лайков поставил")}
+        ${statTile(svg("heart"), stats.likes_sent, "вайбов отправлено")}
         ${statTile(svg("mail"), stats.likes_received, "тебя выбрали")}
         ${statTile(svg("heart"), stats.mutual_likes, "взаимных вайбов")}
         ${statTile(svg("game"), stats.games, "игр сыграно")}
