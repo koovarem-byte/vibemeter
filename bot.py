@@ -14,6 +14,7 @@ from config import BOT_TOKEN
 from database import init_db, close_db
 from handlers import router
 from webapp_api import setup_webapp
+import vibehour
 
 
 # Режим работы:
@@ -93,6 +94,7 @@ async def run_webhook():
 
     await init_db()
     await setup_menu_button(bot)
+    vibe_hour_task = asyncio.create_task(vibehour.loop(bot))
 
     app = create_app(bot, dp, webhook=True)
 
@@ -111,6 +113,7 @@ async def run_webhook():
     try:
         await asyncio.Event().wait()
     finally:
+        vibe_hour_task.cancel()
         await runner.cleanup()
         await bot.session.close()
         await close_db()
@@ -132,6 +135,7 @@ async def run_polling():
 
     await init_db()
     await setup_menu_button(bot)
+    vibe_hour_task = asyncio.create_task(vibehour.loop(bot))
 
     # webhook здесь специально не снимаем: если бот уже работает
     # на хостинге, локальный polling упадёт с Conflict, а не уведёт бота.
@@ -141,6 +145,7 @@ async def run_polling():
     try:
         await dp.start_polling(bot)
     finally:
+        vibe_hour_task.cancel()
         await runner.cleanup()
         await bot.session.close()
         await close_db()

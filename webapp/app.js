@@ -337,7 +337,7 @@ function makeDemoApi() {
     const achievements = defs.map(([icon, name, hint, key, goal]) =>
       ({ icon, name, hint, value: Math.min(stats[key], goal), goal, done: stats[key] >= goal }));
     const done = achievements.filter((a) => a.done).length;
-    return { bot_username: "vibemeter_bot", daily: dailyDemo, user: { ...me }, stats: { ...stats }, achievements, level: levelFor(done, achievements.length) };
+    return { vibe_hour: { active: new Date().getHours() === 21, starts_in: 95, online: 4, start: "21:00", end: "22:00" }, bot_username: "vibemeter_bot", daily: dailyDemo, user: { ...me }, stats: { ...stats }, achievements, level: levelFor(done, achievements.length) };
   };
 
   return {
@@ -596,6 +596,22 @@ function cardParams() {
 
 const crushState = { data: null, busy: false };
 
+function vibeHourHtml() {
+  const vh = state.me.vibe_hour;
+  if (!vh) return "";
+  if (vh.active) {
+    const crowd = vh.online >= 3 ? ` · в сети ${vh.online}` : "";
+    return `<button class="card strong mt" data-go="search" style="width:100%;text-align:left;border-color:var(--pink)">
+      <p class="label" style="margin:0 0 4px;color:var(--pink-2)">⚡ Вайб-час идёт${crowd}</p>
+      <b>До ${vh.end} все онлайн одновременно</b><small class="muted" style="display:block;margin-top:4px">Первыми показываем тех, кто сейчас в сети</small></button>`;
+  }
+  const h = Math.floor(vh.starts_in / 60), m = vh.starts_in % 60;
+  const left = h ? `Через ${h} ч ${m} мин` : `Через ${m} мин`;
+  return `<div class="card mt" style="text-align:left">
+    <p class="label" style="margin:0 0 4px">⚡ Вайб-час в ${vh.start}</p>
+    <small class="muted">${left}. Каждый вечер все заходят одновременно — так мэтчи случаются быстрее</small></div>`;
+}
+
 const screens = {
   crush() {
     const d = crushState.data;
@@ -659,6 +675,8 @@ const screens = {
         <button class="btn btn-fill" data-go="search">${svg("heart")} Найти вайб</button>
         <div class="hero-mark" style="position:absolute;right:16px;top:20px;opacity:.95">${brandMark().replace('class="brand-mark"', 'class="brand-mark" style="width:96px;height:62px"')}</div>
       </div>
+
+      ${vibeHourHtml()}
 
       ${dailyHtml()}
 

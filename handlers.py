@@ -13,10 +13,12 @@ from aiogram.types import (
 )
 
 import ui
+import vibehour
 from database import (
     is_blocked,
     add_referral,
     get_vibe_test,
+    set_vibe_hour_notify,
     count_referrals,
     get_inviter,
     create_user,
@@ -56,6 +58,7 @@ from keyboards import (
     game_keyboard,
     game_result_actions,
     story_button,
+    vibe_hour_on_keyboard,
     question_answer_keyboard,
     report_reasons_keyboard,
     admin_report_keyboard,
@@ -213,7 +216,12 @@ async def show_next_profile(message, user_id):
         if person["telegram_id"] != previous_id
     ]
 
-    await send_profile(message, random.choice(available or filtered), user_id)
+    pool = available or filtered
+    # Вайб-час: сначала те, кто сейчас в сети
+    if vibehour.is_active():
+        pool = [p for p in pool if vibehour.is_online(p)] or pool
+
+    await send_profile(message, random.choice(pool), user_id)
 
 
 async def user_profile_message(message, user):
@@ -719,6 +727,20 @@ async def my_profile_handler(message: Message):
         return
 
     await user_profile_message(message, user)
+
+
+@router.callback_query(F.data == "vh_off")
+async def vibe_hour_off(callback: CallbackQuery):
+    await set_vibe_hour_notify(callback.from_user.id, False)
+    await callback.answer()
+    await callback.message.answer(ui.VH_OFF, reply_markup=vibe_hour_on_keyboard())
+
+
+@router.callback_query(F.data == "vh_on")
+async def vibe_hour_on(callback: CallbackQuery):
+    await set_vibe_hour_notify(callback.from_user.id, True)
+    await callback.answer()
+    await callback.message.edit_text(ui.VH_ON)
 
 
 @router.callback_query(F.data == "browse")

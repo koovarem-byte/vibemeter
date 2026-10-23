@@ -89,6 +89,19 @@ async def init_db():
             ADD COLUMN IF NOT EXISTS best_streak INTEGER NOT NULL DEFAULT 0,
             ADD COLUMN IF NOT EXISTS last_active DATE
         """)
+        # Вайб-час: кто сейчас в сети и можно ли напоминать
+        await conn.execute("""
+            ALTER TABLE users
+            ADD COLUMN IF NOT EXISTS last_seen TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS vibe_hour_notify BOOLEAN NOT NULL DEFAULT TRUE
+        """)
+        # Служебные отметки (например, в какой день уже напомнили о вайб-часе)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS app_state (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+        """)
 
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS reports (
@@ -759,6 +772,7 @@ async def touch_user(telegram_id: int, username: str | None = None):
             SET streak_days = calc.streak,
                 best_streak = GREATEST(u.best_streak, calc.streak),
                 last_active = calc.today,
+                last_seen = now(),
                 username = COALESCE($2, u.username)
             FROM calc
             WHERE u.telegram_id = calc.telegram_id
@@ -1164,3 +1178,62 @@ async def find_mutual_crush(from_user: int, username: str):
               )
         """, from_user, username)
     return dict(row) if row else None
+
+
+# =========================================================
+# ВАЙБ-ЧАС
+# =========================================================
+
+async def mark_seen(telegram_id: int):
+    """Отметка «в сети» из Mini App, не чаще раза в минуту."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        await conn.execute("""
+            UPDATE users SET last_seen = now()
+            WHERE telegram_id = $1
+              AND (last_seen IS NULL OR last_seen < now() - interval '1 minute')
+        """, telegram_id)
+
+
+async def count_online(minutes: int) -> int:
+    db = await get_pool()
+    async with db.acquire() as conn:
+        return await conn.fetchval("""
+            SELECT COUNT(*) FROM users
+            WHERE age IS NOT NULL AND NOT is_banned
+              AND last_seen > now() - make_interval(mins => $1)
+        """, minutes)
+
+
+async def claim_once(key: str, value: str) -> bool:
+    """True только для первого, кто записал value: защита от двойной рассылки."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        row = await conn.fetchrow("""
+            INSERT INTO app_state (key, value) VALUES ($1, $2)
+            ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+            WHERE app_state.value <> EXCLUDED.value
+            RETURNING key
+        """, key, value)
+    return row is not None
+
+
+async def vibe_hour_recipients(days: int) -> list[int]:
+    """Кому напоминать: анкета есть, не забанен, не отключал, заходил недавно."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT telegram_id FROM users
+            WHERE age IS NOT NULL AND NOT is_banned AND vibe_hour_notify
+              AND last_active >= (now() AT TIME ZONE 'Europe/Moscow')::date - $1::int
+        """, days)
+    return [r["telegram_id"] for r in rows]
+
+
+async def set_vibe_hour_notify(telegram_id: int, value: bool):
+    db = await get_pool()
+    async with db.acquire() as conn:
+        await conn.execute(
+            "UPDATE users SET vibe_hour_notify = $2 WHERE telegram_id = $1",
+            telegram_id, value,
+        )

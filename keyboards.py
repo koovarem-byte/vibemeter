@@ -67,6 +67,20 @@ def story_button(percent: int, name: str, matches=None, total=None):
     )
 
 
+def vibe_hour_keyboard():
+    """Напоминание о вайб-часе: зайти и отключить."""
+    first = open_app_keyboard("search")
+    go = (
+        InlineKeyboardButton(text=ui.BTN_VH_GO, web_app=first.inline_keyboard[0][0].web_app, icon_custom_emoji_id=ui.icon("bolt"))
+        if first else btn(ui.BTN_VH_GO, "browse", neon="bolt")
+    )
+    return rows([go], [btn(ui.BTN_VH_OFF, "vh_off")])
+
+
+def vibe_hour_on_keyboard():
+    return rows([btn(ui.BTN_VH_ON, "vh_on")])
+
+
 def main_menu():
     return ReplyKeyboardMarkup(
         keyboard=[

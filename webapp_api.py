@@ -50,6 +50,7 @@ from database import (
     get_vibe_test_answer,
     get_vibe_test_answers,
     list_crushes,
+    mark_seen,
     remove_crush,
     add_vibe_test_answer,
     has_like,
@@ -77,6 +78,7 @@ from keyboards import game_result_actions, open_app_keyboard, story_button
 from questions import MAX_QUESTION_LENGTH, send_question
 import vibetest
 import crush
+import vibehour
 from utils import (
     is_adult,
     normalize_interests,
@@ -139,6 +141,8 @@ async def auth_middleware(request, handler):
         user = {"telegram_id": data.user.id, "full_name": data.user.first_name}
 
     request["user"] = user
+    if request["registered"]:
+        await mark_seen(user["telegram_id"])
     return await handler(request)
 
 
@@ -244,6 +248,7 @@ async def api_me(request):
         "stats": {k: int(v or 0) for k, v in stats.items()},
         "achievements": achievements_json(stats),
         "level": level_json(done, total),
+        "vibe_hour": await vibehour.status(),
     })
 
 
@@ -255,10 +260,13 @@ async def api_next(request):
     # Умная выдача: сначала те, кто уже лайкнул тебя (шанс на взаимность),
     # дальше по вайбу, с небольшим случайным шумом, чтобы лента не была одинаковой
     liked_me = {p["telegram_id"] for p in await get_incoming_likes(user["telegram_id"])}
+    # в вайб-час те, кто в сети, идут сразу после лайкнувших тебя
+    online_first = vibehour.is_active()
     person = max(
         candidates[:50],
         key=lambda p: (
             p["telegram_id"] in liked_me,
+            online_first and vibehour.is_online(p),
             calculate_vibe(user, p)[0] + random.random() * 12,
         ),
     )
