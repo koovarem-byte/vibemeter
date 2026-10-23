@@ -55,6 +55,7 @@ from keyboards import (
     stats_keyboard,
     game_keyboard,
     game_result_actions,
+    story_button,
     question_answer_keyboard,
     report_reasons_keyboard,
     admin_report_keyboard,
@@ -255,7 +256,12 @@ async def notify_mutual(bot, user_id, person_id):
             continue
 
         caption = ui.mutual_caption(other)
-        keyboard = mutual_actions(other["telegram_id"], other["username"])
+        me_side = user if viewer_id == user_id else person
+        vibe, _ = calculate_vibe(me_side, other)
+        keyboard = mutual_actions(
+            other["telegram_id"], other["username"],
+            story=story_button(vibe, other["full_name"]),
+        )
 
         try:
             if other["photo_id"]:
@@ -1317,16 +1323,23 @@ async def game_answer_callback(callback: CallbackQuery):
         else result["user_one"]
     )
 
+    me = await get_user(user_id)
+    opponent = await get_user(opponent_id)
+    story = lambda other: story_button(
+        result["percentage"], other["full_name"] if other else "",
+        result["matches"], result["total"],
+    )
+
     await callback.message.answer(
         text,
-        reply_markup=game_result_actions(opponent_id),
+        reply_markup=game_result_actions(opponent_id, story(opponent)),
     )
 
     try:
         await callback.bot.send_message(
             opponent_id,
             text,
-            reply_markup=game_result_actions(user_id),
+            reply_markup=game_result_actions(user_id, story(me)),
         )
     except Exception:
         pass

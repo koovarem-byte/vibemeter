@@ -564,7 +564,31 @@ function withPhoto(p) {
 // =========================================================
 const view = () => $("#view");
 
+const hashParam = (k) => {
+  const m = location.hash.match(new RegExp(`[?&]${k}=([^&?#]*)`));
+  try { return m ? decodeURIComponent(m[1]) : null; } catch (_) { return null; }
+};
+
+function cardParams() {
+  const pct = Math.max(0, Math.min(100, Number(hashParam("p")) || 0));
+  const total = Number(hashParam("t")) || null;
+  return { pct, name: (hashParam("n") || "").slice(0, 40), matches: total ? Math.min(total, Number(hashParam("m")) || 0) : null, total, sub: total ? null : "ВЗАИМНЫЙ ВАЙБ" };
+}
+
 const screens = {
+  card() {
+    const c = cardParams();
+    return `
+      <div class="card strong" style="text-align:center;padding:26px 16px">
+        <p class="label" style="margin:0 0 8px">Ты и ${esc(c.name || "друг")}</p>
+        <div style="display:flex;justify-content:center">${gauge(c.pct, 180, "вайба")}</div>
+        <h2 style="font-family:var(--head);font-size:18px;margin:16px 0 4px">${gameVerdict(c.pct)}</h2>
+        ${c.total ? `<p class="muted" style="margin:0">Совпали в ${c.matches} из ${c.total}</p>` : ""}
+        <button class="btn btn-pink mt-l" id="card-share" style="width:100%">${svg("share")} Выложить в сторис</button>
+        <p class="muted small" style="margin:12px auto 0;max-width:280px">Картинка с вашим процентом и ссылкой на Вайбометр</p>
+      </div>`;
+  },
+
   home() {
     const { user, stats, level, achievements } = state.me;
     const inc = state.vibes.incoming.length;
@@ -1209,12 +1233,15 @@ function showMatch(m) {
     ${m.vibe ? `<div style="margin-top:6px">${gauge(m.vibe, 120, vibeWord(m.vibe))}</div>` : ""}
     <div class="match-actions">
       <button class="btn btn-fill" id="match-write">${svg("chat")} Написать первым</button>
+      ${m.vibe ? `<button class="btn btn-ghost" id="match-story">${svg("share")} Картинка для сторис</button>` : ""}
       <button class="btn btn-ghost" id="match-close">Искать дальше</button>
     </div>`;
   ov.classList.remove("hidden");
   animateGauges(ov);
   $("#match-write").onclick = () => writeTo(m);
   $("#match-close").onclick = () => ov.classList.add("hidden");
+  const ms = $("#match-story");
+  if (ms) ms.onclick = () => shareVibe({ pct: m.vibe, name: m.name, sub: "ВЗАИМНЫЙ ВАЙБ", btn: ms });
   withPhoto(me);
   withPhoto(m);
 }
@@ -1407,7 +1434,7 @@ function drawNeonBackdrop(g, W, H) {
 }
 
 // Картинка для сторис: «Я и Анастасия · 80%». Фон: webapp/share-bg.jpg, если лежит, иначе неоновый градиент
-async function drawShareCard({ pct, name, matches, total, verdict }) {
+async function drawShareCard({ pct, name, matches, total, verdict, sub }) {
   try { await Promise.all([document.fonts.load('700 100px "Unbounded"'), document.fonts.load('500 40px "Manrope"')]); } catch (_) {}
   const bg = await loadImage("share-bg.jpg");
   const W = 1080, H = 1920;
@@ -1490,9 +1517,12 @@ async function drawShareCard({ pct, name, matches, total, verdict }) {
     }
   }
   g.fillStyle = "rgba(255,255,255,.75)"; g.font = `500 34px ${body}`;
-  spaced(g, `${matches} ИЗ ${total}`, cx, 1500, 8);
+  const subText = sub || `${matches} ИЗ ${total}`;
+  spaced(g, subText, cx, 1500, 8);
+  // линии по бокам подписи: отступ от её реальной ширины
+  const half = (g.measureText(subText).width + 8 * (subText.length - 1)) / 2 + 30;
   g.strokeStyle = "rgba(255,255,255,.3)"; g.lineWidth = 2;
-  g.beginPath(); g.moveTo(cx - 330, 1490); g.lineTo(cx - 140, 1490); g.moveTo(cx + 140, 1490); g.lineTo(cx + 330, 1490); g.stroke();
+  if (half < 300) { g.beginPath(); g.moveTo(cx - 330, 1490); g.lineTo(cx - half, 1490); g.moveTo(cx + half, 1490); g.lineTo(cx + 330, 1490); g.stroke(); }
 
   // кнопка внизу
   const bw = 920, bh = 130, bx = (W - bw) / 2, by = 1650;
@@ -1501,7 +1531,7 @@ async function drawShareCard({ pct, name, matches, total, verdict }) {
   g.fillStyle = "rgba(20,12,40,.85)"; g.beginPath(); g.roundRect(bx, by, bw, bh, 65); g.fill();
   g.lineWidth = 4; g.strokeStyle = bgr; g.shadowColor = "rgba(168,85,247,.8)"; g.shadowBlur = 30; g.stroke(); g.shadowBlur = 0;
   g.fillStyle = "#fff"; g.font = `600 38px ${body}`; g.textAlign = "center";
-  g.fillText("Проверь вайб: @vibemeter_bot", cx, by + 80);
+  g.fillText(`Проверь вайб: @${botName()}`, cx, by + 80);
   g.strokeStyle = "#fff"; g.lineWidth = 5;
   g.beginPath(); g.moveTo(bx + bw - 110, by + 65); g.lineTo(bx + bw - 66, by + 65);
   g.moveTo(bx + bw - 86, by + 47); g.lineTo(bx + bw - 66, by + 65); g.lineTo(bx + bw - 86, by + 83); g.stroke();
@@ -1605,7 +1635,7 @@ function drawVt() {
       <div class="card mt">
         <p class="label">Кто уже прошёл</p>
         ${results.length
-          ? `<div class="list">${results.map((r) => `<div class="item"><div class="ii">🔥</div><div class="grow"><b>${esc(r.name)}</b><small>${vibeWord(r.percent)}</small></div><b>${r.percent}%</b></div>`).join("")}</div>`
+          ? `<div class="list">${results.map((r, i) => `<div class="item"><div class="ii">🔥</div><div class="grow"><b>${esc(r.name)}</b><small>${vibeWord(r.percent)}</small></div><b>${r.percent}%</b><button class="icon-btn" style="width:38px;height:38px;margin-left:8px" data-vt-story="${i}" aria-label="Картинка для сторис">${svg("share")}</button></div>`).join("")}</div>`
           : `<p class="muted" style="margin:0">Пока никого. Как только кто-то ответит, бот пришлёт результат</p>`}
         <button class="btn btn-ghost btn-sm mt" id="vt-refresh">Обновить</button>
       </div>
@@ -1613,6 +1643,10 @@ function drawVt() {
     $("#vt-share").onclick = vtShare;
     $("#vt-copy").onclick = () => { try { navigator.clipboard.writeText(d.link); toast("Ссылка скопирована"); } catch (_) { toast(d.link); } };
     $("#vt-refresh").onclick = () => { vt.key = null; renderVt(); };
+    $$("[data-vt-story]").forEach((b) => b.onclick = () => {
+      const r = results[Number(b.dataset.vtStory)];
+      shareVibe({ pct: r.percent, name: r.name, btn: b });
+    });
     bindVtFooter();
     return;
   }
@@ -1703,28 +1737,9 @@ function vtShare() {
   tg.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(vt.data.link)}&text=${encodeURIComponent(text)}`);
 }
 
-async function vtStory() {
-  const r = vt.data.result, btn = $("#vt-story");
-  if (btn) btn.disabled = true;
-  haptic("medium");
-  try {
-    const canvas = await drawShareCard({
-      pct: r.percent, name: vt.data.owner_name || "другом",
-      matches: r.matches, total: r.total, verdict: vibeWord(r.percent),
-    });
-    const blob = await new Promise((res) => canvas.toBlob(res, "image/png"));
-    // ссылка в сторис ведёт на создание своего теста
-    const link = `https://t.me/${vt.data.bot_username || "vibemeter_bot"}?start=vt`;
-    if (DEMO) toast("Картинка готова (в демо не отправляется)");
-    else if (tg.shareToStory && tg.isVersionAtLeast && tg.isVersionAtLeast("7.8")) {
-      const { url } = await api.story(blob);
-      tg.shareToStory(url, { text: "Проверь свой вайб с друзьями", widget_link: { url: link, name: "Проверь вайб" } });
-    } else {
-      await api.shareCard(blob);
-      toast("Картинка пришла в чат с ботом");
-    }
-  } catch (e) { toast(errorText(e)); }
-  if (btn) btn.disabled = false;
+function vtStory() {
+  const r = vt.data.result;
+  return shareVibe({ pct: r.percent, name: vt.data.owner_name, matches: r.matches, total: r.total, btn: $("#vt-story") });
 }
 
 // =========================================================
@@ -1862,28 +1877,39 @@ function renderGame() {
   }
 }
 
-async function shareGameCard() {
-  const g = game.data;
-  const btn = $("#game-share");
+function botName() {
+  return (state.me && state.me.bot_username) || (vt.data && vt.data.bot_username) || "vibemeter_bot";
+}
+
+// Карточка «У нас N% вайба» для сторис: после игры, теста и мэтча.
+// Без matches/total сердца считаются от процента (5 штук).
+async function shareVibe({ pct, name, matches, total, sub, btn }) {
   if (btn) btn.disabled = true;
   haptic("medium");
+  if (total == null) { total = 5; matches = Math.round(pct / 20); }
   try {
-    const canvas = await drawShareCard({
-      pct: g.percentage, name: (g.opponent && g.opponent.name) || "незнакомцем",
-      matches: g.matches, total: g.total, verdict: vibeWord(g.percentage),
-    });
+    const canvas = await drawShareCard({ pct, name: name || "другом", matches, total, verdict: vibeWord(pct), sub });
     const blob = await new Promise((res) => canvas.toBlob(res, "image/png"));
     if (DEMO) { toast("Картинка готова (в демо не отправляется)"); }
     else if (tg.shareToStory && tg.isVersionAtLeast && tg.isVersionAtLeast("7.8")) {
-      // сразу открываем редактор сторис Telegram
+      // сразу открываем редактор сторис Telegram; с анкетой — реф-ссылка, гостю — тест
       const { url, link } = await api.story(blob);
-      tg.shareToStory(url, { text: "Мы совпали! Проверь свой вайб", widget_link: { url: link, name: "Проверь вайб" } });
+      const widget = state.me ? link : `https://t.me/${botName()}?start=vt`;
+      tg.shareToStory(url, { text: "Проверь свой вайб", widget_link: { url: widget, name: "Проверь вайб" } });
     } else {
       await api.shareCard(blob);
       toast("Картинка пришла в чат с ботом");
     }
   } catch (e) { toast(errorText(e)); }
   if (btn) btn.disabled = false;
+}
+
+function shareGameCard() {
+  const g = game.data;
+  return shareVibe({
+    pct: g.percentage, name: (g.opponent && g.opponent.name) || "незнакомцем",
+    matches: g.matches, total: g.total, btn: $("#game-share"),
+  });
 }
 
 async function joinGame() {
@@ -2071,11 +2097,16 @@ function renderDuo() {
         <p class="muted" style="margin:0">Угадано ${v.matches} из ${v.total}</p></div>
       <div class="list mt">${v.items.map((it) => `<div class="card"><p style="margin:0 0 6px"><b>${esc(it.q)}</b></p>
         <p class="muted small" style="margin:0">${v.i_am_author ? "Ты ответил(а)" : name + " ответил(а)"}: <b>${esc(it[it.self])}</b> · ${v.i_am_author ? name + " думал(а)" : "ты думал(а)"}: <b>${esc(it[it.guess])}</b> ${it.self === it.guess ? "✅" : "❌"}</p></div>`).join("")}</div>
-      <div class="grid g2 mt"><button class="btn btn-ghost" id="duo-again">Поменяться ролями</button><button class="btn btn-pink" id="duo-write">${svg("chat")} Написать</button></div>`;
+      <div class="grid g2 mt"><button class="btn btn-ghost" id="duo-again">Поменяться ролями</button><button class="btn btn-pink" id="duo-write">${svg("chat")} Написать</button></div>
+      <button class="btn btn-ghost mt" id="duo-story" style="width:100%">${svg("share")} Картинка для сторис</button>`;
   }
 
   root.innerHTML = head + body;
-  if (v.phase === "done") animateGauges(root);
+  if (v.phase === "done") {
+    animateGauges(root);
+    const ds = $("#duo-story", root);
+    if (ds) ds.onclick = () => shareVibe({ pct: v.percentage, name: p.name, matches: v.matches, total: v.total, btn: ds });
+  }
   $("#duo-back").onclick = closeDuo;
   $$("[data-pick]", root).forEach((b) => b.onclick = () => duoAct({ action: "choose", pick: b.dataset.pick }));
   $$("[data-rate]", root).forEach((b) => b.onclick = () => duoAct({ action: "rate", score: b.dataset.rate }));
@@ -2208,6 +2239,7 @@ function render() {
     state.vibes.mutual.forEach(withPhoto);
   }
   if (r === "games") openGames();
+  if (r === "card") $("#card-share").onclick = () => shareVibe({ ...cardParams(), btn: $("#card-share") });
   if (r === "profile") bindPhotoButton();
   if (r === "edit") { bindEdit(); bindPhotoButton(); }
   if (r === "fame") $$("[data-fame]").forEach((b) => b.onclick = () => { state.fameFilter = b.dataset.fame; haptic("select"); render(); });

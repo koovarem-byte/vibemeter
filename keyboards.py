@@ -7,6 +7,7 @@ from aiogram.types import (
 )
 
 import os
+from urllib.parse import quote
 
 import ui
 
@@ -48,6 +49,21 @@ def menu_btn(text):
     """Кнопка нижнего меню с неоновой иконкой."""
     return KeyboardButton(
         text=text, icon_custom_emoji_id=ui.icon(ui.MENU_ICONS[text])
+    )
+
+
+def story_button(percent: int, name: str, matches=None, total=None):
+    """«Картинка для сторис»: экран #card в Mini App. None без WEBAPP_URL."""
+    base = (os.getenv("WEBAPP_URL") or "").rstrip("/")
+    if not base:
+        return None
+    page = f"card?p={int(percent)}&n={quote((name or '')[:40])}"
+    if total:
+        page += f"&m={int(matches)}&t={int(total)}"
+    return InlineKeyboardButton(
+        text=ui.BTN_STORY,
+        web_app=WebAppInfo(url=f"{base}/app/#{page}"),
+        icon_custom_emoji_id=ui.icon("spark"),
     )
 
 
@@ -111,7 +127,7 @@ def incoming_actions(person_id: int):
     )
 
 
-def mutual_actions(person_id: int, username: str | None):
+def mutual_actions(person_id: int, username: str | None, story=None):
     """После взаимного вайба: сразу ссылка на чат, если есть username."""
     if username:
         write = btn(
@@ -122,7 +138,10 @@ def mutual_actions(person_id: int, username: str | None):
     else:
         write = btn(ui.BTN_WRITE, f"contact:{person_id}", neon="hands")
 
-    return rows([write, btn(ui.BTN_NEXT, "browse", neon="speedo")])
+    keyboard = [[write, btn(ui.BTN_NEXT, "browse", neon="speedo")]]
+    if story:
+        keyboard.append([story])
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 
 def contact_keyboard(username: str):
@@ -216,14 +235,17 @@ def game_keyboard(game_id: int, question_index: int, answer_a: str, answer_b: st
     )
 
 
-def game_result_actions(person_id: int):
-    return rows(
+def game_result_actions(person_id: int, story=None):
+    keyboard = [
         [
             btn(ui.BTN_LIKE, f"game_like:{person_id}", neon="heart"),
             btn(ui.BTN_PLAY_AGAIN, "play_again", neon="gamepad"),
         ],
         [btn(ui.BTN_NEXT, "browse", neon="speedo")],
-    )
+    ]
+    if story:
+        keyboard.append([story])
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 
 # =========================================================

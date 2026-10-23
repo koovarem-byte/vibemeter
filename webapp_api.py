@@ -71,7 +71,7 @@ from games import (
     save_answer,
     start_game,
 )
-from keyboards import game_result_actions, open_app_keyboard
+from keyboards import game_result_actions, open_app_keyboard, story_button
 from questions import MAX_QUESTION_LENGTH, send_question
 import vibetest
 from utils import (
@@ -760,7 +760,10 @@ async def api_game_answer(request):
             await request.app["bot"].send_message(
                 state["opponent"]["id"],
                 ui.game_result(state["matches"], state["percentage"]),
-                reply_markup=game_result_actions(user_id),
+                reply_markup=game_result_actions(user_id, story_button(
+                    state["percentage"], request["user"]["full_name"],
+                    state["matches"], state["total"],
+                )),
             )
         except Exception:
             pass
