@@ -265,6 +265,10 @@ const api = DEMO ? makeDemoApi() : {
     if (!res.ok) throw Object.assign(new Error(data.error), { code: data.error });
     return data;
   },
+  vtNew() { return this.call("vt/new"); },
+  vtCreate(questions, answers) { return this.call("vt/create", { questions, answers }); },
+  vtGet(code) { return this.call(`vt/get?c=${encodeURIComponent(code)}`); },
+  vtAnswer(code, answers) { return this.call("vt/answer", { code, answers }); },
   duoList() { return this.call("duo/list"); },
   duoStart(kind, id) { return this.call("duo/start", { kind, id }); },
   duoState(id) { return this.call(`duo/state?id=${id}`); },
@@ -312,6 +316,16 @@ function makeDemoApi() {
   const skipped = new Map();
   const mutual = [{ id: 15, name: "Соня", age: 20, city: "Псков", interests: ["музыка"], about: "", username: "demo", has_photo: false }];
 
+  // «Проверь вайб с другом» в демо: свой тест и один друг
+  const vtItems = [["🌊 Жить у моря", "🏔️ Жить в горах"], ["🌙 Никогда не спать ночью", "☀️ Никогда не спать днём"],
+    ["💰 Много денег", "⏳ Много свободного времени"], ["🎬 Смотреть фильмы", "🎮 Играть в игры"],
+    ["👥 Большая компания", "🤝 Несколько близких друзей"], ["🧠 Всегда знать ответ", "🎲 Всегда рисковать"],
+    ["🍕 Только любимая еда", "🍔 Каждый день новая еда"]].map(([a, b]) => ({ a, b }));
+  const vtTests = { demo: { owner_name: "Соня", answers: "abbabab", mine: false } };
+  const vtResult = (owner, mine) => {
+    const matches = [...mine].filter((c, i) => c === owner[i]).length;
+    return { percent: Math.round((matches * 100) / mine.length), matches, total: mine.length, owner_answers: owner, my_answers: mine };
+  };
   const build = () => {
     const achievements = defs.map(([icon, name, hint, key, goal]) =>
       ({ icon, name, hint, value: Math.min(stats[key], goal), goal, done: stats[key] >= goal }));
@@ -322,6 +336,21 @@ function makeDemoApi() {
   return {
     async me() { await wait(200); return build(); },
     async next() { await wait(350); return { candidate: queue[0] || null }; },
+    async vtNew() { await wait(200); return { questions: [0, 1, 2, 3, 4, 5, 6], items: vtItems, registered: true, bot_username: "vibemeter_bot" }; },
+    async vtCreate(questions, answers) {
+      await wait(200);
+      const code = `t${Object.keys(vtTests).length}`;
+      vtTests[code] = { owner_name: me.name, answers, mine: true, friends: [{ name: "Соня", percent: 71 }] };
+      return { code, link: `https://t.me/vibemeter_bot?start=vt_${code}` };
+    },
+    async vtGet(code) {
+      await wait(200);
+      const t = vtTests[code];
+      if (!t) throw Object.assign(new Error("not_found"), { code: "not_found" });
+      const base = { code, owner_name: t.owner_name, is_owner: t.mine, items: vtItems, registered: true, bot_username: "vibemeter_bot", link: `https://t.me/vibemeter_bot?start=vt_${code}` };
+      return t.mine ? { ...base, results: t.friends } : { ...base, result: t.done ? vtResult(t.answers, t.done) : null };
+    },
+    async vtAnswer(code, answers) { await wait(300); vtTests[code].done = answers; return { result: vtResult(vtTests[code].answers, answers) }; },
     async vibe(id, action) {
       await wait(150);
       const p = queue.find((x) => x.id === id);
@@ -463,8 +492,10 @@ const NAV = [
   { id: "settings", label: "Настройки", icon: "gear" },
 ];
 
-const route = () => (location.hash || "#home").slice(1).split("?")[0];
-function go(id) { if (route() === id) render(); else location.hash = id; }
+// Telegram может дописать свои параметры (tgWebAppData…) в hash через ? или &
+const route = () => (location.hash || "#home").slice(1).split(/[?&]/)[0] || "home";
+// сравниваем весь hash: из #vt?c=… в #vt — это переход, а не перерисовка
+function go(id) { if ((location.hash || "#home").slice(1) === id) render(); else location.hash = id; }
 
 window.addEventListener("hashchange", () => {
   $("#overlay").classList.add("hidden");
@@ -557,6 +588,8 @@ const screens = {
       </div>
 
       ${dailyHtml()}
+
+      <button class="invite mt" data-go="vt"><span class="ii">✨</span><span class="grow"><b>Проверь вайб с другом</b><small>7 вопросов, ссылка другу — и вы узнаете свой процент совпадения</small></span>${svg("chev", "chev")}</button>
 
       <div class="tiles">
         <button class="tile" data-go="vibes"><div class="ti c-pink">${svg("heart")}</div>${inc ? `<span class="badge">${inc}</span>` : ""}<div><b>Мои вайбы</b><small>${inc ? `${inc} ${plural(inc, "новый", "новых", "новых")}` : `${mut.length} взаимных`}</small></div></button>
@@ -1488,6 +1521,220 @@ async function drawShareCard({ pct, name, matches, total, verdict }) {
 }
 
 // =========================================================
+// «Проверь вайб с другом»: тест без анкеты, ссылка другу, процент
+// =========================================================
+const vt = { key: null, data: null, mode: "intro", picks: "", adult: false, busy: false };
+
+const vtCode = () => (location.hash.match(/[?&]c=([\w-]+)/) || [])[1] || null;
+
+function vtChrome() {
+  if (state.me) return renderChrome();
+  // гость без анкеты: только логотип, без вкладок
+  $$(".brand").forEach((b) => { if (!b.innerHTML) b.innerHTML = brandHtml(); });
+  $("#side-nav").innerHTML = ""; $("#tabbar").innerHTML = ""; $("#topbar-right").innerHTML = "";
+}
+
+async function renderVt() {
+  stopGamePolling(); stopDuoPolling();
+  vtChrome();
+  if (tg && tg.BackButton) (state.me ? tg.BackButton.show() : tg.BackButton.hide());
+  const code = vtCode();
+  const key = code || "new";
+  if (vt.key !== key) {
+    Object.assign(vt, { key, data: null, mode: "intro", picks: "", busy: false });
+    view().innerHTML = `<div class="empty" style="padding-top:80px">${gauge(64, 140, "загружаем")}</div>`;
+    animateGauges(view());
+    try {
+      vt.data = code ? await api.vtGet(code) : await api.vtNew();
+    } catch (e) {
+      vt.key = null;
+      view().innerHTML = e.code === "not_found"
+        ? `${emptyHtml("🔍", "Тест не найден", "Возможно, его удалили. Сделай свой и отправь друзьям")}<div style="text-align:center"><button class="btn btn-violet" data-go="vt">Сделать свой тест</button></div>`
+        : errorHtml(e);
+      return;
+    }
+    if (vt.data.is_owner) vt.mode = "owner";
+    else if (vt.data.result) vt.mode = "result";
+  }
+  drawVt();
+}
+
+function drawVt() {
+  const d = vt.data, v = view();
+  const total = d.items.length;
+
+  if (vt.mode === "intro") {
+    const friend = Boolean(vtCode());
+    v.innerHTML = `
+      <div class="card strong" style="text-align:center;padding:26px 18px">
+        <div style="display:flex;justify-content:center">${gauge(friend ? 50 : 87, 150, "вайб")}</div>
+        <h1 style="font-size:22px;margin:14px 0 8px">${friend ? `${esc(d.owner_name || "Друг")} зовёт проверить ваш вайб` : "Проверь вайб с другом"}</h1>
+        <p class="muted" style="margin:0 auto;max-width:320px">${friend
+          ? `Ответь на те же ${total} вопросов «что выберешь» — и узнаешь, на сколько процентов вы совпали. Анкета не нужна`
+          : `Ответь на ${total} вопросов «что выберешь», отправь ссылку другу, своей половинке или в чат. Как ответят — увидите процент совпадения`}</p>
+        <label class="row" style="justify-content:center;gap:10px;margin:20px 0 4px;cursor:pointer">
+          <input type="checkbox" id="vt-adult" ${vt.adult ? "checked" : ""} style="width:20px;height:20px;accent-color:#ff3d9a">
+          <span>Мне есть 18 лет</span>
+        </label>
+        <button class="btn btn-pink mt" id="vt-go" style="width:100%" ${vt.adult ? "" : "disabled"}>Поехали</button>
+      </div>`;
+    animateGauges(v);
+    $("#vt-adult").onchange = (e) => { vt.adult = e.target.checked; $("#vt-go").disabled = !vt.adult; haptic("select"); };
+    $("#vt-go").onclick = () => { if (!vt.adult) return; haptic("medium"); vt.mode = "play"; vt.picks = ""; drawVt(); };
+    return;
+  }
+
+  if (vt.mode === "play") {
+    const i = vt.picks.length, q = d.items[i];
+    const dots = Array.from({ length: total }, (_, k) => `<i class="${k < i ? "done" : k === i ? "on" : ""}"></i>`).join("");
+    v.innerHTML = `
+      <div class="game-dots">${dots}</div>
+      <p class="label" style="text-align:center;margin:16px 0 6px">Вопрос ${i + 1} из ${total}</p>
+      <h2 class="game-q">Что выберешь?</h2>
+      <div class="list" style="gap:12px">
+        <button class="game-opt" data-vt-ans="a"><span>${esc(q.a)}</span></button>
+        <div class="game-or">или</div>
+        <button class="game-opt" data-vt-ans="b"><span>${esc(q.b)}</span></button>
+      </div>`;
+    $$("[data-vt-ans]", v).forEach((b) => b.onclick = () => vtPick(b));
+    return;
+  }
+
+  if (vt.mode === "owner") {
+    const results = d.results || [];
+    v.innerHTML = `
+      <div class="card strong" style="text-align:center;padding:24px 18px">
+        <h1 style="font-size:21px;margin:0 0 8px">Тест готов</h1>
+        <p class="muted" style="margin:0 auto 16px;max-width:320px">Отправь ссылку другу, своей половинке или в общий чат. Каждый, кто ответит, увидит ваш процент вайба, а тебе придёт уведомление</p>
+        <button class="btn btn-pink" id="vt-share" style="width:100%">${svg("share")} Отправить другу</button>
+        <button class="btn btn-ghost mt" id="vt-copy" style="width:100%">Скопировать ссылку</button>
+      </div>
+      <div class="card mt">
+        <p class="label">Кто уже прошёл</p>
+        ${results.length
+          ? `<div class="list">${results.map((r) => `<div class="item"><div class="ii">🔥</div><div class="grow"><b>${esc(r.name)}</b><small>${vibeWord(r.percent)}</small></div><b>${r.percent}%</b></div>`).join("")}</div>`
+          : `<p class="muted" style="margin:0">Пока никого. Как только кто-то ответит, бот пришлёт результат</p>`}
+        <button class="btn btn-ghost btn-sm mt" id="vt-refresh">Обновить</button>
+      </div>
+      ${vtFooter()}`;
+    $("#vt-share").onclick = vtShare;
+    $("#vt-copy").onclick = () => { try { navigator.clipboard.writeText(d.link); toast("Ссылка скопирована"); } catch (_) { toast(d.link); } };
+    $("#vt-refresh").onclick = () => { vt.key = null; renderVt(); };
+    bindVtFooter();
+    return;
+  }
+
+  if (vt.mode === "result") {
+    const r = d.result;
+    const rows = d.items.map((q, k) => {
+      const same = r.my_answers[k] === r.owner_answers[k];
+      return `<div class="item"><div class="ii">${same ? "💜" : "↔️"}</div><div class="grow"><b>${esc(q[r.my_answers[k]])}</b><small>${same ? "совпали" : `${esc(d.owner_name || "Друг")}: ${esc(q[r.owner_answers[k]])}`}</small></div></div>`;
+    }).join("");
+    v.innerHTML = `
+      <div class="card strong" style="text-align:center;padding:24px 16px">
+        <p class="label" style="margin:0 0 8px">Ты и ${esc(d.owner_name || "друг")}</p>
+        <div style="display:flex;justify-content:center">${gauge(r.percent, 180, "вайба")}</div>
+        <h2 style="font-family:var(--head);font-size:18px;margin:16px 0 4px">${gameVerdict(r.percent)}</h2>
+        <p class="muted" style="margin:0">Совпали в ${r.matches} из ${r.total} вопросов</p>
+        <button class="btn btn-ghost mt-l" id="vt-story" style="width:100%">${svg("share")} Картинка для сторис</button>
+      </div>
+      <div class="card mt"><p class="label">Ваши ответы</p><div class="list">${rows}</div></div>
+      ${vtFooter()}`;
+    animateGauges(v);
+    $("#vt-story").onclick = vtStory;
+    bindVtFooter();
+  }
+}
+
+function vtFooter() {
+  const own = vt.data.is_owner;
+  return `
+    <div class="card mt" style="text-align:center">
+      <h2 style="font-family:var(--head);font-size:17px;margin:0 0 6px">Найти людей с таким же вайбом</h2>
+      <p class="muted small" style="margin:0 auto 14px;max-width:300px">В Вайбометре сначала совпадает вайб, а фото открывается, только когда симпатия взаимная</p>
+      <button class="btn btn-violet" id="vt-find" style="width:100%">${vt.data.registered ? "Искать вайб" : "Создать анкету"}</button>
+      ${own ? "" : `<button class="btn btn-ghost mt" data-go="vt" style="width:100%">Сделать свой тест</button>`}
+    </div>`;
+}
+
+function bindVtFooter() {
+  $("#vt-find").onclick = () => {
+    haptic("medium");
+    if (vt.data.registered) {
+      if (state.me) return go("search");
+      return boot().then(() => go("search"));
+    }
+    // регистрация в боте; автора теста запоминаем как пригласившего
+    const ref = vt.data.owner_id ? `ref_${vt.data.owner_id}` : "";
+    const link = `https://t.me/${vt.data.bot_username || "vibemeter_bot"}${ref ? `?start=${ref}` : ""}`;
+    if (DEMO) return toast("В Telegram откроется бот с анкетой");
+    tg.openTelegramLink(link);
+    setTimeout(() => tg.close(), 400);
+  };
+}
+
+async function vtPick(btn) {
+  if (vt.busy) return;
+  haptic("select");
+  btn.classList.add("picked");
+  $$(".game-opt").forEach((b) => b.disabled = true);
+  vt.picks += btn.dataset.vtAns;
+  await new Promise((r) => setTimeout(r, 220));
+  if (vt.picks.length < vt.data.items.length) return drawVt();
+
+  vt.busy = true;
+  try {
+    if (vtCode()) {
+      const { result } = await api.vtAnswer(vtCode(), vt.picks);
+      vt.data.result = result;
+      vt.mode = "result";
+      haptic("success");
+      drawVt();
+    } else {
+      const { code } = await api.vtCreate(vt.data.questions, vt.picks);
+      haptic("success");
+      location.hash = `vt?c=${code}`;
+    }
+  } catch (e) {
+    toast(errorText(e));
+    vt.picks = vt.picks.slice(0, -1);
+    drawVt();
+  }
+  vt.busy = false;
+}
+
+function vtShare() {
+  haptic("light");
+  const text = "Проверим наш вайб? 7 вопросов «что выберешь» — и узнаем, на сколько процентов мы совпадаем";
+  if (DEMO) { try { navigator.clipboard.writeText(vt.data.link); } catch (_) {} return toast("Ссылка скопирована"); }
+  tg.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(vt.data.link)}&text=${encodeURIComponent(text)}`);
+}
+
+async function vtStory() {
+  const r = vt.data.result, btn = $("#vt-story");
+  if (btn) btn.disabled = true;
+  haptic("medium");
+  try {
+    const canvas = await drawShareCard({
+      pct: r.percent, name: vt.data.owner_name || "другом",
+      matches: r.matches, total: r.total, verdict: vibeWord(r.percent),
+    });
+    const blob = await new Promise((res) => canvas.toBlob(res, "image/png"));
+    // ссылка в сторис ведёт на создание своего теста
+    const link = `https://t.me/${vt.data.bot_username || "vibemeter_bot"}?start=vt`;
+    if (DEMO) toast("Картинка готова (в демо не отправляется)");
+    else if (tg.shareToStory && tg.isVersionAtLeast && tg.isVersionAtLeast("7.8")) {
+      const { url } = await api.story(blob);
+      tg.shareToStory(url, { text: "Проверь свой вайб с друзьями", widget_link: { url: link, name: "Проверь вайб" } });
+    } else {
+      await api.shareCard(blob);
+      toast("Картинка пришла в чат с ботом");
+    }
+  } catch (e) { toast(errorText(e)); }
+  if (btn) btn.disabled = false;
+}
+
+// =========================================================
 // Друзья, игры, онбординг
 // =========================================================
 function invite() {
@@ -1919,7 +2166,8 @@ async function refreshSoft() {
 }
 
 function render() {
-  if (!state.me) return;
+  if (route() === "vt") return renderVt();
+  if (!state.me) return boot();
   stopGamePolling();
   stopDuoPolling();
   let r = route();
@@ -1988,6 +2236,11 @@ if (tg && tg.BackButton) tg.BackButton.onClick(() => {
 
 async function boot() {
   if (DEMO && !$(".demo")) document.body.insertAdjacentHTML("beforeend", '<div class="demo">демо-режим</div>');
+  // тест «Проверь вайб с другом» работает и без анкеты
+  if (route() === "vt") {
+    try { const [me, vibes] = await Promise.all([api.me(), api.vibes()]); state.me = me; state.vibes = vibes; } catch (_) {}
+    return renderVt();
+  }
   view().innerHTML = `<div class="empty" style="padding-top:80px">${gauge(72, 140, "загружаем вайб")}</div>`;
   animateGauges(view());
   try {

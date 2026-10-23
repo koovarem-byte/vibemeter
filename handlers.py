@@ -17,6 +17,7 @@ from openers import make_openers
 from database import (
     is_blocked,
     add_referral,
+    get_vibe_test,
     count_referrals,
     get_inviter,
     create_user,
@@ -368,6 +369,23 @@ async def consent_accept_callback(
 # START
 # =========================================================
 
+async def send_vibe_test(message: Message, code: str):
+    if code:
+        test = await get_vibe_test(code)
+        if test:
+            text, page = ui.vt_invite(test["owner_name"] or "друга"), f"vt?c={code}"
+        else:
+            text, page = ui.VT_NOT_FOUND, "vt"
+    else:
+        text, page = ui.VT_START, "vt"
+
+    keyboard = open_app_keyboard(page)
+    if not keyboard:
+        await message.answer(ui.VT_NO_APP)
+        return
+    await message.answer(text, reply_markup=keyboard)
+
+
 @router.message(CommandStart())
 async def start_handler(
     message: Message,
@@ -375,6 +393,12 @@ async def start_handler(
     command: CommandObject,
 ):
     user = await get_user(message.from_user.id)
+
+    # «Проверь вайб с другом»: t.me/бот?start=vt или vt_<код>, анкета не нужна
+    arg = command.args or ""
+    if arg == "vt" or arg.startswith("vt_"):
+        await send_vibe_test(message, arg[3:])
+        return
 
     if not user:
         await state.clear()

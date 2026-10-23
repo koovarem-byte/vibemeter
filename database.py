@@ -181,6 +181,29 @@ async def init_db():
             )
         """)
 
+        # «Проверь вайб с другом»: тест автора и ответы друзей
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS vibe_tests (
+                code TEXT PRIMARY KEY,
+                owner_id BIGINT NOT NULL,
+                owner_name TEXT,
+                questions TEXT NOT NULL,
+                answers TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS vibe_test_answers (
+                code TEXT NOT NULL REFERENCES vibe_tests(code) ON DELETE CASCADE,
+                user_id BIGINT NOT NULL,
+                name TEXT,
+                answers TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (code, user_id)
+            )
+        """)
+
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS referrals (
                 invitee BIGINT PRIMARY KEY,
@@ -430,6 +453,14 @@ async def delete_user(telegram_id: int):
             )
             await conn.execute(
                 "DELETE FROM games WHERE user_one = $1 OR user_two = $1",
+                telegram_id,
+            )
+            await conn.execute(
+                "DELETE FROM vibe_test_answers WHERE user_id = $1",
+                telegram_id,
+            )
+            await conn.execute(
+                "DELETE FROM vibe_tests WHERE owner_id = $1",
                 telegram_id,
             )
             await conn.execute(
@@ -977,3 +1008,63 @@ async def get_admin_stats():
             "games": games,
             "today": today,
         }
+
+
+# =========================================================
+# VIBE TESTS («Проверь вайб с другом»)
+# =========================================================
+
+async def create_vibe_test(code: str, owner_id: int, owner_name: str, questions: list[int], answers: str):
+    db = await get_pool()
+    async with db.acquire() as conn:
+        await conn.execute("""
+            INSERT INTO vibe_tests (code, owner_id, owner_name, questions, answers)
+            VALUES ($1, $2, $3, $4, $5)
+        """, code, owner_id, owner_name, json.dumps(questions), answers)
+
+
+async def get_vibe_test(code: str):
+    db = await get_pool()
+    async with db.acquire() as conn:
+        row = await conn.fetchrow("SELECT * FROM vibe_tests WHERE code = $1", code)
+    if not row:
+        return None
+    test = dict(row)
+    test["questions"] = json.loads(test["questions"])
+    return test
+
+
+async def get_vibe_test_answers(code: str):
+    db = await get_pool()
+    async with db.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT user_id, name, answers, created_at
+            FROM vibe_test_answers
+            WHERE code = $1
+            ORDER BY created_at DESC
+            LIMIT 50
+        """, code)
+    return [dict(r) for r in rows]
+
+
+async def get_vibe_test_answer(code: str, user_id: int):
+    db = await get_pool()
+    async with db.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT * FROM vibe_test_answers WHERE code = $1 AND user_id = $2",
+            code, user_id,
+        )
+    return dict(row) if row else None
+
+
+async def add_vibe_test_answer(code: str, user_id: int, name: str, answers: str) -> bool:
+    """Ответ друга. Второй раз пройти тот же тест нельзя."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        row = await conn.fetchrow("""
+            INSERT INTO vibe_test_answers (code, user_id, name, answers)
+            VALUES ($1, $2, $3, $4)
+            ON CONFLICT DO NOTHING
+            RETURNING user_id
+        """, code, user_id, name, answers)
+    return row is not None

@@ -46,6 +46,11 @@ from database import (
     get_mutual_likes,
     get_stats,
     get_user,
+    create_vibe_test,
+    get_vibe_test,
+    get_vibe_test_answer,
+    get_vibe_test_answers,
+    add_vibe_test_answer,
     has_like,
     is_blocked,
     touch_user,
@@ -69,6 +74,7 @@ from games import (
 )
 from keyboards import game_result_actions, open_app_keyboard
 from questions import MAX_QUESTION_LENGTH, send_question
+import vibetest
 from utils import (
     is_adult,
     normalize_interests,
@@ -81,6 +87,9 @@ WEBAPP_DIR = Path(__file__).parent / "webapp"
 
 # initData старше суток не принимаем
 INIT_DATA_TTL = 24 * 60 * 60
+
+# Эти запросы работают и без анкеты: тест «Проверь вайб с другом» и сторис
+GUEST_API = ("/app/api/vt/", "/app/api/story", "/app/api/share_card")
 
 ICONS = {
     "heart": "🩷", "diamond": "💎", "fire": "🔥", "crown": "👑",
@@ -118,10 +127,14 @@ async def auth_middleware(request, handler):
         return error("bad_init_data", 401)
 
     user = await get_user(data.user.id)
-    if not user or user["age"] is None:
-        return error("no_profile", 404)
-    if user["is_banned"]:
+    if user and user["is_banned"]:
         return error("banned", 403)
+    request["registered"] = bool(user and user["age"] is not None)
+    if not request["registered"]:
+        if not request.path.startswith(GUEST_API):
+            return error("no_profile", 404)
+        # гость: только id и имя из Telegram, в базу не пишем
+        user = {"telegram_id": data.user.id, "full_name": data.user.first_name}
 
     request["user"] = user
     return await handler(request)
@@ -954,6 +967,126 @@ async def api_photo(request):
 
 
 # =========================================================
+# «Проверь вайб с другом»
+# =========================================================
+
+_vt_last: dict[int, float] = {}
+
+
+async def _vt_body(request) -> dict:
+    try:
+        body = await request.json()
+    except ValueError:
+        return {}
+    return body if isinstance(body, dict) else {}
+
+
+def _vt_name(request) -> str:
+    return (request["user"].get("full_name") or "Друг")[:40]
+
+
+async def _vt_link(request, code: str = "") -> str:
+    username = (await request.app["bot"].me()).username
+    return f"https://t.me/{username}?start=vt" + (f"_{code}" if code else "")
+
+
+async def api_vt_new(request):
+    questions = vibetest.new_questions()
+    return web.json_response({
+        "questions": questions,
+        "items": vibetest.questions_json(questions),
+        "registered": request["registered"],
+        "bot_username": (await request.app["bot"].me()).username,
+    })
+
+
+async def api_vt_create(request):
+    user_id = request["user"]["telegram_id"]
+    body = await _vt_body(request)
+    questions, answers = body.get("questions"), body.get("answers")
+    if not vibetest.valid_questions(questions) or not vibetest.valid_answers(answers):
+        return error("bad_request", 400)
+
+    now = time.time()
+    if now - _vt_last.get(user_id, 0) < 5:
+        return error("too_fast", 429)
+    _vt_last[user_id] = now
+
+    code = vibetest.new_code()
+    await create_vibe_test(code, user_id, _vt_name(request), questions, answers)
+    return web.json_response({"code": code, "link": await _vt_link(request, code)})
+
+
+def _vt_result(test, answers: str) -> dict:
+    matches, percent = vibetest.compare(test["answers"], answers)
+    return {
+        "percent": percent,
+        "matches": matches,
+        "total": len(answers),
+        "owner_answers": test["answers"],
+        "my_answers": answers,
+    }
+
+
+async def api_vt_get(request):
+    user_id = request["user"]["telegram_id"]
+    test = await get_vibe_test(request.query.get("c", ""))
+    if not test:
+        return error("not_found", 404)
+
+    data = {
+        "code": test["code"],
+        "owner_name": test["owner_name"],
+        "owner_id": test["owner_id"],
+        "is_owner": test["owner_id"] == user_id,
+        "items": vibetest.questions_json(test["questions"]),
+        "registered": request["registered"],
+        "bot_username": (await request.app["bot"].me()).username,
+        "link": await _vt_link(request, test["code"]),
+    }
+    if data["is_owner"]:
+        data["results"] = [
+            {"name": row["name"], "percent": vibetest.compare(test["answers"], row["answers"])[1]}
+            for row in await get_vibe_test_answers(test["code"])
+        ]
+    else:
+        mine = await get_vibe_test_answer(test["code"], user_id)
+        data["result"] = _vt_result(test, mine["answers"]) if mine else None
+    return web.json_response(data)
+
+
+async def api_vt_answer(request):
+    user_id = request["user"]["telegram_id"]
+    body = await _vt_body(request)
+    test = await get_vibe_test(str(body.get("code", "")))
+    if not test:
+        return error("not_found", 404)
+    if test["owner_id"] == user_id:
+        return error("own_test", 400)
+    answers = body.get("answers")
+    if not vibetest.valid_answers(answers, len(test["questions"])):
+        return error("bad_request", 400)
+
+    name = _vt_name(request)
+    if await add_vibe_test_answer(test["code"], user_id, name, answers):
+        _, percent = vibetest.compare(test["answers"], answers)
+        # автор сам запустил бота и сделал тест, ему писать можно
+        try:
+            await request.app["bot"].send_message(
+                test["owner_id"],
+                ui.vt_friend_done(name, percent),
+                reply_markup=open_app_keyboard(f"vt?c={test['code']}"),
+            )
+        except Exception:
+            logging.warning("Не удалось сообщить автору теста %s", test["owner_id"])
+    else:
+        # уже проходил: показываем первый результат
+        answers = (await get_vibe_test_answer(test["code"], user_id))["answers"]
+
+    return web.json_response({"result": _vt_result(test, answers)})
+
+
+# =========================================================
 # Неоновые эмодзи для Mini App
 # =========================================================
 
@@ -1045,6 +1178,10 @@ def setup_webapp(app: web.Application, bot):
     app.router.add_post("/app/api/settings", api_settings)
     app.router.add_get("/app/api/photo/{person_id}", api_photo)
     app.router.add_get("/app/neon/{name}", neon_image)
+    app.router.add_get("/app/api/vt/new", api_vt_new)
+    app.router.add_post("/app/api/vt/create", api_vt_create)
+    app.router.add_get("/app/api/vt/get", api_vt_get)
+    app.router.add_post("/app/api/vt/answer", api_vt_answer)
 
     app.router.add_get("/app", to_index)
     app.router.add_get("/app/", index)
