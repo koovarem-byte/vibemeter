@@ -1237,3 +1237,19 @@ async def set_vibe_hour_notify(telegram_id: int, value: bool):
             "UPDATE users SET vibe_hour_notify = $2 WHERE telegram_id = $1",
             telegram_id, value,
         )
+
+
+# =========================================================
+# ПРОГРЕСС ГОРОДА
+# =========================================================
+
+async def city_counts() -> list[tuple[str, int]]:
+    """Сколько анкет в каждом городе (как написали, без нормализации)."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT city, COUNT(*) AS n FROM users
+            WHERE age IS NOT NULL AND NOT is_banned AND city IS NOT NULL
+            GROUP BY city
+        """)
+    return [(r["city"], r["n"]) for r in rows]

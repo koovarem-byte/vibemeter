@@ -353,7 +353,7 @@ def search_card(person, vibe, common, same_city=False) -> str:
     )
 
 
-def own_profile(user, stats=None, done=0, total=0) -> str:
+def own_profile(user, stats=None, done=0, total=0, city=None) -> str:
     blocks = [plain_title("👤", "Мой профиль")]
 
     head = _name_age(user)
@@ -373,6 +373,9 @@ def own_profile(user, stats=None, done=0, total=0) -> str:
             f"{e('fire')} Серия {days(stats['streak_days'])}\n"
             f"{e('crown')} Уровень {lvl_n} · {lvl_name} · {done} из {total} достижений"
         )
+
+    if city:
+        blocks.append(f"{city_progress(city)}\nЗови друзей: каждый двигает шкалу города")
 
     return "\n\n".join(blocks)
 
@@ -621,6 +624,25 @@ OPEN_APP_HINT = "Всё самое красивое — в приложении:
 SHARE_CARD_CAPTION = f"Сохрани картинку и выложи в сторис {e('heart')}\nПусть друзья проверят свой вайб: {{link}}"
 
 NEED_PROFILE = "Сначала заполни анкету: напиши /start, это минута"
+
+def city_progress(city: dict) -> str:
+    """«Псков: 37 из 100» со шкалой."""
+    filled = max(0, min(10, city["count"] * 10 // city["goal"]))
+    return (
+        f"{e('fire')} <b>{esc(city['name'])}: {city['count']} из {city['goal']}</b>\n"
+        f"{'▰' * filled}{'▱' * (10 - filled)}"
+    )
+
+
+def friend_joined(total: int, city: dict | None) -> str:
+    text = (
+        f"{title('star', 'Твой друг в Вайбометре')}\n\n"
+        f"Приглашено: {total}. Три друга откроют достижение «Лидер вайба»"
+    )
+    if city:
+        text += f"\n\n{city_progress(city)}\nШкала твоего города сдвинулась"
+    return text
+
 
 # Вайб-час
 BTN_VH_GO = "Найти вайб"

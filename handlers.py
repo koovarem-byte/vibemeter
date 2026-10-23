@@ -14,6 +14,7 @@ from aiogram.types import (
 
 import ui
 import vibehour
+import citygoal
 from database import (
     is_blocked,
     add_referral,
@@ -229,7 +230,8 @@ async def user_profile_message(message, user):
 
     stats = await get_stats(user["telegram_id"])
     done, total = ui.achievements_progress(stats)
-    text = ui.own_profile(user, stats, done, total)
+    city = await citygoal.progress(user["city"])
+    text = ui.own_profile(user, stats, done, total, city)
 
     if user["photo_id"]:
         await message.answer_photo(
@@ -641,10 +643,10 @@ async def profile_search_gender(
         if inviter:
             try:
                 total = await count_referrals(inviter)
+                inviter_user = await get_user(inviter)
+                city = await citygoal.progress(inviter_user["city"] if inviter_user else None)
                 await callback.bot.send_message(
-                    inviter,
-                    f"🎉 Твой друг в Вайбометре! Приглашено: {total}. "
-                    "Три друга откроют достижение «Лидер вайба»",
+                    inviter, ui.friend_joined(total, city),
                 )
             except Exception:
                 logging.exception("referral notify failed")

@@ -79,6 +79,7 @@ from questions import MAX_QUESTION_LENGTH, send_question
 import vibetest
 import crush
 import vibehour
+import citygoal
 from utils import (
     is_adult,
     normalize_interests,
@@ -249,6 +250,7 @@ async def api_me(request):
         "achievements": achievements_json(stats),
         "level": level_json(done, total),
         "vibe_hour": await vibehour.status(),
+        "city": await citygoal.progress(user["city"]),
     })
 
 

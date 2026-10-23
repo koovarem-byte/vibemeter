@@ -337,7 +337,7 @@ function makeDemoApi() {
     const achievements = defs.map(([icon, name, hint, key, goal]) =>
       ({ icon, name, hint, value: Math.min(stats[key], goal), goal, done: stats[key] >= goal }));
     const done = achievements.filter((a) => a.done).length;
-    return { vibe_hour: { active: new Date().getHours() === 21, starts_in: 95, online: 4, start: "21:00", end: "22:00" }, bot_username: "vibemeter_bot", daily: dailyDemo, user: { ...me }, stats: { ...stats }, achievements, level: levelFor(done, achievements.length) };
+    return { city: { name: "Псков", count: 37, goal: 50 }, vibe_hour: { active: new Date().getHours() === 21, starts_in: 95, online: 4, start: "21:00", end: "22:00" }, bot_username: "vibemeter_bot", daily: dailyDemo, user: { ...me }, stats: { ...stats }, achievements, level: levelFor(done, achievements.length) };
   };
 
   return {
@@ -596,6 +596,18 @@ function cardParams() {
 
 const crushState = { data: null, busy: false };
 
+function cityHtml() {
+  const c = state.me.city;
+  if (!c) return "";
+  const pct = Math.min(100, Math.round((c.count / c.goal) * 100));
+  return `<div class="card mt">
+    <div class="row between"><p class="label" style="margin:0">${esc(c.name)} в Вайбометре</p><b>${c.count} / ${c.goal}</b></div>
+    <div class="bar" style="margin-top:10px"><i style="width:${Math.max(4, pct)}%"></i></div>
+    <p class="muted small" style="margin:10px 0 12px">Чем больше своих в городе, тем быстрее мэтчи. Каждый приглашённый двигает общую шкалу</p>
+    <button class="btn btn-violet btn-sm" id="city-invite">${svg("share")} Позвать друзей</button>
+  </div>`;
+}
+
 function vibeHourHtml() {
   const vh = state.me.vibe_hour;
   if (!vh) return "";
@@ -677,6 +689,8 @@ const screens = {
       </div>
 
       ${vibeHourHtml()}
+
+      ${cityHtml()}
 
       ${dailyHtml()}
 
@@ -2318,7 +2332,7 @@ function render() {
   animateGauges(v);
   if (tg && tg.BackButton) (r === "home" ? tg.BackButton.hide() : tg.BackButton.show());
 
-  $$("#invite-btn").forEach((b) => b.onclick = invite);
+  $$("#invite-btn, #city-invite").forEach((b) => b.onclick = invite);
   $$("[data-daily]").forEach((b) => b.onclick = async () => {
     haptic("select");
     try {
