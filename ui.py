@@ -760,8 +760,21 @@ def admin_stats(s) -> str:
         f"Лайков: {s['likes']} · взаимных: {s['mutual']}\n"
         f"Пропусков: {s['skips']}\n"
         f"Вопросов: {s['questions']} · игр: {s['games']}\n\n"
-        "Неделя для роликов: /week"
+        "Неделя для роликов: /week · партнёрские ссылки: /sources"
     )
+
+
+def admin_sources(rows) -> str:
+    if not rows:
+        return (
+            "Партнёрских переходов пока нет\n\n"
+            "Ссылка для канала: t.me/vibemeter_bot?start=vtp_метка "
+            "(латиница, цифры, _), например vtp_psy_anna"
+        )
+    lines = ["📈 <b>Источники</b> (пришли · анкеты · тест)", ""]
+    for r in rows:
+        lines.append(f"<code>{esc(r['tag'])}</code>: {r['came']} · {r['profiles']} · {r['tested']}")
+    return "\n".join(lines)
 
 
 ADMIN_BAN_FORMAT = "Формат: /ban ID или /unban ID"

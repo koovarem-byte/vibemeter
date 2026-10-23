@@ -1,4 +1,5 @@
 import html
+import re
 import logging
 import random
 import time
@@ -21,6 +22,8 @@ from database import (
     is_blocked,
     add_referral,
     get_vibe_test,
+    add_start_source,
+    source_stats,
     set_vibe_hour_notify,
     count_referrals,
     get_inviter,
@@ -317,6 +320,14 @@ async def admin_week_handler(message: Message):
     await message.answer(await weeklystats.build())
 
 
+@router.message(Command("sources"))
+async def admin_sources_handler(message: Message):
+    """Админу: сколько людей пришло по каждой партнёрской метке."""
+    if message.from_user.id != ADMIN_ID:
+        return
+    await message.answer(ui.admin_sources(await source_stats()))
+
+
 @router.message(Command("emojiset"))
 async def emoji_set_handler(message: Message, command: CommandObject):
     """Админу: список эмодзи набора с их id, чтобы подключить в ui.NEON."""
@@ -433,6 +444,10 @@ async def start_handler(
 
     # «Проверь вайб с другом»: t.me/бот?start=vt или vt_<код>, анкета не нужна
     arg = command.args or ""
+    # партнёрская ссылка: t.me/бот?start=vtp_<метка> — тот же тест + учёт источника
+    if re.fullmatch(r"vtp_[a-z0-9_]{1,30}", arg):
+        await add_start_source(arg[4:], message.from_user.id)
+        arg = "vt"
     if arg == "vt" or arg.startswith("vt_"):
         await send_vibe_test(message, arg[3:])
         return

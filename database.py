@@ -100,6 +100,15 @@ async def init_db():
             ALTER TABLE users
             ADD COLUMN IF NOT EXISTS boost_until TIMESTAMPTZ
         """)
+        # Откуда пришли: метка партнёрской ссылки start=vtp_<метка>
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS start_sources (
+                tag TEXT NOT NULL,
+                user_id BIGINT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (tag, user_id)
+            )
+        """)
         # Служебные отметки (например, в какой день уже напомнили о вайб-часе)
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS app_state (
@@ -1321,3 +1330,37 @@ async def week_answers(days: int) -> dict:
               (SELECT COUNT(*) FROM vibe_test_answers WHERE created_at >= now() - make_interval(days => $1)) AS tests
         """, days)
     return {"daily": daily, "games": games, "tests": tests, "totals": dict(totals)}
+
+
+# =========================================================
+# ИСТОЧНИКИ (партнёрские ссылки)
+# =========================================================
+
+async def add_start_source(tag: str, user_id: int):
+    db = await get_pool()
+    async with db.acquire() as conn:
+        await conn.execute(
+            "INSERT INTO start_sources (tag, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+            tag, user_id,
+        )
+
+
+async def source_stats() -> list[dict]:
+    """По каждой метке: сколько пришло, сколько заполнили анкету, сколько прошли тест."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT s.tag,
+                   COUNT(*) AS came,
+                   COUNT(u.telegram_id) FILTER (WHERE u.age IS NOT NULL) AS profiles,
+                   COUNT(DISTINCT s.user_id) FILTER (WHERE EXISTS (
+                       SELECT 1 FROM vibe_tests t WHERE t.owner_id = s.user_id
+                   ) OR EXISTS (
+                       SELECT 1 FROM vibe_test_answers a WHERE a.user_id = s.user_id
+                   )) AS tested
+            FROM start_sources s
+            LEFT JOIN users u ON u.telegram_id = s.user_id
+            GROUP BY s.tag
+            ORDER BY came DESC
+        """)
+    return [dict(r) for r in rows]
