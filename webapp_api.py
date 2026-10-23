@@ -49,6 +49,8 @@ from database import (
     get_vibe_test,
     get_vibe_test_answer,
     get_vibe_test_answers,
+    list_crushes,
+    remove_crush,
     add_vibe_test_answer,
     has_like,
     is_blocked,
@@ -74,6 +76,7 @@ from games import (
 from keyboards import game_result_actions, open_app_keyboard, story_button
 from questions import MAX_QUESTION_LENGTH, send_question
 import vibetest
+import crush
 from utils import (
     is_adult,
     normalize_interests,
@@ -964,6 +967,52 @@ async def api_photo(request):
 
 
 # =========================================================
+# «Тайная симпатия»
+# =========================================================
+
+async def _crush_state(request) -> dict:
+    user = request["user"]
+    items = await list_crushes(user["telegram_id"])
+    return {
+        "my_username": user["username"] or "",
+        "limit": crush.LIMIT,
+        "items": [
+            {
+                "username": row["username"],
+                "mutual": row["mutual_id"] is not None,
+                "name": row["mutual_name"] if row["mutual_id"] else None,
+            }
+            for row in items
+        ],
+        "share": f"https://t.me/{(await request.app['bot'].me()).username}?start=sc",
+    }
+
+
+async def api_crush(request):
+    return web.json_response(await _crush_state(request))
+
+
+async def api_crush_add(request):
+    body = await _vt_body(request)
+    status, other = await crush.add(
+        request.app["bot"], request["user"]["telegram_id"], str(body.get("username", ""))
+    )
+    if status in ("bad", "self", "limit", "exists"):
+        return error(f"crush_{status}", 400)
+    data = await _crush_state(request)
+    data["mutual"] = other is not None
+    return web.json_response(data)
+
+
+async def api_crush_remove(request):
+    body = await _vt_body(request)
+    username = crush.normalize(str(body.get("username", "")))
+    if username:
+        await remove_crush(request["user"]["telegram_id"], username)
+    return web.json_response(await _crush_state(request))
+
+
+# =========================================================
 # «Проверь вайб с другом»
 # =========================================================
 
@@ -1175,6 +1224,9 @@ def setup_webapp(app: web.Application, bot):
     app.router.add_post("/app/api/settings", api_settings)
     app.router.add_get("/app/api/photo/{person_id}", api_photo)
     app.router.add_get("/app/neon/{name}", neon_image)
+    app.router.add_get("/app/api/crush", api_crush)
+    app.router.add_post("/app/api/crush/add", api_crush_add)
+    app.router.add_post("/app/api/crush/remove", api_crush_remove)
     app.router.add_get("/app/api/vt/new", api_vt_new)
     app.router.add_post("/app/api/vt/create", api_vt_create)
     app.router.add_get("/app/api/vt/get", api_vt_get)

@@ -265,6 +265,9 @@ const api = DEMO ? makeDemoApi() : {
     if (!res.ok) throw Object.assign(new Error(data.error), { code: data.error });
     return data;
   },
+  crush() { return this.call("crush"); },
+  crushAdd(username) { return this.call("crush/add", { username }); },
+  crushRemove(username) { return this.call("crush/remove", { username }); },
   vtNew() { return this.call("vt/new"); },
   vtCreate(questions, answers) { return this.call("vt/create", { questions, answers }); },
   vtGet(code) { return this.call(`vt/get?c=${encodeURIComponent(code)}`); },
@@ -316,6 +319,10 @@ function makeDemoApi() {
   const skipped = new Map();
   const mutual = [{ id: 15, name: "Соня", age: 20, city: "Псков", interests: ["музыка"], about: "", username: "demo", has_photo: false }];
 
+  // «Тайная симпатия» в демо: @sonya отвечает взаимностью
+  let crushes = [{ username: "kate_neon", mutual: false, name: null }];
+  const crushDemo = () => ({ my_username: "demo", limit: 5, items: crushes.slice(), share: "https://t.me/vibemeter_bot?start=sc" });
+
   // «Проверь вайб с другом» в демо: свой тест и один друг
   const vtItems = [["🌊 Жить у моря", "🏔️ Жить в горах"], ["🌙 Никогда не спать ночью", "☀️ Никогда не спать днём"],
     ["💰 Много денег", "⏳ Много свободного времени"], ["🎬 Смотреть фильмы", "🎮 Играть в игры"],
@@ -336,6 +343,18 @@ function makeDemoApi() {
   return {
     async me() { await wait(200); return build(); },
     async next() { await wait(350); return { candidate: queue[0] || null }; },
+    async crush() { await wait(200); return crushDemo(); },
+    async crushAdd(username) {
+      await wait(250);
+      const u = username.trim().replace(/^@/, "").toLowerCase();
+      if (!/^[a-z][a-z0-9_]{3,31}$/.test(u)) throw Object.assign(new Error("crush_bad"), { code: "crush_bad" });
+      if (crushes.some((c) => c.username === u)) throw Object.assign(new Error("crush_exists"), { code: "crush_exists" });
+      if (crushes.length >= 5) throw Object.assign(new Error("crush_limit"), { code: "crush_limit" });
+      const mutual = u === "sonya";
+      crushes.push({ username: u, mutual, name: mutual ? "Соня" : null });
+      return { ...crushDemo(), mutual };
+    },
+    async crushRemove(username) { await wait(150); crushes = crushes.filter((c) => c.username !== username); return crushDemo(); },
     async vtNew() { await wait(200); return { questions: [0, 1, 2, 3, 4, 5, 6], items: vtItems, registered: true, bot_username: "vibemeter_bot" }; },
     async vtCreate(questions, answers) {
       await wait(200);
@@ -575,7 +594,37 @@ function cardParams() {
   return { pct, name: (hashParam("n") || "").slice(0, 40), matches: total ? Math.min(total, Number(hashParam("m")) || 0) : null, total, sub: total ? null : "ВЗАИМНЫЙ ВАЙБ" };
 }
 
+const crushState = { data: null, busy: false };
+
 const screens = {
+  crush() {
+    const d = crushState.data;
+    if (!d) return `<div class="empty" style="padding-top:60px">${gauge(50, 120, "загружаем")}</div>`;
+    const rows = d.items.map((c) => `
+      <div class="item">
+        <div class="ii">${c.mutual ? "💗" : "👀"}</div>
+        <div class="grow"><b>@${esc(c.username)}</b><small>${c.mutual ? `Взаимно! ${esc(c.name || "")} тоже отметил(а) тебя` : "Ждём. Узнает, только если отметит тебя"}</small></div>
+        <button class="icon-btn" style="width:38px;height:38px" data-crush-rm="${esc(c.username)}" aria-label="Убрать">${svg("x")}</button>
+      </div>`).join("");
+    return `
+      <h1 style="margin:0 0 6px">Тайная симпатия</h1>
+      <p class="muted" style="margin:0 0 16px">Отметь @username тех, кто тебе нравится. Никто не узнает, пока человек не отметит тебя в ответ. Тогда вам обоим придёт уведомление</p>
+      ${d.my_username ? "" : `<div class="card" style="border-color:var(--pink);margin-bottom:12px"><b>У тебя нет @username</b><p class="muted small" style="margin:6px 0 0">Тебя не смогут отметить в ответ. Добавь его в настройках Telegram и открой Вайбометр заново</p></div>`}
+      <div class="card strong">
+        <div class="row" style="gap:8px">
+          <input class="field" id="crush-input" placeholder="@username" maxlength="40" autocomplete="off" autocapitalize="off" enterkeyhint="done" style="flex:1">
+          <button class="btn btn-pink" id="crush-add" ${d.items.length >= d.limit ? "disabled" : ""}>Отметить</button>
+        </div>
+        <p class="muted small" style="margin:8px 2px 0">${d.items.length} из ${d.limit}</p>
+      </div>
+      ${rows ? `<div class="card mt"><p class="label">Твои отметки</p><div class="list">${rows}</div></div>` : ""}
+      <div class="card mt" style="text-align:center">
+        <h2 style="font-family:var(--head);font-size:16px;margin:0 0 6px">Их ещё нет в Вайбометре?</h2>
+        <p class="muted small" style="margin:0 auto 12px;max-width:300px">Отправь ссылку, не раскрывая себя: «Кто-то хочет узнать ваш вайб»</p>
+        <button class="btn btn-violet" id="crush-share" style="width:100%">${svg("share")} Отправить анонимно</button>
+      </div>`;
+  },
+
   card() {
     const c = cardParams();
     return `
@@ -613,7 +662,9 @@ const screens = {
 
       ${dailyHtml()}
 
-      <button class="invite mt" data-go="vt"><span class="ii">✨</span><span class="grow"><b>Проверь вайб с другом</b><small>7 вопросов, ссылка другу — и вы узнаете свой процент совпадения</small></span>${svg("chev", "chev")}</button>
+      <button class="invite mt" data-go="crush"><span class="ii">👀</span><span class="grow"><b>Тайная симпатия</b><small>Отметь, кто нравится. Узнает, только если это взаимно</small></span>${svg("chev", "chev")}</button>
+
+      <button class="invite" data-go="vt"><span class="ii">✨</span><span class="grow"><b>Проверь вайб с другом</b><small>7 вопросов, ссылка другу — и вы узнаете свой процент совпадения</small></span>${svg("chev", "chev")}</button>
 
       <div class="tiles">
         <button class="tile" data-go="vibes"><div class="ti c-pink">${svg("heart")}</div>${inc ? `<span class="badge">${inc}</span>` : ""}<div><b>Мои вайбы</b><small>${inc ? `${inc} ${plural(inc, "новый", "новых", "новых")}` : `${mut.length} взаимных`}</small></div></button>
@@ -1877,6 +1928,41 @@ function renderGame() {
   }
 }
 
+async function loadCrush() {
+  try { crushState.data = await api.crush(); } catch (e) { return toast(errorText(e)); }
+  if (route() === "crush") render();
+}
+
+function bindCrush() {
+  if (!crushState.data) return loadCrush();
+  const input = $("#crush-input");
+  const add = async () => {
+    const value = input.value.trim();
+    if (!value || crushState.busy) return;
+    crushState.busy = true; haptic("select");
+    try {
+      const data = await api.crushAdd(value);
+      crushState.data = data;
+      if (data.mutual) { haptic("success"); toast("Взаимно! Мы написали вам обоим 💗"); }
+      else toast("Отмечено. Узнает, только если это взаимно");
+      render();
+    } catch (e) { haptic("error"); toast(errorText(e)); }
+    crushState.busy = false;
+  };
+  $("#crush-add").onclick = add;
+  input.onkeydown = (e) => { if (e.key === "Enter") add(); };
+  $$("[data-crush-rm]").forEach((b) => b.onclick = async () => {
+    haptic("light");
+    try { crushState.data = await api.crushRemove(b.dataset.crushRm); render(); } catch (e) { toast(errorText(e)); }
+  });
+  $("#crush-share").onclick = () => {
+    haptic("light");
+    const text = "Кто-то хочет узнать ваш вайб 👀 Открой и отметь, кто нравится тебе — если совпадёт, узнаете оба";
+    if (DEMO) return toast("Ссылка скопирована");
+    tg.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(crushState.data.share)}&text=${encodeURIComponent(text)}`);
+  };
+}
+
 function botName() {
   return (state.me && state.me.bot_username) || (vt.data && vt.data.bot_username) || "vibemeter_bot";
 }
@@ -2164,7 +2250,15 @@ function showOnboarding() {
 // =========================================================
 // Рендер
 // =========================================================
+const CRUSH_ERRORS = {
+  crush_bad: "Это не похоже на @username",
+  crush_self: "Себя отмечать не нужно 🙂",
+  crush_exists: "Уже в списке",
+  crush_limit: "Максимум 5 человек. Убери кого-нибудь",
+};
+
 function errorText(e) {
+  if (e && CRUSH_ERRORS[e.code]) return CRUSH_ERRORS[e.code];
   if (e && e.code === "banned") return "Аккаунт заблокирован";
   if (e && e.code === "network") return "Нет связи, проверь интернет";
   if (e && e.code === "not_found") return "Анкета уже недоступна";
@@ -2197,6 +2291,7 @@ function render() {
   let r = route();
   if (!screens[r]) r = "home";
   if (r !== "edit") state.form = null;
+  if (r !== "crush") crushState.data = null; // при каждом входе свежий список
   const v = view();
   v.innerHTML = screens[r]();
   v.classList.remove("enter"); void v.offsetWidth; v.classList.add("enter");
@@ -2239,6 +2334,7 @@ function render() {
     state.vibes.mutual.forEach(withPhoto);
   }
   if (r === "games") openGames();
+  if (r === "crush") bindCrush();
   if (r === "card") $("#card-share").onclick = () => shareVibe({ ...cardParams(), btn: $("#card-share") });
   if (r === "profile") bindPhotoButton();
   if (r === "edit") { bindEdit(); bindPhotoButton(); }

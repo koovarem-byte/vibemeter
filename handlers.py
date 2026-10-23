@@ -97,7 +97,7 @@ current_profile = {}
 async def ban_middleware(handler, event, data):
     """Бан + серия дней: один запрос к базе на апдейт."""
     user = data.get("event_from_user")
-    info = await touch_user(user.id) if user else None
+    info = await touch_user(user.id, user.username or "") if user else None
 
     if info and info["is_banned"] and user.id != ADMIN_ID:
         if isinstance(event, CallbackQuery):
@@ -384,6 +384,23 @@ async def send_vibe_test(message: Message, code: str):
     await message.answer(text, reply_markup=keyboard)
 
 
+async def send_crush(message: Message):
+    keyboard = open_app_keyboard("crush")
+    if not keyboard:
+        await message.answer(ui.VT_NO_APP)
+        return
+    await message.answer(ui.CRUSH_START, reply_markup=keyboard)
+
+
+@router.message(Command("crush"))
+async def crush_command(message: Message):
+    user = await get_user(message.from_user.id)
+    if not user or user["age"] is None:
+        await message.answer(ui.NEED_PROFILE)
+        return
+    await send_crush(message)
+
+
 @router.message(CommandStart())
 async def start_handler(
     message: Message,
@@ -422,6 +439,12 @@ async def start_handler(
 
     if profile_complete:
         await state.clear()
+
+        # «Кто-то хочет узнать ваш вайб»: t.me/бот?start=sc
+        if command.args == "sc":
+            await message.answer(ui.MAIN_MENU, reply_markup=main_menu())
+            await send_crush(message)
+            return
 
         # Ссылка из Mini App: t.me/бот?start=game
         if command.args == "game":

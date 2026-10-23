@@ -181,6 +181,16 @@ async def init_db():
             )
         """)
 
+        # «Тайная симпатия»: кого человек отметил по @username (в нижнем регистре)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS secret_crushes (
+                from_user BIGINT NOT NULL,
+                username TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (from_user, username)
+            )
+        """)
+
         # «Проверь вайб с другом»: тест автора и ответы друзей
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS vibe_tests (
@@ -456,6 +466,10 @@ async def delete_user(telegram_id: int):
                 telegram_id,
             )
             await conn.execute(
+                "DELETE FROM secret_crushes WHERE from_user = $1",
+                telegram_id,
+            )
+            await conn.execute(
                 "DELETE FROM vibe_test_answers WHERE user_id = $1",
                 telegram_id,
             )
@@ -713,9 +727,11 @@ async def dismiss_reports(to_user: int):
         )
 
 
-async def touch_user(telegram_id: int):
+async def touch_user(telegram_id: int, username: str | None = None):
     """
     Отмечает активность за сегодня (по Москве) и считает серию дней.
+    username: актуальный @username из Telegram ("" — у человека его нет,
+    None — не трогать).
     Возвращает None, если пользователя нет, иначе запись:
     is_banned, streak_days, first_today.
     """
@@ -742,11 +758,12 @@ async def touch_user(telegram_id: int):
             UPDATE users u
             SET streak_days = calc.streak,
                 best_streak = GREATEST(u.best_streak, calc.streak),
-                last_active = calc.today
+                last_active = calc.today,
+                username = COALESCE($2, u.username)
             FROM calc
             WHERE u.telegram_id = calc.telegram_id
             RETURNING u.is_banned, u.streak_days, calc.first_today
-        """, telegram_id)
+        """, telegram_id, username)
 
 
 async def is_banned(telegram_id: int) -> bool:
@@ -1068,3 +1085,82 @@ async def add_vibe_test_answer(code: str, user_id: int, name: str, answers: str)
             RETURNING user_id
         """, code, user_id, name, answers)
     return row is not None
+
+
+# =========================================================
+# SECRET CRUSHES («Тайная симпатия»)
+# =========================================================
+
+async def add_crush(from_user: int, username: str, limit: int) -> str:
+    """'added', 'exists' или 'limit'. username уже нормализован."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        async with conn.transaction():
+            count = await conn.fetchval(
+                "SELECT COUNT(*) FROM secret_crushes WHERE from_user = $1", from_user
+            )
+            exists = await conn.fetchval(
+                "SELECT 1 FROM secret_crushes WHERE from_user = $1 AND username = $2",
+                from_user, username,
+            )
+            if exists:
+                return "exists"
+            if count >= limit:
+                return "limit"
+            await conn.execute(
+                "INSERT INTO secret_crushes (from_user, username) VALUES ($1, $2)",
+                from_user, username,
+            )
+    return "added"
+
+
+async def remove_crush(from_user: int, username: str):
+    db = await get_pool()
+    async with db.acquire() as conn:
+        await conn.execute(
+            "DELETE FROM secret_crushes WHERE from_user = $1 AND username = $2",
+            from_user, username,
+        )
+
+
+async def list_crushes(from_user: int):
+    """Мои отметки; mutual_id — id человека, если симпатия взаимная."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT c.username, t.telegram_id AS mutual_id, t.full_name AS mutual_name
+            FROM secret_crushes c
+            JOIN users me ON me.telegram_id = c.from_user
+            LEFT JOIN users t
+                   ON lower(t.username) = c.username
+                  AND t.is_banned IS NOT TRUE
+                  AND EXISTS (
+                      SELECT 1 FROM secret_crushes back
+                      WHERE back.from_user = t.telegram_id
+                        AND back.username = lower(me.username)
+                  )
+            WHERE c.from_user = $1
+            ORDER BY c.created_at
+        """, from_user)
+    return [dict(r) for r in rows]
+
+
+async def find_mutual_crush(from_user: int, username: str):
+    """Человек с этим @username, если он тоже отметил from_user."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        row = await conn.fetchrow("""
+            SELECT t.*
+            FROM users t, users me
+            WHERE me.telegram_id = $1
+              AND lower(t.username) = $2
+              AND t.telegram_id <> me.telegram_id
+              AND t.is_banned IS NOT TRUE
+              AND me.username IS NOT NULL AND me.username <> ''
+              AND EXISTS (
+                  SELECT 1 FROM secret_crushes back
+                  WHERE back.from_user = t.telegram_id
+                    AND back.username = lower(me.username)
+              )
+        """, from_user, username)
+    return dict(row) if row else None
