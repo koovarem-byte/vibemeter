@@ -1275,3 +1275,49 @@ async def add_boost(telegram_id: int, hours: int):
             WHERE telegram_id = $1
             RETURNING boost_until
         """, telegram_id, hours)
+
+
+# =========================================================
+# НЕДЕЛЬНАЯ СТАТИСТИКА (анонимно, для роликов)
+# =========================================================
+
+async def week_answers(days: int) -> dict:
+    """Сырые ответы «а/б» за последние дни: без имён и id наружу."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        daily = await conn.fetch("""
+            SELECT d.day, d.answer, u.gender
+            FROM daily_answers d LEFT JOIN users u ON u.telegram_id = d.user_id
+            WHERE d.day >= (now() AT TIME ZONE 'Europe/Moscow')::date - $1::int
+        """, days)
+        games = await conn.fetch("""
+            SELECT g.questions_json, a.question_index, a.answer, u.gender
+            FROM game_answers a
+            JOIN games g ON g.id = a.game_id
+            LEFT JOIN users u ON u.telegram_id = a.user_id
+            WHERE g.created_at >= now() - make_interval(days => $1)
+              AND g.questions_json IS NOT NULL
+        """, days)
+        tests = await conn.fetch("""
+            SELECT t.questions, t.answers, u.gender
+            FROM vibe_tests t LEFT JOIN users u ON u.telegram_id = t.owner_id
+            WHERE t.created_at >= now() - make_interval(days => $1)
+            UNION ALL
+            SELECT t.questions, a.answers, u.gender
+            FROM vibe_test_answers a
+            JOIN vibe_tests t ON t.code = a.code
+            LEFT JOIN users u ON u.telegram_id = a.user_id
+            WHERE a.created_at >= now() - make_interval(days => $1)
+        """, days)
+        totals = await conn.fetchrow("""
+            SELECT
+              (SELECT COUNT(*) FROM users WHERE age IS NOT NULL
+                 AND created_at >= now() - make_interval(days => $1)) AS new_profiles,
+              (SELECT COUNT(*) FROM likes a JOIN likes b
+                 ON a.from_user = b.to_user AND a.to_user = b.from_user
+                 WHERE a.from_user < a.to_user
+                   AND GREATEST(a.created_at, b.created_at) >= now() - make_interval(days => $1)) AS mutual,
+              (SELECT COUNT(*) FROM games WHERE created_at >= now() - make_interval(days => $1)) AS games,
+              (SELECT COUNT(*) FROM vibe_test_answers WHERE created_at >= now() - make_interval(days => $1)) AS tests
+        """, days)
+    return {"daily": daily, "games": games, "tests": tests, "totals": dict(totals)}

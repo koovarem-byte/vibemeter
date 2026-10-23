@@ -759,7 +759,8 @@ def admin_stats(s) -> str:
         f"Анкет: {s['profiles']} · с фото: {s['photos']}\n"
         f"Лайков: {s['likes']} · взаимных: {s['mutual']}\n"
         f"Пропусков: {s['skips']}\n"
-        f"Вопросов: {s['questions']} · игр: {s['games']}"
+        f"Вопросов: {s['questions']} · игр: {s['games']}\n\n"
+        "Неделя для роликов: /week"
     )
 
 

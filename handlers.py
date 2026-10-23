@@ -16,6 +16,7 @@ import ui
 import vibehour
 import citygoal
 import boost
+import weeklystats
 from database import (
     is_blocked,
     add_referral,
@@ -306,6 +307,14 @@ async def admin_handler(message: Message):
         return
 
     await message.answer(ui.admin_stats(await get_admin_stats()))
+
+
+@router.message(Command("week"))
+async def admin_week_handler(message: Message):
+    """Админу: анонимная статистика недели для роликов."""
+    if message.from_user.id != ADMIN_ID:
+        return
+    await message.answer(await weeklystats.build())
 
 
 @router.message(Command("emojiset"))
