@@ -109,6 +109,19 @@ async def init_db():
                 PRIMARY KEY (tag, user_id)
             )
         """)
+        # Состояния aiogram (шаг анкеты и т.п.), переживают перезапуск
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS fsm_states (
+                key TEXT PRIMARY KEY,
+                state TEXT,
+                data TEXT,
+                updated_at TIMESTAMPTZ DEFAULT now()
+            )
+        """)
+        # старые незаконченные состояния не копим
+        await conn.execute(
+            "DELETE FROM fsm_states WHERE updated_at < now() - interval '30 days'"
+        )
         # Служебные отметки (например, в какой день уже напомнили о вайб-часе)
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS app_state (
@@ -1364,3 +1377,71 @@ async def source_stats() -> list[dict]:
             ORDER BY came DESC
         """)
     return [dict(r) for r in rows]
+
+
+# =========================================================
+# АДМИНКА
+# =========================================================
+
+async def admin_counts() -> dict:
+    """Цифры для главного экрана админки (дополняют get_admin_stats)."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        row = await conn.fetchrow("""
+            SELECT
+              (SELECT COUNT(DISTINCT to_user) FROM reports WHERE status = 'open') AS open_reports,
+              (SELECT COUNT(*) FROM users WHERE is_banned) AS banned,
+              (SELECT COUNT(*) FROM users WHERE age IS NOT NULL AND NOT is_banned
+                 AND last_seen > now() - interval '15 minutes') AS online,
+              (SELECT COUNT(*) FROM users WHERE age IS NOT NULL
+                 AND last_active = (now() AT TIME ZONE 'Europe/Moscow')::date) AS active_today
+        """)
+    return dict(row)
+
+
+async def open_reports(limit: int) -> list[dict]:
+    """На кого есть открытые жалобы: сколько и последняя причина."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT to_user, COUNT(*) AS n,
+                   (ARRAY_AGG(reason ORDER BY created_at DESC))[1] AS last_reason
+            FROM reports WHERE status = 'open'
+            GROUP BY to_user
+            ORDER BY MAX(created_at) DESC
+            LIMIT $1
+        """, limit)
+    return [dict(r) for r in rows]
+
+
+async def recent_profiles(limit: int) -> list[dict]:
+    db = await get_pool()
+    async with db.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT telegram_id, full_name, age, city, is_banned, created_at
+            FROM users WHERE age IS NOT NULL
+            ORDER BY created_at DESC
+            LIMIT $1
+        """, limit)
+    return [dict(r) for r in rows]
+
+
+async def banned_users(limit: int) -> list[dict]:
+    db = await get_pool()
+    async with db.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT telegram_id, full_name, age, city
+            FROM users WHERE is_banned
+            ORDER BY created_at DESC
+            LIMIT $1
+        """, limit)
+    return [dict(r) for r in rows]
+
+
+async def find_user_by_username(username: str):
+    db = await get_pool()
+    async with db.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT * FROM users WHERE lower(username) = lower($1)", username
+        )
+    return dict(row) if row else None

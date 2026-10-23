@@ -13,3 +13,7 @@ class ProfileState(StatesGroup):
 class QuestionState(StatesGroup):
     answering = State()
     replying = State()
+
+
+class AdminState(StatesGroup):
+    find = State()  # ждём ID или @username

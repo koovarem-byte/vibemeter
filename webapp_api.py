@@ -81,6 +81,8 @@ import crush
 import vibehour
 import citygoal
 import boost
+import ratelimit
+import admin
 from utils import (
     is_adult,
     normalize_interests,
@@ -313,6 +315,9 @@ async def api_vibe(request):
         await add_skip(from_user=user_id, to_user=person_id)
         return web.json_response({"mutual": False})
 
+    if not ratelimit.hit("like", user_id):
+        return error("too_fast", 429)
+
     is_new = await add_like(from_user=user_id, to_user=person_id)
     bot = request.app["bot"]
 
@@ -340,6 +345,8 @@ async def api_question(request):
 
     if not await get_target(user_id, person_id):
         return error("not_found", 404)
+    if not ratelimit.hit("question", user_id):
+        return error("too_fast", 429)
 
     question_id = await send_question(
         bot=request.app["bot"],
@@ -594,6 +601,7 @@ async def api_upload_photo(request):
     old = request["user"]["photo_id"]
     _photo_cache.pop(old, None)
     await update_user(user_id, photo_id=message.photo[-1].file_id)
+    await admin.review_photo(bot, user_id, is_new=not old)
     return web.json_response({"ok": True})
 
 

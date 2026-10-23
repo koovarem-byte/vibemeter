@@ -18,6 +18,8 @@ import vibehour
 import citygoal
 import boost
 import weeklystats
+import ratelimit
+import admin
 from database import (
     is_blocked,
     add_referral,
@@ -30,7 +32,6 @@ from database import (
     create_user,
     get_user,
     update_user,
-    get_admin_stats,
     get_candidates,
     add_like,
     has_like,
@@ -41,7 +42,6 @@ from database import (
     get_blocked_users,
     delete_user,
     add_report,
-    count_reports,
     set_banned,
     dismiss_reports,
     touch_user,
@@ -67,7 +67,6 @@ from keyboards import (
     vibe_hour_on_keyboard,
     question_answer_keyboard,
     report_reasons_keyboard,
-    admin_report_keyboard,
 )
 from config import ADMIN_ID
 from states import ProfileState, QuestionState
@@ -131,6 +130,18 @@ async def ban_middleware(handler, event, data):
     return result
 
 
+async def flood_middleware(handler, event, data):
+    """Больше 25 нажатий за 10 секунд — молча игнорируем (кроме админа)."""
+    user = data.get("event_from_user")
+    if user and user.id != ADMIN_ID and not ratelimit.hit("flood", user.id):
+        if isinstance(event, CallbackQuery):
+            await event.answer(ui.TOO_FAST)
+        return None
+    return await handler(event, data)
+
+
+router.message.outer_middleware(flood_middleware)
+router.callback_query.outer_middleware(flood_middleware)
 router.message.outer_middleware(ban_middleware)
 router.callback_query.outer_middleware(ban_middleware)
 
@@ -303,14 +314,6 @@ async def notify_mutual(bot, user_id, person_id):
 # =========================================================
 # АДМИН
 # =========================================================
-
-@router.message(Command("admin"))
-async def admin_handler(message: Message):
-    if message.from_user.id != ADMIN_ID:
-        return
-
-    await message.answer(ui.admin_stats(await get_admin_stats()))
-
 
 @router.message(Command("week"))
 async def admin_week_handler(message: Message):
@@ -622,6 +625,9 @@ async def profile_photo(message: Message, state: FSMContext):
         await message.answer(ui.ERR_GENDER_LOST, reply_markup=gender_keyboard())
         return
 
+    before = await get_user(message.from_user.id)
+    is_new = not before or not before["photo_id"]
+
     await update_user(
         telegram_id=message.from_user.id,
         username=message.from_user.username,
@@ -635,6 +641,7 @@ async def profile_photo(message: Message, state: FSMContext):
     )
 
     await message.answer(ui.ASK_SEARCH, reply_markup=search_gender_keyboard())
+    await admin.review_photo(message.bot, message.from_user.id, is_new)
 
 
 @router.callback_query(F.data.startswith("search_gender:"))
@@ -821,6 +828,11 @@ async def question_text_handler(
         await message.answer(ui.QUESTION_BAD_LEN)
         return
 
+    if message.from_user.id != ADMIN_ID and not ratelimit.hit("question", message.from_user.id):
+        await state.clear()
+        await message.answer(ui.TOO_FAST_QUESTIONS, reply_markup=main_menu())
+        return
+
     data = await state.get_data()
     person_id = data.get("question_to")
 
@@ -900,6 +912,10 @@ async def like_callback(callback: CallbackQuery):
     person_id = int(callback.data.split(":")[1])
     user_id = callback.from_user.id
 
+    if user_id != ADMIN_ID and not ratelimit.hit("like", user_id):
+        await callback.answer(ui.TOO_FAST_LIKES, show_alert=True)
+        return
+
     if person_id == user_id:
         await callback.answer(ui.TOAST_SELF, show_alert=True)
         return
@@ -935,6 +951,10 @@ async def skip_callback(callback: CallbackQuery):
 async def incoming_like_callback(callback: CallbackQuery):
     person_id = int(callback.data.split(":")[1])
     user_id = callback.from_user.id
+
+    if user_id != ADMIN_ID and not ratelimit.hit("like", user_id):
+        await callback.answer(ui.TOO_FAST_LIKES, show_alert=True)
+        return
 
     await add_like(from_user=user_id, to_user=person_id)
     mutual = await has_like(from_user=person_id, to_user=user_id)
@@ -1044,30 +1064,16 @@ async def block_callback(callback: CallbackQuery):
 
 
 async def notify_admin_report(bot, from_user, person_id, reason):
+    """Жалоба приходит админу карточкой: фото, цифры, бан в одну кнопку."""
     person = await get_user(person_id)
-
     if not person:
         return
-
-    text = ui.admin_report(
-        reason,
-        from_user,
-        person,
-        await count_reports(person_id),
-        ui.profile_card(person),
+    note = (
+        f"🚩 <b>Новая жалоба</b>: {html.escape(reason)}\n"
+        f"От <code>{from_user}</code> · /u_{from_user}"
     )
-    keyboard = admin_report_keyboard(person_id)
-
     try:
-        if person["photo_id"] and len(text) <= 1024:
-            await bot.send_photo(
-                ADMIN_ID,
-                photo=person["photo_id"],
-                caption=text,
-                reply_markup=keyboard,
-            )
-        else:
-            await bot.send_message(ADMIN_ID, text, reply_markup=keyboard)
+        await admin.send_card(bot, person, note=note, report=True)
     except Exception:
         logging.exception("Не удалось отправить жалобу админу")
 
@@ -1424,6 +1430,10 @@ async def game_answer_callback(callback: CallbackQuery):
 async def game_like_callback(callback: CallbackQuery):
     person_id = int(callback.data.split(":")[1])
     user_id = callback.from_user.id
+
+    if user_id != ADMIN_ID and not ratelimit.hit("like", user_id):
+        await callback.answer(ui.TOO_FAST_LIKES, show_alert=True)
+        return
 
     if person_id == user_id:
         await callback.answer(ui.TOAST_SELF, show_alert=True)

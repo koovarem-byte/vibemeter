@@ -148,6 +148,18 @@ def incoming_actions(person_id: int):
     )
 
 
+def play_button(person_id: int):
+    """«Сыграть вместе» после мэтча — по желанию, игры на двоих в Mini App."""
+    base = (os.getenv("WEBAPP_URL") or "").rstrip("/")
+    if not base:
+        return None
+    return InlineKeyboardButton(
+        text=ui.BTN_PLAY_TOGETHER,
+        web_app=WebAppInfo(url=f"{base}/app/#games?with={int(person_id)}"),
+        icon_custom_emoji_id=ui.icon("gamepad"),
+    )
+
+
 def mutual_actions(person_id: int, username: str | None, story=None):
     """После взаимного вайба: сразу ссылка на чат, если есть username."""
     if username:
@@ -161,8 +173,9 @@ def mutual_actions(person_id: int, username: str | None, story=None):
         write = btn(ui.BTN_WRITE, f"contact:{person_id}", neon="hands", style=SUCCESS)
 
     keyboard = [[write, btn(ui.BTN_NEXT, "browse", neon="speedo")]]
-    if story:
-        keyboard.append([story])
+    for extra in (play_button(person_id), story):
+        if extra:
+            keyboard.append([extra])
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 

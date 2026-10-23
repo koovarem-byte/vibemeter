@@ -1316,6 +1316,7 @@ function showMatch(m) {
     ${m.vibe ? `<div style="margin-top:6px">${gauge(m.vibe, 120, vibeWord(m.vibe))}</div>` : ""}
     <div class="match-actions">
       <button class="btn btn-fill" id="match-write">${svg("chat")} Написать первым</button>
+      <button class="btn btn-ghost" id="match-play">${svg("game")} Сыграть вместе</button>
       ${m.vibe ? `<button class="btn btn-ghost" id="match-story">${svg("share")} Картинка для сторис</button>` : ""}
       <button class="btn btn-ghost" id="match-close">Искать дальше</button>
     </div>`;
@@ -1323,6 +1324,7 @@ function showMatch(m) {
   animateGauges(ov);
   $("#match-write").onclick = () => writeTo(m);
   $("#match-close").onclick = () => ov.classList.add("hidden");
+  $("#match-play").onclick = () => { ov.classList.add("hidden"); go(`games?with=${m.id}`); };
   const ms = $("#match-story");
   if (ms) ms.onclick = () => shareVibe({ pct: m.vibe, name: m.name, sub: "ВЗАИМНЫЙ ВАЙБ", btn: ms });
   withPhoto(me);
@@ -2107,7 +2109,7 @@ function pickPartner(kind) {
   const people = state.vibes.mutual;
   if (!people.length) {
     openSheet(`<h2 style="font-family:var(--head);font-size:17px;margin:4px 0 8px">${DUO_KINDS[kind].title}</h2>
-      <p class="muted" style="margin:0 0 14px">Эта игра для пар, где вайб взаимный. Лайкай анкеты, и первый партнёр скоро появится</p>
+      <p class="muted" style="margin:0 0 14px">Эта игра для пар, где вайб взаимный. Отправляй вайбы, и первый партнёр скоро появится</p>
       <button class="btn btn-fill" data-close>Понятно</button>`);
     return;
   }
@@ -2247,6 +2249,21 @@ async function openGames() {
   renderGame();
   try { duo.list = (await api.duoList()).games; } catch (_) { duo.list = []; }
   try { applyGame(await api.gameState()); } catch (_) { applyGame({ state: "idle" }); }
+  // из мэтча: #games?with=<id> — сразу выбор игры с этим человеком
+  const withId = Number(hashParam("with"));
+  if (withId) pickKindWith(withId);
+}
+
+function pickKindWith(personId) {
+  const p = state.vibes.mutual.find((x) => x.id === personId);
+  const sheet = openSheet(`<h2 style="font-family:var(--head);font-size:17px;margin:4px 0 6px">Сыграть вместе</h2>
+    <p class="muted small" style="margin:0 0 12px">${p ? `${esc(p.name)} · ` : ""}по желанию, лёгкий способ начать разговор</p>
+    <div class="list">${Object.entries(DUO_KINDS).map(([k, v]) => `<button class="game" data-kind-with="${k}" style="text-align:left;width:100%">
+      <div class="gi">${v.icon}</div><div class="grow"><b>${v.title}</b><small>${v.hint}</small></div>${svg("chev", "chev")}</button>`).join("")}</div>`);
+  $$("[data-kind-with]", sheet).forEach((b) => b.onclick = async () => {
+    closeSheet();
+    try { openDuoData(await api.duoStart(b.dataset.kindWith, personId)); } catch (e) { toast(errorText(e)); }
+  });
 }
 
 const ONB = [
@@ -2291,6 +2308,7 @@ const CRUSH_ERRORS = {
 
 function errorText(e) {
   if (e && CRUSH_ERRORS[e.code]) return CRUSH_ERRORS[e.code];
+  if (e && e.code === "too_fast") return "Слишком много за час, передохни немного";
   if (e && e.code === "banned") return "Аккаунт заблокирован";
   if (e && e.code === "network") return "Нет связи, проверь интернет";
   if (e && e.code === "not_found") return "Анкета уже недоступна";
