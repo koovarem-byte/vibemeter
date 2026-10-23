@@ -261,7 +261,7 @@ async def notify_mutual(bot, user_id, person_id):
             common, other["city"], same_city(me_side, other),
             seed=user_id + person_id,
         )
-        caption += f"\n\n💬 С чего начать:\n• " + "\n• ".join(html.escape(h) for h in hints[:2])
+        caption += f"\n\n{ui.e('chat')} С чего начать:\n• " + "\n• ".join(html.escape(h) for h in hints[:2])
         keyboard = mutual_actions(other["telegram_id"], other["username"])
 
         try:

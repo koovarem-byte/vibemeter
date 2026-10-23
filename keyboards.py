@@ -38,25 +38,33 @@ def open_app_keyboard(page: str = ""):
     url = f"{base}/app/" + (f"#{page}" if page else "")
     return InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(
-            text=ui.BTN_OPEN_APP, web_app=WebAppInfo(url=url)
+            text=ui.BTN_OPEN_APP, web_app=WebAppInfo(url=url),
+            icon_custom_emoji_id=ui.icon("spark"),
         )
     ]])
+
+
+def menu_btn(text):
+    """Кнопка нижнего меню с неоновой иконкой."""
+    return KeyboardButton(
+        text=text, icon_custom_emoji_id=ui.icon(ui.MENU_ICONS[text])
+    )
 
 
 def main_menu():
     return ReplyKeyboardMarkup(
         keyboard=[
             [
-                KeyboardButton(text=ui.MENU_FIND),
-                KeyboardButton(text=ui.MENU_LIKES),
+                menu_btn(ui.MENU_FIND),
+                menu_btn(ui.MENU_LIKES),
             ],
             [
-                KeyboardButton(text=ui.MENU_PROFILE),
-                KeyboardButton(text=ui.MENU_GAMES),
+                menu_btn(ui.MENU_PROFILE),
+                menu_btn(ui.MENU_GAMES),
             ],
             [
-                KeyboardButton(text=ui.MENU_STATS),
-                KeyboardButton(text=ui.MENU_SETTINGS),
+                menu_btn(ui.MENU_STATS),
+                menu_btn(ui.MENU_SETTINGS),
             ],
         ],
         resize_keyboard=True,
@@ -114,7 +122,7 @@ def mutual_actions(person_id: int, username: str | None):
     else:
         write = btn(ui.BTN_WRITE, f"contact:{person_id}", neon="hands")
 
-    return rows([write, btn(ui.BTN_NEXT, "browse")])
+    return rows([write, btn(ui.BTN_NEXT, "browse", neon="speedo")])
 
 
 def contact_keyboard(username: str):
@@ -214,7 +222,7 @@ def game_result_actions(person_id: int):
             btn(ui.BTN_LIKE, f"game_like:{person_id}", neon="heart"),
             btn(ui.BTN_PLAY_AGAIN, "play_again", neon="gamepad"),
         ],
-        [btn(ui.BTN_NEXT, "browse")],
+        [btn(ui.BTN_NEXT, "browse", neon="speedo")],
     )
 
 

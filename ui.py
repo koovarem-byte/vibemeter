@@ -87,22 +87,33 @@ def days(n: int) -> str:
 # ГЛАВНОЕ МЕНЮ (reply-кнопки, по тексту ловятся хендлеры)
 # =========================================================
 
-MENU_FIND = "⚡ Найти вайб"
-MENU_LIKES = "🩷 Мои вайбы"
-MENU_PROFILE = "👤 Профиль"
-MENU_GAMES = "🍭 Игры"
-MENU_STATS = "👑 Статистика"
-MENU_SETTINGS = "⚙️ Настройки"
+# Кнопки меню без эмодзи в тексте: иконку даёт MENU_ICONS (неон).
+MENU_FIND = "Найти вайб"
+MENU_LIKES = "Мои вайбы"
+MENU_PROFILE = "Профиль"
+MENU_GAMES = "Игры"
+MENU_STATS = "Статистика"
+MENU_SETTINGS = "Настройки"
+
+MENU_ICONS = {
+    MENU_FIND: "bolt",
+    MENU_LIKES: "heart",
+    MENU_PROFILE: "star",
+    MENU_GAMES: "gamepad",
+    MENU_STATS: "crown",
+    MENU_SETTINGS: "gear",
+}
 MENU_PLACEHOLDER = "Выбери действие"
 
 # старые подписи, чтобы кнопки из старой клавиатуры продолжали работать
 MENU_ALIASES = {
-    MENU_FIND: {"🔎 Найти вайб"},
-    MENU_LIKES: {"💜 Мои вайбы"},
-    MENU_PROFILE: {"👤 Мой профиль"},
-    MENU_GAMES: {"🎮 Вайб-игры"},
-    MENU_STATS: {"📊 Статистика"},
-    MENU_SETTINGS: set(),
+    # старые подписи: у кого-то ещё висит прежняя клавиатура
+    MENU_FIND: {"🔎 Найти вайб", "⚡ Найти вайб"},
+    MENU_LIKES: {"💜 Мои вайбы", "🩷 Мои вайбы"},
+    MENU_PROFILE: {"👤 Мой профиль", "👤 Профиль"},
+    MENU_GAMES: {"🎮 Вайб-игры", "🍭 Игры"},
+    MENU_STATS: {"📊 Статистика", "👑 Статистика"},
+    MENU_SETTINGS: {"⚙️ Настройки"},
 }
 
 
@@ -129,7 +140,7 @@ BTN_LATER = "Позже"
 BTN_ANSWER = "Ответить"
 BTN_START_GAME = "Начать"
 BTN_PLAY_AGAIN = "Сыграть ещё"
-BTN_OPEN_APP = "✨ Открыть Вайбометр"
+BTN_OPEN_APP = "Открыть Вайбометр"
 BTN_ACHIEVEMENTS = "Зал славы"
 BTN_EDIT = "Изменить анкету"
 BTN_SEARCH = "Кого искать"
@@ -242,7 +253,7 @@ ASK_SEARCH = step(8, "Кого тебе показывать?")
 
 PROFILE_CONTINUE = "Продолжим анкету 👇"
 PROFILE_RESTART = f"{title('star', 'Давай закончим анкету')}\n\n{ASK_NAME}"
-PROFILE_START = f"Супер, начнём 🙌\n\n{ASK_NAME}"
+PROFILE_START = f"Супер, начнём {e('hands')}\n\n{ASK_NAME}"
 EDIT_START = f"{title('gear', 'Заполним анкету заново')}\n\n{ASK_NAME}"
 PROFILE_DONE = (
     f"{title('heart', 'Готово, ты на радаре')}\n\n"
@@ -268,7 +279,7 @@ def err_age_max(max_age: int) -> str:
 UNDER_18 = (
     "Извини, Вайбометр только для тех, кому есть 18. "
     "Данные мы не сохранили\n\n"
-    "Возвращайся, когда подрастёшь 🩷"
+    f"Возвращайся, когда подрастёшь {e('heart')}"
 )
 
 
@@ -317,14 +328,14 @@ def profile_card(person, vibe=None, common=None, same_city=False) -> str:
         lines.append(f"🎯 {_interests(person['interests'], common)}")
 
     if person["description"]:
-        lines.append(f"💬 {esc(person['description'])}")
+        lines.append(f"{e('chat')} {esc(person['description'])}")
 
     if common:
         lines.append("")
         lines.append(f"{e('spark')} Вас объединяют: " + esc(", ".join(common)))
     elif same_city:
         lines.append("")
-        lines.append("✨ Вы из одного города")
+        lines.append(f"{e('spark')} Вы из одного города")
 
     return "\n".join(lines)
 
@@ -347,7 +358,7 @@ def own_profile(user, stats=None, done=0, total=0) -> str:
         lines += ["", "🎯 <b>Интересы:</b>", esc(user["interests"])]
 
     if user["description"]:
-        lines += ["", "💬 <b>О себе:</b>", esc(user["description"])]
+        lines += ["", f"{e('chat')} <b>О себе:</b>", esc(user["description"])]
 
     if stats is not None:
         lines += [
@@ -438,7 +449,7 @@ ASK_QUESTION = (
     f"{title('chat', 'Задай вопрос')}\n\n"
     "Напиши его одним сообщением. Человек увидит его и сможет ответить"
 )
-QUESTION_SENT = "Вопрос ушёл ⚡ Ответ пришлю сюда"
+QUESTION_SENT = f"Вопрос ушёл {e('bolt')} Ответ пришлю сюда"
 QUESTION_FAILED = "Не получилось доставить вопрос, похоже, человек остановил бота"
 QUESTION_BAD_LEN = "Вопрос должен быть от 1 до 500 символов"
 QUESTION_NO_COMMANDS = "Сначала отправь вопрос или нажми «Отменить»"
@@ -447,7 +458,7 @@ QUESTION_SELF = "Себе вопрос не задать 🙂"
 QUESTION_NOT_FOUND = "Вопрос не найден"
 QUESTION_ALREADY = "Ты уже ответил на этот вопрос"
 ASK_REPLY = "Напиши ответ одним сообщением"
-REPLY_SENT = "Ответ отправлен ⚡"
+REPLY_SENT = f"Ответ отправлен {e('bolt')}"
 REPLY_FAILED = "Не получилось отправить ответ, возможно, ты уже отвечал"
 
 
@@ -459,7 +470,7 @@ def question_answered(question: str, answer: str) -> str:
     return (
         f"{title('chat', 'Тебе ответили')}\n\n"
         f"❓ «{esc(question)}»\n"
-        f"💬 «{esc(answer)}»"
+        f"{e('chat')} «{esc(answer)}»"
     )
 
 
@@ -564,7 +575,7 @@ def hall_of_fame(s) -> str:
         if achieved(s, a):
             lines.append(f"{e(emoji)} <b>{name}</b> · {hint}")
         else:
-            lines.append(f"🔒 {name} · {hint}")
+            lines.append(f"{e('lock')} {name} · {hint}")
 
     return "\n".join(lines)
 
@@ -634,7 +645,7 @@ def game_result(matches: int, percentage: int) -> str:
     if percentage >= 80:
         verdict = f"{e('diamond')} Редкое совпадение!"
     elif percentage >= 60:
-        verdict = "Хороший общий вайб 🙌"
+        verdict = f"Хороший общий вайб {e('hands')}"
     elif percentage >= 40:
         verdict = "Кое-что общее точно есть"
     else:
@@ -699,7 +710,7 @@ def stats_full(s) -> str:
             lines.append(f"{e(emoji)} <b>{ach_name}</b> · {hint}")
         else:
             lines.append(
-                f"🔒 {ach_name} · {hint}\n"
+                f"{e('lock')} {ach_name} · {hint}\n"
                 f"      {_bar(s[key], goal)} {min(s[key], goal)}/{goal}"
             )
     return "\n".join(lines)
