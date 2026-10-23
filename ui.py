@@ -293,13 +293,19 @@ def vibe_bar(vibe: int) -> str:
 
 
 def _interests(interests: str, common) -> str:
-    """Интересы, общие выделены жирным."""
+    """Интересы через точку, общие выделены жирным."""
     common = {c.lower() for c in (common or [])}
     items = [i.strip() for i in (interests or "").split(",") if i.strip()]
-    return ", ".join(
+    return " · ".join(
         f"<b>{esc(i)}</b>" if i.lower() in common else esc(i)
         for i in items
     )
+
+
+def _about(text: str) -> str:
+    """«О себе» цитатой: отделяется полосой, длинное сворачивается."""
+    tag = "<blockquote expandable>" if len(text) > 160 else "<blockquote>"
+    return f"{tag}{esc(text)}</blockquote>"
 
 
 def _name_age(person) -> str:
@@ -310,65 +316,63 @@ def _name_age(person) -> str:
 
 
 def profile_card(person, vibe=None, common=None, same_city=False) -> str:
-    """Чужая анкета. Акцент на проценте вайба"""
-    lines = []
+    """Чужая анкета: имя, вайб, интересы, «о себе» — отдельными блоками"""
+    blocks = []
+
+    head = _name_age(person)
+    if person["city"]:
+        head += f"\n📍 {esc(person['city'])}"
+    blocks.append(head)
 
     if vibe is not None:
-        lines.append(f"{title('fire', f'{vibe}% вайба')} {vibe_bar(vibe)}")
+        line = f"{e('fire')} <b>{vibe}% вайба</b>"
         if vibe >= 80:
-            lines.append(f"{e('diamond')} Редкое совпадение")
-        lines.append("")
-
-    lines.append(_name_age(person))
-
-    if person["city"]:
-        lines.append(f"📍 {esc(person['city'])}")
+            line += f" · {e('diamond')} редкое совпадение"
+        blocks.append(f"{line}\n{vibe_bar(vibe)}")
 
     if person["interests"]:
-        lines.append(f"🎯 {_interests(person['interests'], common)}")
+        blocks.append(f"🎯 {_interests(person['interests'], common)}")
 
     if person["description"]:
-        lines.append(f"{e('chat')} {esc(person['description'])}")
+        blocks.append(_about(person["description"]))
 
     if common:
-        lines.append("")
-        lines.append(f"{e('spark')} Вас объединяют: " + esc(", ".join(common)))
+        blocks.append(f"{e('spark')} Вас объединяет: " + esc(", ".join(common)))
     elif same_city:
-        lines.append("")
-        lines.append(f"{e('spark')} Вы из одного города")
+        blocks.append(f"{e('spark')} Вы из одного города")
 
-    return "\n".join(lines)
+    return "\n\n".join(blocks)
 
 
 def search_card(person, vibe, common, same_city=False) -> str:
     return (
         profile_card(person, vibe=vibe, common=common, same_city=same_city)
-        + f"\n{e('lock')} Фото откроется, если вайб взаимный"
+        + f"\n\n{e('lock')} <i>Фото откроется, если вайб взаимный</i>"
     )
 
 
 def own_profile(user, stats=None, done=0, total=0) -> str:
-    lines = [plain_title("👤", "Мой профиль"), ""]
-    lines.append(_name_age(user))
+    blocks = [plain_title("👤", "Мой профиль")]
 
+    head = _name_age(user)
     if user["city"]:
-        lines.append(f"📍 {esc(user['city'])}")
+        head += f"\n📍 {esc(user['city'])}"
+    blocks.append(head)
 
     if user["interests"]:
-        lines += ["", "🎯 <b>Интересы:</b>", esc(user["interests"])]
+        blocks.append(f"🎯 {_interests(user['interests'], None)}")
 
     if user["description"]:
-        lines += ["", f"{e('chat')} <b>О себе:</b>", esc(user["description"])]
+        blocks.append(_about(user["description"]))
 
     if stats is not None:
-        lines += [
-            "",
-            f"{e('fire')} Серия {days(stats['streak_days'])} · "
-            f"{e('crown')} Уровень {level(done, total)[0]} · "
-            f"{level(done, total)[1]} · {done} из {total} достижений",
-        ]
+        lvl_n, lvl_name = level(done, total)[:2]
+        blocks.append(
+            f"{e('fire')} Серия {days(stats['streak_days'])}\n"
+            f"{e('crown')} Уровень {lvl_n} · {lvl_name} · {done} из {total} достижений"
+        )
 
-    return "\n".join(lines)
+    return "\n\n".join(blocks)
 
 
 NO_CANDIDATES = (
