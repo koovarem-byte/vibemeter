@@ -27,6 +27,7 @@ from database import (
     get_admin_stats,
     get_stats,
     get_user,
+    growth_metrics,
     open_reports,
     recent_profiles,
     set_banned,
@@ -69,7 +70,40 @@ async def home_text() -> str:
         f"💜 Вайбов: {s['likes']} · взаимных: <b>{s['mutual']}</b>\n"
         f"🎮 Игр: {s['games']} · ❓ вопросов: {s['questions']}\n\n"
         f"🚩 Открытых жалоб: <b>{c['open_reports']}</b> · 🚫 в бане: {c['banned']}\n\n"
+        f"{growth_text(await growth_metrics())}\n\n"
         f"<i>Обновлено {datetime.now(MSK).strftime('%H:%M')} МСК</i>"
+    )
+
+
+def _pct(part, whole) -> str:
+    return f"{round(part * 100 / whole)}%" if whole else "—"
+
+
+# бесплатный Neon: 0.5 ГБ на проект, дальше база останавливается
+DB_LIMIT_MB = 512
+
+
+def growth_text(g) -> str:
+    gendered = g["male"] + g["female"]
+    if g["d1_base"]:
+        d1 = f"<b>{_pct(g['d1_back'], g['d1_base'])}</b> ({g['d1_back']} из {g['d1_base']})"
+    else:
+        d1 = "первые цифры завтра"
+    db_mb = g["db_bytes"] / 1024 / 1024
+    db_warn = " ⚠️" if db_mb > DB_LIMIT_MB * 0.7 else ""
+    return (
+        "📐 <b>Метрики</b>\n"
+        f"👩 Девушек {_pct(g['female'], gendered)} · 👨 парней {_pct(g['male'], gendered)} "
+        f"({g['female']} / {g['male']})\n"
+        f"🔁 Вернулись на след. день (D1): {d1}, "
+        f"считаем с {g['d1_since']:%d.%m}\n"
+        f"🔁 Вчерашние новички сегодня: {g['y_back']} из {g['y_new']} · "
+        f"хоть раз возвращались: {_pct(g['ever_back'], g['total_users'])}\n"
+        f"💞 Есть взаимный вайб: <b>{g['with_mutual']}</b> из {g['profiles']} анкет "
+        f"({_pct(g['with_mutual'], g['profiles'])})\n"
+        f"✍️ Нажали «Написать»: <b>{g['writers']}</b> чел. · {g['write_clicks']} раз "
+        f"(Mini App и бот без @username)\n"
+        f"🗄 База: {db_mb:.0f} МБ из {DB_LIMIT_MB}{db_warn}"
     )
 
 

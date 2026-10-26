@@ -25,6 +25,7 @@ from database import (
     add_referral,
     get_vibe_test,
     add_start_source,
+    add_write_click,
     source_stats,
     set_vibe_hour_notify,
     count_referrals,
@@ -437,6 +438,18 @@ async def crush_command(message: Message):
     await send_crush(message)
 
 
+# start-параметры, у которых своя работа (не метки источников)
+START_ACTIONS = {"vt", "sc", "game"}
+
+
+def is_source_tag(arg: str) -> bool:
+    if not re.fullmatch(r"[A-Za-z0-9_]{1,30}", arg):
+        return False
+    if arg.lower() in START_ACTIONS:
+        return False
+    return not arg.startswith(("vt_", "vtp_", "ref_"))
+
+
 @router.message(CommandStart())
 async def start_handler(
     message: Message,
@@ -451,6 +464,9 @@ async def start_handler(
     if re.fullmatch(r"vtp_[a-z0-9_]{1,30}", arg):
         await add_start_source(arg[4:], message.from_user.id)
         arg = "vt"
+    # метка в био/посте: t.me/бот?start=shahichat — источник + обычный /start
+    elif is_source_tag(arg):
+        await add_start_source(arg.lower(), message.from_user.id)
     if arg == "vt" or arg.startswith("vt_"):
         await send_vibe_test(message, arg[3:])
         return
@@ -997,6 +1013,8 @@ async def contact_callback(callback: CallbackQuery):
     if not mutual:
         await callback.answer(ui.CONTACT_LOCKED, show_alert=True)
         return
+
+    await add_write_click(user_id, person_id)
 
     await callback.answer()
 

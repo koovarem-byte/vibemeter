@@ -770,15 +770,19 @@ def admin_stats(s) -> str:
 
 
 def admin_sources(rows) -> str:
+    hint = (
+        "Метка в био или посте: t.me/vibemeter_bot?start=<i>метка</i> "
+        "(латиница, цифры, _), например start=shahichat. "
+        "Для партнёров с тестом сразу: start=vtp_<i>метка</i>"
+    )
     if not rows:
-        return (
-            "Партнёрских переходов пока нет\n\n"
-            "Ссылка для канала: t.me/vibemeter_bot?start=vtp_метка "
-            "(латиница, цифры, _), например vtp_psy_anna"
-        )
-    lines = ["📈 <b>Источники</b> (пришли · анкеты · тест)", ""]
+        return "Переходов по меткам пока нет\n\n" + hint
+    lines = ["📈 <b>Источники</b> (пришли · новых · анкеты · тест)", ""]
     for r in rows:
-        lines.append(f"<code>{esc(r['tag'])}</code>: {r['came']} · {r['profiles']} · {r['tested']}")
+        lines.append(
+            f"<code>{esc(r['tag'])}</code>: {r['came']} · {r['new']} · {r['profiles']} · {r['tested']}"
+        )
+    lines += ["", hint]
     return "\n".join(lines)
 
 

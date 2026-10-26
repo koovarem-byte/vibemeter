@@ -235,6 +235,7 @@ const api = DEMO ? makeDemoApi() : {
   me() { return this.call("me"); },
   next() { return this.call("next"); },
   vibe(id, action) { return this.call("vibe", { id, action }); },
+  write(id) { return this.call("write", { id }); },
   undo(id) { return this.call("undo", { id }); },
   vibes() { return this.call("vibes"); },
   saveProfile(data) { return this.call("profile", data); },
@@ -1334,6 +1335,7 @@ function showMatch(m) {
 function writeTo(p) {
   haptic("light");
   if (DEMO) { toast(`Откроется чат с ${p.name}`); return; }
+  api.write(p.id).catch(() => {});  // только для статистики, чат не ждёт
   if (p.username) tg.openTelegramLink(`https://t.me/${p.username}`);
   else toast("Ссылка на профиль пришла тебе в чат с ботом");
 }

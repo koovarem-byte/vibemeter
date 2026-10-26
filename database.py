@@ -24,8 +24,11 @@ async def get_pool():
             try:
                 _pool = await asyncpg.create_pool(
                     dsn=DATABASE_URL,
+                    # Neon 0.25 CU держит ~100 подключений, 10 нам с запасом.
+                    # Простаивающие закрываются через 5 минут (по умолчанию
+                    # asyncpg), иначе база не засыпает и тратит compute-часы.
                     min_size=1,
-                    max_size=5,
+                    max_size=10,
                     command_timeout=30,
                     timeout=15,
                     ssl="require",
@@ -109,6 +112,45 @@ async def init_db():
                 PRIMARY KEY (tag, user_id)
             )
         """)
+        # Служебные отметки (например, в какой день уже напомнили о вайб-часе)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS app_state (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+        """)
+        # Дни, когда человек заходил (по Москве): возвращаемость D1
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS user_days (
+                user_id BIGINT NOT NULL,
+                day DATE NOT NULL,
+                PRIMARY KEY (user_id, day)
+            )
+        """)
+        # с какого дня дни пишутся полностью (раньше знали только последний)
+        await conn.execute("""
+            INSERT INTO app_state (key, value)
+            VALUES ('user_days_since', (now() AT TIME ZONE 'Europe/Moscow')::date::text)
+            ON CONFLICT (key) DO NOTHING
+        """)
+        # что знаем о прошлом: день регистрации и последний заход
+        await conn.execute("""
+            INSERT INTO user_days (user_id, day)
+            SELECT telegram_id, (created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Moscow')::date
+            FROM users WHERE created_at IS NOT NULL
+            UNION
+            SELECT telegram_id, last_active FROM users WHERE last_active IS NOT NULL
+            ON CONFLICT DO NOTHING
+        """)
+        # Кто нажал «Написать» после взаимного вайба
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS write_clicks (
+                from_user BIGINT NOT NULL,
+                to_user BIGINT NOT NULL,
+                created_at TIMESTAMPTZ DEFAULT now(),
+                PRIMARY KEY (from_user, to_user)
+            )
+        """)
         # Состояния aiogram (шаг анкеты и т.п.), переживают перезапуск
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS fsm_states (
@@ -122,13 +164,6 @@ async def init_db():
         await conn.execute(
             "DELETE FROM fsm_states WHERE updated_at < now() - interval '30 days'"
         )
-        # Служебные отметки (например, в какой день уже напомнили о вайб-часе)
-        await conn.execute("""
-            CREATE TABLE IF NOT EXISTS app_state (
-                key TEXT PRIMARY KEY,
-                value TEXT NOT NULL
-            )
-        """)
 
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS reports (
@@ -794,6 +829,11 @@ async def touch_user(telegram_id: int, username: str | None = None):
                            ELSE 1
                        END AS streak
                 FROM old, d
+            ),
+            day_log AS (
+                INSERT INTO user_days (user_id, day)
+                SELECT telegram_id, today FROM calc WHERE first_today
+                ON CONFLICT DO NOTHING
             )
             UPDATE users u
             SET streak_days = calc.streak,
@@ -1359,12 +1399,15 @@ async def add_start_source(tag: str, user_id: int):
 
 
 async def source_stats() -> list[dict]:
-    """По каждой метке: сколько пришло, сколько заполнили анкету, сколько прошли тест."""
+    """По каждой метке: пришли, из них новых, заполнили анкету, прошли тест."""
     db = await get_pool()
     async with db.acquire() as conn:
         rows = await conn.fetch("""
             SELECT s.tag,
                    COUNT(*) AS came,
+                   -- новые: анкеты ещё нет или человек появился после перехода
+                   COUNT(*) FILTER (WHERE u.telegram_id IS NULL
+                       OR u.created_at >= s.created_at - interval '1 minute') AS new,
                    COUNT(u.telegram_id) FILTER (WHERE u.age IS NOT NULL) AS profiles,
                    COUNT(DISTINCT s.user_id) FILTER (WHERE EXISTS (
                        SELECT 1 FROM vibe_tests t WHERE t.owner_id = s.user_id
@@ -1395,6 +1438,61 @@ async def admin_counts() -> dict:
                  AND last_seen > now() - interval '15 minutes') AS online,
               (SELECT COUNT(*) FROM users WHERE age IS NOT NULL
                  AND last_active = (now() AT TIME ZONE 'Europe/Moscow')::date) AS active_today
+        """)
+    return dict(row)
+
+
+async def add_write_click(from_user: int, to_user: int):
+    db = await get_pool()
+    async with db.acquire() as conn:
+        await conn.execute(
+            "INSERT INTO write_clicks (from_user, to_user) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+            from_user, to_user,
+        )
+
+
+async def growth_metrics() -> dict:
+    """Метрики роста для /admin: пол, D1, взаимность, «Написать», база."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        row = await conn.fetchrow("""
+            WITH today AS (SELECT (now() AT TIME ZONE 'Europe/Moscow')::date AS d),
+            since AS (SELECT value::date AS d FROM app_state WHERE key = 'user_days_since'),
+            reg AS (
+                SELECT telegram_id,
+                       (created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Moscow')::date AS d
+                FROM users
+            ),
+            mutual AS (
+                SELECT DISTINCT l1.from_user AS uid
+                FROM likes l1
+                JOIN likes l2 ON l2.from_user = l1.to_user AND l2.to_user = l1.from_user
+            )
+            SELECT
+              (SELECT COUNT(*) FROM users WHERE age IS NOT NULL AND gender = 'male') AS male,
+              (SELECT COUNT(*) FROM users WHERE age IS NOT NULL AND gender = 'female') AS female,
+              -- D1 по дням, где заходы пишутся полностью; сегодняшних новичков не считаем
+              (SELECT COUNT(*) FROM reg, today, since
+                 WHERE reg.d >= since.d AND reg.d < today.d) AS d1_base,
+              (SELECT COUNT(*) FROM reg, today, since
+                 WHERE reg.d >= since.d AND reg.d < today.d
+                   AND EXISTS (SELECT 1 FROM user_days ud
+                               WHERE ud.user_id = reg.telegram_id AND ud.day = reg.d + 1)) AS d1_back,
+              (SELECT d FROM since) AS d1_since,
+              -- вчерашние новички, которые зашли сегодня
+              (SELECT COUNT(*) FROM reg, today WHERE reg.d = today.d - 1) AS y_new,
+              (SELECT COUNT(*) FROM reg, today WHERE reg.d = today.d - 1
+                 AND EXISTS (SELECT 1 FROM user_days ud
+                             WHERE ud.user_id = reg.telegram_id AND ud.day = today.d)) AS y_back,
+              -- хоть раз вернулись в другой день (по всем, с первого дня)
+              (SELECT COUNT(*) FROM users
+                 WHERE last_active > (created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Moscow')::date) AS ever_back,
+              (SELECT COUNT(*) FROM mutual) AS with_mutual,
+              (SELECT COUNT(*) FROM users WHERE age IS NOT NULL) AS profiles,
+              (SELECT COUNT(*) FROM users) AS total_users,
+              (SELECT COUNT(DISTINCT from_user) FROM write_clicks) AS writers,
+              (SELECT COUNT(*) FROM write_clicks) AS write_clicks,
+              pg_database_size(current_database()) AS db_bytes
         """)
     return dict(row)
 

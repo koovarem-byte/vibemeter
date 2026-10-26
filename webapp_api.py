@@ -53,6 +53,7 @@ from database import (
     mark_seen,
     remove_crush,
     add_vibe_test_answer,
+    add_write_click,
     has_like,
     is_blocked,
     touch_user,
@@ -374,6 +375,17 @@ async def api_report(request):
     # add_report заодно скрывает анкету для автора жалобы
     if await add_report(user_id, person_id, reason):
         await notify_admin_report(request.app["bot"], user_id, person_id, reason)
+    return web.json_response({"ok": True})
+
+
+async def api_write(request):
+    """Нажали «Написать» у взаимного вайба: только считаем."""
+    user_id = request["user"]["telegram_id"]
+    body, person_id = await read_body(request)
+    if body is None:
+        return error("bad_request", 400)
+    if await is_mutual(user_id, person_id):
+        await add_write_click(user_id, person_id)
     return web.json_response({"ok": True})
 
 
@@ -1240,6 +1252,7 @@ def setup_webapp(app: web.Application, bot):
     app.router.add_get("/app/share/{token}.png", story_image)
     app.router.add_post("/app/api/question", api_question)
     app.router.add_post("/app/api/report", api_report)
+    app.router.add_post("/app/api/write", api_write)
     app.router.add_get("/app/api/vibes", api_vibes)
     app.router.add_post("/app/api/settings", api_settings)
     app.router.add_get("/app/api/photo/{person_id}", api_photo)
