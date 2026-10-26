@@ -293,7 +293,7 @@ def question_answer_keyboard(question_id: int):
     return rows(
         [
             btn(ui.BTN_ANSWER, f"answer_q:{question_id}", neon="chat", style=PRIMARY),
-            btn(ui.BTN_VIBE_BACK, f"q_like:{question_id}", neon="heart"),
+            btn(ui.BTN_VIBE_BACK, f"q_like:{question_id}", neon="heart", style=PRIMARY),
         ],
         [btn(ui.BTN_REPORT, f"q_report:{question_id}", style=DANGER)],
     )
@@ -329,7 +329,7 @@ def broadcast_keyboard(person: dict, bot_username: str, chosen: str | None = Non
         [btn(
             ("✓ " if key == chosen else "") + label,
             f"vote:{key}",
-            style=SUCCESS if key == chosen else None,
+            style=SUCCESS if key == chosen else PRIMARY,
         )]
         for key, (label, _) in ui.FEATURES.items()
     ]
@@ -343,7 +343,7 @@ def broadcast_keyboard(person: dict, bot_username: str, chosen: str | None = Non
         keyboard.append([btn(ui.BTN_SEE_VIBES, "bc_vibes", neon="heart", style=PRIMARY)])
     elif person["photo_id"]:
         keyboard.append([btn(ui.BTN_FIND, "browse", neon="bolt", style=PRIMARY)])
-    keyboard.append([btn(ui.BTN_CHANNEL, url=ui.CHANNEL_URL)])
+    keyboard.append([btn(ui.BTN_CHANNEL, url=ui.CHANNEL_URL, neon="star", style=PRIMARY)])
     keyboard.append([btn(ui.BTN_NEWS_OFF, "news_off")])
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
@@ -361,7 +361,7 @@ def mark_vote(markup: InlineKeyboardMarkup, chosen: str) -> InlineKeyboardMarkup
                 b = btn(
                     ("✓ " if key == chosen else "") + label,
                     data,
-                    style=SUCCESS if key == chosen else None,
+                    style=SUCCESS if key == chosen else PRIMARY,
                 )
             new_row.append(b)
         rows_.append(new_row)
