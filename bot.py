@@ -2,11 +2,13 @@ import asyncio
 import logging
 import os
 import secrets
+import signal
 
 from aiohttp import web
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
+from aiogram.filters import ExceptionMessageFilter
 from aiogram.types import MenuButtonWebApp, WebAppInfo
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler
 
@@ -42,6 +44,10 @@ async def health(request):
     return web.Response(text="OK")
 
 
+async def ignore_not_modified(event):
+    return True
+
+
 def create_bot_and_dispatcher():
     bot = Bot(
         token=BOT_TOKEN,
@@ -51,10 +57,24 @@ def create_bot_and_dispatcher():
     )
 
     dp = Dispatcher(storage=PgStorage())
+    # двойное нажатие на кнопку: Telegram отвечает «message is not modified» — это не ошибка
+    dp.errors.register(ignore_not_modified, ExceptionMessageFilter(r".*message is not modified"))
     dp.include_router(admin.router)  # первым: /admin и /u_… не должны уйти в общие хендлеры
     dp.include_router(router)
 
     return bot, dp
+
+
+_bot_dp = None
+
+
+def get_bot_and_dispatcher():
+    """Один бот и диспетчер на процесс: роутеры подключаются только один раз,
+    а при перезапуске после падения берём те же."""
+    global _bot_dp
+    if _bot_dp is None:
+        _bot_dp = create_bot_and_dispatcher()
+    return _bot_dp
 
 
 async def setup_profile(bot):
@@ -106,7 +126,7 @@ def create_app(bot, dp, webhook=True):
 # =========================
 
 async def run_webhook():
-    bot, dp = create_bot_and_dispatcher()
+    bot, dp = get_bot_and_dispatcher()
 
     await init_db()
     await setup_menu_button(bot)
@@ -129,7 +149,7 @@ async def run_webhook():
     print(f"Webhook mode on port {PORT}")
 
     try:
-        await asyncio.Event().wait()
+        await _stop.wait()
     finally:
         vibe_hour_task.cancel()
         alerts_task.cancel()
@@ -143,7 +163,7 @@ async def run_webhook():
 # =========================
 
 async def run_polling():
-    bot, dp = create_bot_and_dispatcher()
+    bot, dp = get_bot_and_dispatcher()
 
     # health-сервер, чтобы хостинг видел, что процесс жив
     runner = web.AppRunner(create_app(bot, dp, webhook=False))
@@ -164,7 +184,8 @@ async def run_polling():
     print("Bot started")
 
     try:
-        await dp.start_polling(bot)
+        # сигналы ловит run_forever, иначе после перезапуска SIGTERM терялся бы
+        await dp.start_polling(bot, handle_signals=False)
     finally:
         vibe_hour_task.cancel()
         alerts_task.cancel()
@@ -173,13 +194,45 @@ async def run_polling():
         await close_db()
 
 
+_stop = None  # asyncio.Event: хостинг попросил остановиться (SIGTERM/SIGINT)
+
+
+async def _stop_polling():
+    try:
+        await get_bot_and_dispatcher()[1].stop_polling()
+    except RuntimeError:
+        pass  # polling ещё не запущен — ждём перезапуска, его прервёт _stop
+
+
+async def run_forever():
+    """Процесс не должен умирать: если при старте Telegram или Neon на миг
+    недоступны (или что-то упало), поднимаемся заново через 15 секунд."""
+    global _stop
+    _stop = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(sig, lambda: (_stop.set(), asyncio.ensure_future(_stop_polling())))
+
+    while not _stop.is_set():
+        try:
+            await (run_webhook() if WEBHOOK_BASE_URL else run_polling())
+        except Exception:
+            logging.exception("Бот упал, перезапуск через 15 секунд")
+        if _stop.is_set():
+            return
+        try:
+            await asyncio.wait_for(_stop.wait(), timeout=15)
+        except asyncio.TimeoutError:
+            pass
+
+
 if __name__ == "__main__":
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
 
-    if WEBHOOK_BASE_URL:
-        asyncio.run(run_webhook())
-    else:
-        asyncio.run(run_polling())
+    try:
+        asyncio.run(run_forever())
+    except KeyboardInterrupt:
+        pass

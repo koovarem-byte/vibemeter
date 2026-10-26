@@ -93,7 +93,7 @@ def growth_text(g) -> str:
     if g["d1_base"]:
         d1 = f"<b>{_pct(g['d1_back'], g['d1_base'])}</b> ({g['d1_back']} из {g['d1_base']})"
     else:
-        d1 = "первые цифры завтра"
+        d1 = "первые цифры послезавтра (ждём, пока пройдёт следующий день)"
     db_mb = g["db_bytes"] / 1024 / 1024
     db_warn = " ⚠️" if db_mb > DB_LIMIT_MB * 0.7 else ""
     return (

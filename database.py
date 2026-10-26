@@ -1114,10 +1114,12 @@ async def get_admin_stats():
             "SELECT COUNT(*) FROM games"
         )
 
+        # «сегодня» по Москве (created_at хранится в UTC)
         today = await conn.fetchval("""
             SELECT COUNT(*)
             FROM users
-            WHERE created_at::date = CURRENT_DATE
+            WHERE (created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Moscow')::date
+                  = (now() AT TIME ZONE 'Europe/Moscow')::date
         """)
 
         return {
@@ -1496,11 +1498,11 @@ async def growth_metrics() -> dict:
             SELECT
               (SELECT COUNT(*) FROM users WHERE age IS NOT NULL AND gender = 'male') AS male,
               (SELECT COUNT(*) FROM users WHERE age IS NOT NULL AND gender = 'female') AS female,
-              -- D1 по дням, где заходы пишутся полностью; сегодняшних новичков не считаем
+              -- D1 только по тем, у кого следующий день уже прошёл целиком
               (SELECT COUNT(*) FROM reg, today, since
-                 WHERE reg.d >= since.d AND reg.d < today.d) AS d1_base,
+                 WHERE reg.d >= since.d AND reg.d < today.d - 1) AS d1_base,
               (SELECT COUNT(*) FROM reg, today, since
-                 WHERE reg.d >= since.d AND reg.d < today.d
+                 WHERE reg.d >= since.d AND reg.d < today.d - 1
                    AND EXISTS (SELECT 1 FROM user_days ud
                                WHERE ud.user_id = reg.telegram_id AND ud.day = reg.d + 1)) AS d1_back,
               (SELECT d FROM since) AS d1_since,
