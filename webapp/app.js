@@ -229,13 +229,16 @@ const api = DEMO ? makeDemoApi() : {
       throw Object.assign(new Error("network"), { code: "network" });
     }
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw Object.assign(new Error(data.error || res.status), { code: data.error, status: res.status });
+    if (!res.ok) throw Object.assign(new Error(data.error || res.status), { code: data.error, status: res.status, msg: data.message });
     return data;
   },
   me() { return this.call("me"); },
   next() { return this.call("next"); },
   vibe(id, action) { return this.call("vibe", { id, action }); },
   write(id) { return this.call("write", { id }); },
+  answer(id, text) { return this.call("answer", { id, text }); },
+  questionLike(id) { return this.call("question/like", { id }); },
+  questionReport(id) { return this.call("question/report", { id }); },
   undo(id) { return this.call("undo", { id }); },
   vibes() { return this.call("vibes"); },
   saveProfile(data) { return this.call("profile", data); },
@@ -290,6 +293,10 @@ const api = DEMO ? makeDemoApi() : {
 
 function makeDemoApi() {
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const demoQuestions = [
+    { id: 1, text: "Какой трек у тебя сейчас на репите?", answer: null, answered: false, who: "девушка, 20, Псков", vibe: 75, common: ["музыка"] },
+    { id: 2, text: "Идеальный выходной — это…", answer: "Баскет и кофе с друзьями", answered: true, who: "парень, 22, Псков", vibe: 55, common: [] },
+  ];
   const me = {
     id: 1, name: "Артемий", age: 19, city: "Псков", username: "demo",
     interests: ["баскетбол", "музыка", "бизнес", "технологии"],
@@ -392,7 +399,10 @@ function makeDemoApi() {
       skipped.delete(id); queue.unshift(p);
       return { candidate: p };
     },
-    async vibes() { await wait(150); return { incoming: queue.filter((p) => p.likes_me), mutual }; },
+    async vibes() { await wait(150); return { incoming: queue.filter((p) => p.likes_me), mutual, questions: demoQuestions }; },
+    async answer(id, text) { await wait(200); const q = demoQuestions.find((x) => x.id === id); q.answered = true; q.answer = text; return { ok: true }; },
+    async questionLike() { await wait(200); return { ok: true, mutual: false }; },
+    async questionReport(id) { await wait(200); demoQuestions.splice(demoQuestions.findIndex((x) => x.id === id), 1); return { ok: true }; },
     async saveProfile(data) {
       await wait(300);
       if (data.name !== undefined) me.name = data.name;
@@ -737,7 +747,20 @@ const screens = {
 
   vibes() {
     const { incoming, mutual } = state.vibes;
+    const questions = state.vibes.questions || [];
+    const fresh = questions.filter((q) => !q.answered).length;
     const tab = state.vibesTab;
+    const qRow = (q) => `
+      <div class="card q-card">
+        <div class="q-text">«${esc(q.text)}»</div>
+        <small class="muted">${esc(q.who || "")} · 🔥 ${q.vibe}%${q.common.length ? ` · общее: ${esc(q.common.join(", "))}` : ""}</small>
+        ${q.answered ? `<div class="q-answer">Твой ответ: «${esc(q.answer || "")}»</div>` : ""}
+        <div class="acts" style="margin-top:10px">
+          ${q.answered ? "" : `<button class="btn btn-violet btn-sm" data-q-answer="${q.id}">${svg("chat")} Ответить</button>`}
+          <button class="btn btn-pink btn-sm" data-q-like="${q.id}">${svg("heart")} Вайб</button>
+          <button class="icon-btn" style="width:38px;height:38px" data-q-report="${q.id}" aria-label="Пожаловаться">🚩</button>
+        </div>
+      </div>`;
     const inRow = (p) => `
       <div class="person" data-details="${p.id}">
         ${avatarFor(p)}
@@ -753,7 +776,9 @@ const screens = {
         <div class="grow"><b>${esc(p.name)}, ${p.age}</b><small>📍 ${esc(p.city || "")}</small></div>
         <button class="btn btn-pink btn-sm" data-write="${p.id}">${svg("chat")} Написать</button>
       </div>`;
-    const list = tab === "in"
+    const list = tab === "q"
+      ? (questions.length ? questions.map(qRow).join("") : emptyHtml("💬", "Вопросов пока нет", "Здесь будут вопросы тебе: без имени и фото, но видно возраст, город и общий вайб. Понравился вопрос — отправь вайб"))
+      : tab === "in"
       ? (incoming.length ? incoming.map(inRow).join("") : emptyHtml("💌", "Пока тихо", "Отправляй вайбы смелее, и тебя заметят. Входящие появятся здесь"))
       : (mutual.length ? mutual.map(mRow).join("") : emptyHtml("💞", "Взаимных пока нет", "Здесь будут люди, с которыми вайб совпал. Им открыто твоё фото, а тебе их"));
     return `
@@ -762,6 +787,7 @@ const screens = {
       <div class="seg" style="margin-bottom:14px">
         <button data-vt="in" class="${tab === "in" ? "on" : ""}">Тебя выбрали<span class="count">${incoming.length}</span></button>
         <button data-vt="mutual" class="${tab === "mutual" ? "on" : ""}">Взаимные<span class="count">${mutual.length}</span></button>
+        <button data-vt="q" class="${tab === "q" ? "on" : ""}">Вопросы<span class="count">${fresh || ""}</span></button>
       </div>
       <div class="list">${list}</div>`;
   },
@@ -1223,7 +1249,7 @@ function openCardMenu(p) {
 function openQuestion(p) {
   const sheet = openSheet(`
     <h2 class="sheet-title">Вопрос · ${esc(p.name)}</h2>
-    <p class="muted small" style="margin:0 0 12px">Анонимно: ${esc(p.name)} не узнает, кто спросил</p>
+    <p class="muted small" style="margin:0 0 12px">Без имени и фото: ${esc(p.name)} увидит только твой возраст, город и общие интересы. Мат и пошлость не пропускаем</p>
     <textarea id="q-text" class="field" rows="4" maxlength="${QUESTION_MAX}" placeholder="Например: какой трек у тебя сейчас на репите?"></textarea>
     <div class="field-hint" style="margin-bottom:14px"><span>Ответ придёт в чат с ботом</span><span id="q-count">0 / ${QUESTION_MAX}</span></div>
     <div class="chips" style="margin-bottom:14px">
@@ -1249,6 +1275,54 @@ function openQuestion(p) {
       toast(e.code === "not_delivered" ? "Не доставлено: человек закрыл бота" : errorText(e));
     }
   };
+}
+
+function openAnswer(id) {
+  const q = (state.vibes.questions || []).find((x) => x.id === id);
+  if (!q) return;
+  const sheet = openSheet(`
+    <h2 class="sheet-title">Ответ на вопрос</h2>
+    <p class="muted small" style="margin:0 0 12px">«${esc(q.text)}»</p>
+    <textarea id="a-text" class="field" rows="4" maxlength="${QUESTION_MAX}" placeholder="Твой ответ"></textarea>
+    <div class="field-hint" style="margin-bottom:14px"><span>Ответ придёт автору в бота</span><span id="a-count">0 / ${QUESTION_MAX}</span></div>
+    <button class="btn btn-violet btn-block" id="a-send" disabled>${svg("chat")} Ответить</button>`);
+  const area = $("#a-text", sheet), send = $("#a-send", sheet);
+  area.oninput = () => {
+    $("#a-count", sheet).textContent = `${area.value.length} / ${QUESTION_MAX}`;
+    send.disabled = area.value.trim().length === 0;
+  };
+  send.onclick = async () => {
+    send.disabled = true;
+    try {
+      await api.answer(id, area.value.trim());
+      q.answered = true; q.answer = area.value.trim();
+      haptic("success"); closeSheet(); toast("Ответ ушёл 💬"); render();
+    } catch (e) { send.disabled = false; toast(errorText(e)); }
+  };
+}
+
+// подтверждение: в Telegram — родное окно, в демо — браузерное
+function sure(text) {
+  return new Promise((resolve) => {
+    if (!DEMO && tg && tg.showConfirm) tg.showConfirm(text, resolve);
+    else resolve(window.confirm(text));
+  });
+}
+
+async function questionAction(id, action, button) {
+  haptic("light");
+  if (action === "report" && !(await sure("Пожаловаться на вопрос? Автор больше не сможет тебе писать"))) return;
+  button.disabled = true;
+  try {
+    if (action === "like") {
+      const r = await api.questionLike(id);
+      toast(r.mutual ? "Взаимно! Смотри чат с ботом 💜" : "Вайб ушёл. Взаимно — откроются имя и фото");
+    } else {
+      await api.questionReport(id);
+      state.vibes.questions = state.vibes.questions.filter((q) => q.id !== id);
+      toast("Спасибо, проверим"); render();
+    }
+  } catch (e) { button.disabled = false; toast(errorText(e)); }
 }
 
 function openReport(p, from) {
@@ -2309,6 +2383,7 @@ const CRUSH_ERRORS = {
 };
 
 function errorText(e) {
+  if (e && e.msg) return e.msg;
   if (e && CRUSH_ERRORS[e.code]) return CRUSH_ERRORS[e.code];
   if (e && e.code === "too_fast") return "Слишком много за час, передохни немного";
   if (e && e.code === "banned") return "Аккаунт заблокирован";
@@ -2385,6 +2460,9 @@ function render() {
     $$("[data-in-skip]").forEach((b) => b.onclick = (e) => { e.stopPropagation(); incomingAction(Number(b.dataset.inSkip), "skip"); });
     $$("[data-details]").forEach((row) => row.onclick = () => openDetails(state.vibes.incoming.find((p) => String(p.id) === row.dataset.details), "vibes"));
     state.vibes.mutual.forEach(withPhoto);
+    $$("[data-q-answer]").forEach((b) => b.onclick = () => openAnswer(Number(b.dataset.qAnswer)));
+    $$("[data-q-like]").forEach((b) => b.onclick = () => questionAction(Number(b.dataset.qLike), "like", b));
+    $$("[data-q-report]").forEach((b) => b.onclick = () => questionAction(Number(b.dataset.qReport), "report", b));
   }
   if (r === "games") openGames();
   if (r === "crush") bindCrush();

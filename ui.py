@@ -462,8 +462,16 @@ def contact_text(username: str) -> str:
 
 ASK_QUESTION = (
     f"{title('chat', 'Задай вопрос')}\n\n"
-    "Напиши его одним сообщением. Человек увидит его и сможет ответить"
+    "Напиши его одним сообщением. Имя и фото не покажем: человек увидит "
+    "только твой возраст, город и общие интересы\n\n"
+    "Мат, пошлость и оскорбления не пропускаем"
 )
+BTN_VIBE_BACK = "Вайб в ответ"
+BAD_WORDS = "🚫 Такое не отправлю: мат, пошлость и оскорбления у нас не проходят. Перепиши по-человечески"
+BAD_WORDS_LAST = "🚫 Не отправил. Это последнее предупреждение: следующий раз — блокировка аккаунта"
+BANNED_WORDS = "🚫 Аккаунт заблокирован за мат и оскорбления в вопросах"
+Q_REPORTED = "Спасибо, проверим. Этот человек тебе больше не напишет"
+Q_LIKED = "Вайб ушёл. Если он взаимный — откроются имя и фото"
 QUESTION_SENT = f"Вопрос ушёл {e('bolt')} Ответ пришлю сюда"
 QUESTION_FAILED = "Не получилось доставить вопрос, похоже, человек остановил бота"
 QUESTION_BAD_LEN = "Вопрос должен быть от 1 до 500 символов"
@@ -477,8 +485,24 @@ REPLY_SENT = f"Ответ отправлен {e('bolt')}"
 REPLY_FAILED = "Не получилось отправить ответ, возможно, ты уже отвечал"
 
 
-def incoming_question(text: str) -> str:
-    return f"{title('chat', 'Тебе задали вопрос')}\n\n«{esc(text)}»"
+GENDER_WORD = {"female": "девушка", "male": "парень"}
+
+
+def incoming_question(text: str, asker=None, vibe=None, common=()) -> str:
+    lines = [title("chat", "Тебе задали вопрос"), "", f"«{esc(text)}»"]
+    if asker:
+        who = ", ".join(x for x in (
+            GENDER_WORD.get(asker.get("gender") or "", ""),
+            str(asker["age"]) if asker.get("age") else "",
+            esc((asker.get("city") or "").strip()),
+        ) if x)
+        lines += ["", f"Спросил(а): {who}"]
+        if common:
+            lines.append(f"{e('spark')} Общее: {esc(' · '.join(common))}")
+        if vibe is not None:
+            lines.append(f"{e('fire')} Вайб {vibe}%")
+        lines += ["", "Понравился вопрос — отправь вайб в ответ. Имя и фото откроются, если вайб взаимный"]
+    return "\n".join(lines)
 
 
 def question_answered(question: str, answer: str) -> str:
@@ -872,6 +896,8 @@ VOTE_THANKS = "Голос принят: {name}. Можно передумать 
 NEWS_OFF = "Ок, новости больше не присылаю. Вернуть: /news"
 NEWS_ON = "Ок, новости снова будут приходить (не чаще раза в неделю)"
 BTN_NEWS_OFF = "Не присылать новости"
+CHANNEL_URL = "https://t.me/vibemeter_news"
+BTN_CHANNEL = "Канал Вайбометра"
 BTN_FILL_PROFILE = "Заполнить анкету"
 BTN_VT = "Проверь вайб с другом"
 BTN_SEE_VIBES = "Посмотреть вайбы"
@@ -910,6 +936,7 @@ def broadcast_text(person: dict, total: int) -> str:
     lines += [line for _, line in FEATURES.values()]
     if person["age"] is not None:
         lines += ["", f"🤳 {PHOTO_RULE}"]
+    lines += ["", "📣 Итоги голосования, что выбирают люди и новые функции — в нашем канале"]
     return "\n".join(lines)
 
 
@@ -918,7 +945,7 @@ def broadcast_text(person: dict, total: int) -> str:
 # =========================================================
 
 # «О боте» в профиле и в ссылках, до 120 символов
-BOT_SHORT_DESCRIPTION = "Знакомства по вайбу, а не по фото. Фото откроется, только когда вайб взаимный. 18+"
+BOT_SHORT_DESCRIPTION = "Знакомства по вайбу, а не по фото. Фото откроется, только когда вайб взаимный. 18+ · @vibemeter_news"
 
 # экран пустого чата до «Старт», до 512 символов
 BOT_DESCRIPTION = (
@@ -927,6 +954,7 @@ BOT_DESCRIPTION = (
     "🔒 Фото откроется, только когда вайб взаимный\n"
     "🎮 Игры на двоих, анонимные вопросы, вайб дня\n"
     "⚡ Вайб-час каждый вечер 21–22 МСК\n\n"
-    "Без анкеты можно проверить вайб с другом. Только 18+\n\n"
+    "Без анкеты можно проверить вайб с другом. Только 18+\n"
+    "Новости и голосования: @vibemeter_news\n\n"
     "Жми «Старт» 👇"
 )

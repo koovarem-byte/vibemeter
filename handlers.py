@@ -85,7 +85,7 @@ from utils import (
     MIN_AGE,
     MAX_AGE,
 )
-from questions import send_question, submit_answer, get_question_data
+from questions import check_text, send_question, submit_answer, get_question_data
 from database import get_game
 from games import (
     game_queue,
@@ -909,6 +909,13 @@ async def question_text_handler(
         await message.answer(ui.QUESTION_BAD_LEN)
         return
 
+    warning = await check_text(message.bot, message.from_user.id, question_text)
+    if warning:
+        if warning == ui.BANNED_WORDS:
+            await state.clear()
+        await message.answer(warning)
+        return
+
     if message.from_user.id != ADMIN_ID and not ratelimit.hit("question", message.from_user.id):
         await state.clear()
         await message.answer(ui.TOO_FAST_QUESTIONS, reply_markup=main_menu())
@@ -961,11 +968,65 @@ async def answer_question_callback(
     await callback.message.answer(ui.ASK_REPLY, reply_markup=cancel_keyboard())
 
 
+async def _my_question(callback: CallbackQuery):
+    """Вопрос, заданный мне, по id из кнопки; иначе всплывашка и None."""
+    question = await get_question_data(int(callback.data.split(":")[1]))
+    if not question or question["to_user"] != callback.from_user.id:
+        await callback.answer(ui.QUESTION_NOT_FOUND, show_alert=True)
+        return None
+    return question
+
+
+@router.callback_query(F.data.startswith("q_like:"))
+async def question_like_callback(callback: CallbackQuery):
+    """Вайб автору вопроса: его id знает только сервер."""
+    question = await _my_question(callback)
+    if not question:
+        return
+    user_id, person_id = callback.from_user.id, question["from_user"]
+    if user_id != ADMIN_ID and not ratelimit.hit("like", user_id):
+        await callback.answer(ui.TOO_FAST_LIKES, show_alert=True)
+        return
+    if await is_blocked(user_id, person_id) or await is_blocked(person_id, user_id):
+        await callback.answer(ui.USER_NOT_FOUND, show_alert=True)
+        return
+    is_new = await add_like(from_user=user_id, to_user=person_id)
+    mutual = await has_like(from_user=person_id, to_user=user_id)
+    await callback.answer(ui.TOAST_MUTUAL if mutual else ui.Q_LIKED, show_alert=not mutual)
+    if mutual:
+        await notify_mutual(callback.bot, user_id, person_id)
+    elif is_new:
+        await notify_liked(callback.bot, person_id)
+
+
+@router.callback_query(F.data.startswith("q_report:"))
+async def question_report_callback(callback: CallbackQuery):
+    question = await _my_question(callback)
+    if not question:
+        return
+    reason = f"Вопрос: «{question['text'][:200]}»"
+    # add_report заодно блокирует автора для меня: больше не напишет
+    if await add_report(callback.from_user.id, question["from_user"], reason):
+        await notify_admin_report(callback.bot, callback.from_user.id, question["from_user"], reason)
+    await callback.answer(ui.Q_REPORTED, show_alert=True)
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+
+
 @router.message(QuestionState.replying, F.text)
 async def question_reply_handler(
     message: Message,
     state: FSMContext,
 ):
+    warning = await check_text(message.bot, message.from_user.id, message.text or "")
+    if warning:
+        if warning == ui.BANNED_WORDS:
+            await state.clear()
+        await message.answer(warning)
+        return
+
     data = await state.get_data()
     question_id = data.get("question_id")
 

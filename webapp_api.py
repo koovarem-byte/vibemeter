@@ -30,6 +30,8 @@ from database import (
     add_like,
     abandon_game,
     add_report,
+    get_question,
+    questions_to,
     add_skip,
     delete_skip,
     get_candidates,
@@ -76,7 +78,7 @@ from games import (
     start_game,
 )
 from keyboards import game_result_actions, open_app_keyboard, story_button
-from questions import MAX_QUESTION_LENGTH, send_question
+from questions import MAX_ANSWER_LENGTH, MAX_QUESTION_LENGTH, check_text, send_question, submit_answer
 import vibetest
 import crush
 import vibehour
@@ -349,6 +351,9 @@ async def api_question(request):
 
     if not await get_target(user_id, person_id):
         return error("not_found", 404)
+    warning = await check_text(request.app["bot"], user_id, text)
+    if warning:
+        return web.json_response({"error": "bad_words", "message": warning}, status=422)
     if not ratelimit.hit("question", user_id):
         return error("too_fast", 429)
 
@@ -938,7 +943,85 @@ async def api_vibes(request):
     return web.json_response({
         "incoming": [person_json(p, viewer=user) for p in incoming[:30]],
         "mutual": [person_json(p, viewer=user, full=True) for p in mutual],
+        "questions": [question_json(q, user) for q in await questions_to(user_id)],
     })
+
+
+def question_json(q, viewer):
+    """Вопрос мне: автор без имени, фото и id."""
+    vibe, common = calculate_vibe(viewer, q)
+    return {
+        "id": q["id"],
+        "text": q["text"],
+        "answer": q["answer"],
+        "answered": bool(q["answered"]),
+        "who": ", ".join(x for x in (
+            ui.GENDER_WORD.get(q["gender"] or "", ""),
+            str(q["age"]) if q["age"] else "",
+            (q["city"] or "").strip(),
+        ) if x),
+        "vibe": vibe,
+        "common": common,
+    }
+
+
+async def _my_question(request):
+    """(вопрос мне, тело запроса) или (None, ответ с ошибкой)."""
+    try:
+        body = await request.json()
+        question = await get_question(int(body["id"]))
+    except (ValueError, KeyError, TypeError):
+        return None, None, error("bad_request", 400)
+    if not question or question["to_user"] != request["user"]["telegram_id"]:
+        return None, None, error("not_found", 404)
+    return question, body, None
+
+
+async def api_answer(request):
+    question, body, err = await _my_question(request)
+    if err:
+        return err
+    text = str(body.get("text") or "").strip()
+    if not 0 < len(text) <= MAX_ANSWER_LENGTH:
+        return error("bad_request", 400)
+    user_id = request["user"]["telegram_id"]
+    warning = await check_text(request.app["bot"], user_id, text)
+    if warning:
+        return web.json_response({"error": "bad_words", "message": warning}, status=422)
+    if not await submit_answer(request.app["bot"], question["id"], text, user_id):
+        return error("already", 409)
+    return web.json_response({"ok": True})
+
+
+async def api_question_like(request):
+    """Вайб автору вопроса."""
+    question, _, err = await _my_question(request)
+    if err:
+        return err
+    user_id, person_id = request["user"]["telegram_id"], question["from_user"]
+    if not await get_target(user_id, person_id):
+        return error("not_found", 404)
+    if not ratelimit.hit("like", user_id):
+        return error("too_fast", 429)
+    is_new = await add_like(user_id, person_id)
+    mutual = await has_like(person_id, user_id)
+    bot = request.app["bot"]
+    if mutual:
+        await notify_mutual(bot, user_id, person_id)
+    elif is_new:
+        await notify_liked(bot, person_id)
+    return web.json_response({"ok": True, "mutual": mutual})
+
+
+async def api_question_report(request):
+    question, _, err = await _my_question(request)
+    if err:
+        return err
+    user_id, person_id = request["user"]["telegram_id"], question["from_user"]
+    reason = f"Вопрос: «{question['text'][:200]}»"
+    if await add_report(user_id, person_id, reason):
+        await notify_admin_report(request.app["bot"], user_id, person_id, reason)
+    return web.json_response({"ok": True})
 
 
 async def api_settings(request):
@@ -1256,6 +1339,9 @@ def setup_webapp(app: web.Application, bot):
     app.router.add_post("/app/api/question", api_question)
     app.router.add_post("/app/api/report", api_report)
     app.router.add_post("/app/api/write", api_write)
+    app.router.add_post("/app/api/answer", api_answer)
+    app.router.add_post("/app/api/question/like", api_question_like)
+    app.router.add_post("/app/api/question/report", api_question_report)
     app.router.add_get("/app/api/vibes", api_vibes)
     app.router.add_post("/app/api/settings", api_settings)
     app.router.add_get("/app/api/photo/{person_id}", api_photo)

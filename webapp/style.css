@@ -553,3 +553,9 @@ img.neon {
   object-fit: contain;
   pointer-events: none;
 }
+
+/* Вопросы мне */
+.q-card { padding: 14px; }
+.q-text { font-weight: 600; margin-bottom: 4px; }
+.q-answer { margin-top: 8px; font-size: 14px; opacity: .85; }
+.q-card .acts { display: flex; gap: 8px; align-items: center; }

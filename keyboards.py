@@ -238,6 +238,7 @@ def settings_keyboard():
             btn(ui.BTN_BLOCKED, "blocked_users"),
             btn(ui.BTN_DELETE, "delete_profile", style=DANGER),
         ],
+        [btn(ui.BTN_CHANNEL, url=ui.CHANNEL_URL)],
     )
 
 
@@ -288,9 +289,14 @@ def game_result_actions(person_id: int, story=None):
 # =========================================================
 
 def question_answer_keyboard(question_id: int):
-    return rows([
-        btn(ui.BTN_ANSWER, f"answer_q:{question_id}", neon="chat", style=PRIMARY),
-    ])
+    """Ответить, вайб автору (id автора не раскрываем — только id вопроса), жалоба."""
+    return rows(
+        [
+            btn(ui.BTN_ANSWER, f"answer_q:{question_id}", neon="chat", style=PRIMARY),
+            btn(ui.BTN_VIBE_BACK, f"q_like:{question_id}", neon="heart"),
+        ],
+        [btn(ui.BTN_REPORT, f"q_report:{question_id}", style=DANGER)],
+    )
 
 
 # =========================================================
@@ -337,6 +343,7 @@ def broadcast_keyboard(person: dict, bot_username: str, chosen: str | None = Non
         keyboard.append([btn(ui.BTN_SEE_VIBES, "bc_vibes", neon="heart", style=PRIMARY)])
     elif person["photo_id"]:
         keyboard.append([btn(ui.BTN_FIND, "browse", neon="bolt", style=PRIMARY)])
+    keyboard.append([btn(ui.BTN_CHANNEL, url=ui.CHANNEL_URL)])
     keyboard.append([btn(ui.BTN_NEWS_OFF, "news_off")])
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 

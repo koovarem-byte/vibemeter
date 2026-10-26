@@ -107,7 +107,8 @@ async def init_db():
         await conn.execute("""
             ALTER TABLE users
             ADD COLUMN IF NOT EXISTS photo_warnings INTEGER NOT NULL DEFAULT 0,
-            ADD COLUMN IF NOT EXISTS news_notify BOOLEAN NOT NULL DEFAULT TRUE
+            ADD COLUMN IF NOT EXISTS news_notify BOOLEAN NOT NULL DEFAULT TRUE,
+            ADD COLUMN IF NOT EXISTS question_strikes INTEGER NOT NULL DEFAULT 0
         """)
         # Рассылки: кому уже ушло (защита от двойной отправки и докатка после перезапуска)
         await conn.execute("""
@@ -1675,3 +1676,34 @@ async def vote_stats() -> dict:
             "SELECT feature, COUNT(*) AS n FROM feature_votes GROUP BY feature"
         )
     return {r["feature"]: r["n"] for r in rows}
+
+
+async def add_question_strike(telegram_id: int) -> int:
+    """Вопрос или ответ с матом/оскорблением: +1 страйк. Возвращает их число."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        return await conn.fetchval("""
+            UPDATE users SET question_strikes = question_strikes + 1
+            WHERE telegram_id = $1 RETURNING question_strikes
+        """, telegram_id) or 0
+
+
+async def questions_to(user_id: int, limit: int = 30) -> list[dict]:
+    """Вопросы мне (новые сверху) с анкетой автора; от забаненных и заблокированных — нет."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT q.id, q.text, q.answer, q.answered, q.created_at,
+                   u.telegram_id AS asker_id, u.age, u.city, u.gender, u.interests
+            FROM questions q
+            JOIN users u ON u.telegram_id = q.from_user
+            WHERE q.to_user = $1 AND NOT u.is_banned
+              AND NOT EXISTS (
+                  SELECT 1 FROM blocks b
+                  WHERE (b.from_user = $1 AND b.to_user = q.from_user)
+                     OR (b.from_user = q.from_user AND b.to_user = $1)
+              )
+            ORDER BY q.created_at DESC
+            LIMIT $2
+        """, user_id, limit)
+    return [dict(r) for r in rows]

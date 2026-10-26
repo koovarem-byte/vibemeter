@@ -1,13 +1,23 @@
+import logging
+
 from aiogram import Bot
 
+import moderation
 import ui
 
 from database import (
     add_question,
+    add_question_strike,
     get_question,
+    get_user,
     answer_question,
+    is_blocked,
+    set_banned,
 )
 from keyboards import question_answer_keyboard
+
+# мат и оскорбления: 1-й и 2-й раз не пропускаем с предупреждением, 3-й — бан
+STRIKES_TO_BAN = 3
 
 
 MAX_QUESTION_LENGTH = 500
@@ -35,6 +45,9 @@ async def send_question(
     if from_user == to_user:
         return None
 
+    if await is_blocked(to_user, from_user) or await is_blocked(from_user, to_user):
+        return None
+
     question_id = await add_question(
         from_user=from_user,
         to_user=to_user,
@@ -44,7 +57,7 @@ async def send_question(
     try:
         await bot.send_message(
             to_user,
-            ui.incoming_question(question_text),
+            await question_message(from_user, to_user, question_text),
             reply_markup=question_answer_keyboard(question_id),
         )
     except Exception:
@@ -53,6 +66,38 @@ async def send_question(
         return None
 
     return question_id
+
+
+async def question_message(from_user: int, to_user: int, text: str) -> str:
+    """Вопрос + анкета автора без имени и фото: понятно, кто примерно спрашивает."""
+    from handlers import calculate_vibe  # handlers импортирует этот модуль
+
+    asker = await get_user(from_user)
+    me = await get_user(to_user)
+    if not asker or not asker.get("age") or not me:
+        return ui.incoming_question(text)
+    vibe, common = calculate_vibe(me, asker)
+    return ui.incoming_question(text, asker, vibe, common)
+
+
+async def check_text(bot: Bot, user_id: int, text: str) -> str | None:
+    """None — текст чистый. Иначе текст ответа автору (и страйк, на 3-м бан)."""
+    if not moderation.is_bad(text):
+        return None
+    strikes = await add_question_strike(user_id)
+    if strikes < STRIKES_TO_BAN:
+        return ui.BAD_WORDS_LAST if strikes == STRIKES_TO_BAN - 1 else ui.BAD_WORDS
+    await set_banned(user_id, True)
+    try:
+        import admin
+        person = await get_user(user_id)
+        await admin.send_card(
+            bot, person,
+            note=f"🤬 <b>Автобан</b>: {strikes}-й вопрос/ответ с матом — «{ui.esc(text[:200])}»",
+        )
+    except Exception:
+        logging.exception("Не удалось отправить автобан админу %s", user_id)
+    return ui.BANNED_WORDS
 
 
 # =========================================================
