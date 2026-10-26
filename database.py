@@ -29,6 +29,10 @@ async def get_pool():
                     # asyncpg), иначе база не засыпает и тратит compute-часы.
                     min_size=1,
                     max_size=10,
+                    # Без кэша планов: при пересборке новый контейнер дополняет
+                    # таблицы (init_db), и закэшированные запросы старых
+                    # соединений падали с InvalidCachedStatementError (27.10).
+                    statement_cache_size=0,
                     command_timeout=30,
                     timeout=15,
                     ssl="require",
