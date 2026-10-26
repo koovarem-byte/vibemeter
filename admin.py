@@ -121,6 +121,7 @@ async def home_keyboard():
         [_b("🔎 Найти человека", "adm:find", "primary")],
         [_b("📊 Неделя", "adm:week"), _b("📈 Источники", "adm:sources")],
         [_b("📣 Рассылка и голоса", "adm:bc")],
+        [_b("🙏 «Мы снова в строю» всем", "adm:sorry")],
     )
 
 
@@ -477,3 +478,69 @@ async def cb_bc_go(callback: CallbackQuery):
         await callback.answer("Уже отправляется", show_alert=True)
         return
     await _show(callback, await bc_text() + "\n\nИтог пришлю отдельным сообщением", bc_keyboard())
+
+
+# =========================================================
+# «МЫ СНОВА В СТРОЮ»
+# =========================================================
+
+async def sorry_text() -> str:
+    targets = await broadcast_targets(broadcast.SORRY)
+    st = await broadcast_stats(broadcast.SORRY)
+    lines = [
+        "🙏 <b>Сообщение «Мы снова в строю»</b>",
+        "",
+        "Одно сообщение всем (кроме забаненных и отписавшихся), каждому один раз. "
+        "Кнопка: найти вайб / посмотреть вайбы / заполнить анкету + канал",
+        "",
+        f"Осталось отправить: <b>{len(targets)}</b>",
+    ]
+    if st:
+        lines.append(
+            f"Уже ушло: {st.get('sent', 0)} · заблокировали бота: {st.get('blocked', 0)} · "
+            f"ошибок: {st.get('error', 0)}"
+        )
+    if broadcast.is_running():
+        lines.append("⏳ Идёт отправка…")
+    return "\n".join(lines)
+
+
+def sorry_keyboard_admin():
+    return _kb(
+        [_b("👀 Пример себе", "adm:sorry:preview"), _b("🔄 Обновить", "adm:sorry")],
+        [_b("🚀 Отправить всем", "adm:sorry:ask", "primary")],
+        [BACK],
+    )
+
+
+@router.callback_query(F.data == "adm:sorry")
+async def cb_sorry(callback: CallbackQuery):
+    await _show(callback, await sorry_text(), sorry_keyboard_admin())
+
+
+@router.callback_query(F.data == "adm:sorry:preview")
+async def cb_sorry_preview(callback: CallbackQuery):
+    await callback.answer()
+    username = (await callback.bot.me()).username
+    text, keyboard = broadcast.message_for(
+        broadcast.SORRY, {"age": 20, "photo_id": "x", "incoming": 0}, 0, username
+    )
+    await callback.message.answer(text, reply_markup=keyboard)
+
+
+@router.callback_query(F.data == "adm:sorry:ask")
+async def cb_sorry_ask(callback: CallbackQuery):
+    n = len(await broadcast_targets(broadcast.SORRY))
+    await _show(
+        callback,
+        f"Точно отправить «Мы снова в строю» <b>{n}</b> людям? Отменить после старта нельзя",
+        _kb([_b(f"✅ Да, отправить {n}", "adm:sorry:go", "success")], [_b("← Назад", "adm:sorry")]),
+    )
+
+
+@router.callback_query(F.data == "adm:sorry:go")
+async def cb_sorry_go(callback: CallbackQuery):
+    if not broadcast.start(callback.bot, ADMIN_ID, broadcast.SORRY):
+        await callback.answer("Уже идёт рассылка, дождись итога", show_alert=True)
+        return
+    await _show(callback, await sorry_text() + "\n\nИтог пришлю отдельным сообщением", sorry_keyboard_admin())

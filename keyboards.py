@@ -366,3 +366,17 @@ def mark_vote(markup: InlineKeyboardMarkup, chosen: str) -> InlineKeyboardMarkup
             new_row.append(b)
         rows_.append(new_row)
     return InlineKeyboardMarkup(inline_keyboard=rows_)
+
+
+def sorry_keyboard(person: dict, bot_username: str):
+    """«Мы снова в строю»: одно главное действие + канал."""
+    if person["age"] is None:
+        main = btn(ui.BTN_FILL_PROFILE, url=f"https://t.me/{bot_username}?start=bc", neon="star", style=PRIMARY)
+    elif person["photo_id"] and person["incoming"]:
+        main = btn(ui.BTN_SEE_VIBES, "bc_vibes", neon="heart", style=PRIMARY)
+    else:
+        main = btn(ui.BTN_FIND, "browse", neon="bolt", style=PRIMARY)
+    return rows(
+        [main],
+        [btn(ui.BTN_CHANNEL, url=ui.CHANNEL_URL, neon="star", style=PRIMARY)],
+    )

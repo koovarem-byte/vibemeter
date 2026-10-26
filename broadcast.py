@@ -17,11 +17,13 @@ from database import (
     mark_broadcast,
     set_news_notify,
 )
-from keyboards import broadcast_keyboard
+from keyboards import broadcast_keyboard, sorry_keyboard
 import ui
 
 # новая рассылка = новый ключ (и новый текст в ui.broadcast_text)
 CAMPAIGN = "vote1"
+# «Мы снова в строю» после сбоя 27.10
+SORRY = "sorry1"
 
 _running = False
 _task = None
@@ -31,13 +33,20 @@ def is_running() -> bool:
     return _running
 
 
-def start(bot, report_to: int) -> bool:
+def message_for(campaign: str, person: dict, total: int, bot_username: str):
+    """Текст и кнопки рассылки для человека."""
+    if campaign == SORRY:
+        return ui.SORRY_TEXT, sorry_keyboard(person, bot_username)
+    return ui.broadcast_text(person, total), broadcast_keyboard(person, bot_username)
+
+
+def start(bot, report_to: int, campaign: str = CAMPAIGN) -> bool:
     """Запускает рассылку в фоне. False, если она уже идёт."""
     global _running, _task
     if _running:
         return False
     _running = True
-    _task = asyncio.create_task(run(bot, report_to))
+    _task = asyncio.create_task(run(bot, report_to, campaign))
     return True
 
 
@@ -45,8 +54,7 @@ async def send_one(bot, person: dict, total: int, bot_username: str, campaign=CA
     """Отправляет одному. Возвращает статус: sent / blocked / error / skip."""
     if not await claim_broadcast(campaign, person["telegram_id"]):
         return "skip"
-    text = ui.broadcast_text(person, total)
-    keyboard = broadcast_keyboard(person, bot_username)
+    text, keyboard = message_for(campaign, person, total, bot_username)
     status = "error"
     for _ in range(2):
         try:
@@ -67,15 +75,15 @@ async def send_one(bot, person: dict, total: int, bot_username: str, campaign=CA
     return status
 
 
-async def run(bot, report_to: int):
+async def run(bot, report_to: int, campaign: str = CAMPAIGN):
     """Отправляет всем, кому ещё не отправляли, и присылает итог админу."""
     global _running
     counts = {"sent": 0, "blocked": 0, "error": 0, "skip": 0}
     try:
         total = (await get_admin_stats())["total_users"]
         bot_username = (await bot.me()).username
-        for person in await broadcast_targets(CAMPAIGN):
-            counts[await send_one(bot, person, total, bot_username)] += 1
+        for person in await broadcast_targets(campaign):
+            counts[await send_one(bot, person, total, bot_username, campaign)] += 1
             await asyncio.sleep(0.05)  # ~20 в секунду, лимит Telegram 30
     except Exception:
         logging.exception("Рассылка оборвалась")
