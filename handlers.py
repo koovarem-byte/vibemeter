@@ -26,6 +26,9 @@ from database import (
     get_vibe_test,
     add_start_source,
     add_write_click,
+    set_news_notify,
+    set_photo,
+    set_vote,
     source_stats,
     set_vibe_hour_notify,
     count_referrals,
@@ -54,6 +57,7 @@ from keyboards import (
     profile_actions,
     incoming_actions,
     mutual_actions,
+    mark_vote,
     contact_keyboard,
     liked_you_keyboard,
     gender_keyboard,
@@ -198,6 +202,11 @@ async def show_next_profile(message, user_id):
 
     if not viewer:
         await message.answer(ui.NEED_START)
+        return
+
+    # без своего фото чужие не смотрим: при взаимности фото открывается у обоих
+    if viewer.get("age") and not viewer.get("photo_id"):
+        await message.answer(ui.PHOTO_NEEDED)
         return
 
     candidates = await get_candidates(user_id)
@@ -493,6 +502,12 @@ async def start_handler(
         )
     )
 
+    # фото убрали на модерации: просим только фото, а не всю анкету заново
+    if not profile_complete and user.get("age") and not user.get("photo_id") and user.get("gender"):
+        await state.clear()
+        await message.answer(ui.PHOTO_NEEDED, reply_markup=main_menu())
+        return
+
     if profile_complete:
         await state.clear()
 
@@ -701,6 +716,56 @@ async def profile_search_gender(
                 )
             except Exception:
                 logging.exception("referral notify failed")
+
+
+@router.message(StateFilter(None), F.photo)
+async def replace_photo(message: Message):
+    """Новое фото вне анкеты: возвращает анкету после «Фото убрали»."""
+    user = await get_user(message.from_user.id)
+    if not user or not user.get("age") or user.get("photo_id"):
+        await message.answer(ui.PHOTO_USE_SETTINGS)
+        return
+    await set_photo(message.from_user.id, message.photo[-1].file_id)
+    await message.answer(ui.PHOTO_BACK, reply_markup=main_menu())
+    await admin.review_photo(message.bot, message.from_user.id, is_new=False)
+
+
+# =========================================================
+# РАССЫЛКА: голосование, отписка
+# =========================================================
+
+@router.callback_query(F.data.startswith("vote:"))
+async def vote_callback(callback: CallbackQuery):
+    key = callback.data[5:]
+    if key not in ui.FEATURES:
+        await callback.answer()
+        return
+    await set_vote(callback.from_user.id, key)
+    await callback.answer(ui.VOTE_THANKS.format(name=ui.FEATURES[key][0]))
+    try:
+        await callback.message.edit_reply_markup(
+            reply_markup=mark_vote(callback.message.reply_markup, key)
+        )
+    except Exception:
+        pass  # то же самое уже отмечено
+
+
+@router.callback_query(F.data == "bc_vibes")
+async def broadcast_vibes_callback(callback: CallbackQuery):
+    await callback.answer()
+    await show_incoming_likes(callback.message, callback.from_user.id)
+
+
+@router.callback_query(F.data == "news_off")
+async def news_off_callback(callback: CallbackQuery):
+    await set_news_notify(callback.from_user.id, False)
+    await callback.answer(ui.NEWS_OFF, show_alert=True)
+
+
+@router.message(Command("news"))
+async def news_on(message: Message):
+    await set_news_notify(message.from_user.id, True)
+    await message.answer(ui.NEWS_ON)
 
 
 @router.message(StateFilter(

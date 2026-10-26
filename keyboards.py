@@ -311,3 +311,51 @@ def admin_report_keyboard(person_id: int):
         btn(ui.BTN_BAN, f"admin_ban:{person_id}", style=DANGER),
         btn(ui.BTN_DISMISS, f"admin_dismiss:{person_id}"),
     ])
+
+
+# =========================================================
+# РАССЫЛКА
+# =========================================================
+
+def broadcast_keyboard(person: dict, bot_username: str, chosen: str | None = None):
+    """Голосование + одна кнопка по состоянию человека + отписка."""
+    keyboard = [
+        [btn(
+            ("✓ " if key == chosen else "") + label,
+            f"vote:{key}",
+            style=SUCCESS if key == chosen else None,
+        )]
+        for key, (label, _) in ui.FEATURES.items()
+    ]
+    # deep link в этого же бота: в /sources видно, сколько пришли из рассылки (метка bc)
+    if person["age"] is None:
+        keyboard.append([
+            btn(ui.BTN_FILL_PROFILE, url=f"https://t.me/{bot_username}?start=bc", style=PRIMARY),
+            btn(ui.BTN_VT, url=f"https://t.me/{bot_username}?start=vt"),
+        ])
+    elif person["photo_id"] and person["incoming"]:
+        keyboard.append([btn(ui.BTN_SEE_VIBES, "bc_vibes", neon="heart", style=PRIMARY)])
+    elif person["photo_id"]:
+        keyboard.append([btn(ui.BTN_FIND, "browse", neon="bolt", style=PRIMARY)])
+    keyboard.append([btn(ui.BTN_NEWS_OFF, "news_off")])
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def mark_vote(markup: InlineKeyboardMarkup, chosen: str) -> InlineKeyboardMarkup:
+    """Та же клавиатура, но с отметкой выбранного варианта."""
+    rows_ = []
+    for row in markup.inline_keyboard:
+        new_row = []
+        for b in row:
+            data = b.callback_data or ""
+            if data.startswith("vote:"):
+                key = data[5:]
+                label = ui.FEATURES.get(key, (b.text, ""))[0]
+                b = btn(
+                    ("✓ " if key == chosen else "") + label,
+                    data,
+                    style=SUCCESS if key == chosen else None,
+                )
+            new_row.append(b)
+        rows_.append(new_row)
+    return InlineKeyboardMarkup(inline_keyboard=rows_)

@@ -260,6 +260,9 @@ async def api_me(request):
 
 async def api_next(request):
     user = request["user"]
+    # фото убрали на модерации: сначала своё фото
+    if not user["photo_id"]:
+        return error("no_photo", 403)
     candidates = await get_candidates(user["telegram_id"])
     if not candidates:
         return web.json_response({"candidate": None})

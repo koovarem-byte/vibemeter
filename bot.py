@@ -16,6 +16,7 @@ from handlers import router
 import admin
 from webapp_api import setup_webapp
 import vibehour
+import ui
 import alerts
 from fsm_storage import PgStorage
 
@@ -54,6 +55,17 @@ def create_bot_and_dispatcher():
     dp.include_router(router)
 
     return bot, dp
+
+
+async def setup_profile(bot):
+    """Описание бота из ui.py: меняем, только если отличается."""
+    try:
+        if (await bot.get_my_description()).description != ui.BOT_DESCRIPTION:
+            await bot.set_my_description(description=ui.BOT_DESCRIPTION)
+        if (await bot.get_my_short_description()).short_description != ui.BOT_SHORT_DESCRIPTION:
+            await bot.set_my_short_description(short_description=ui.BOT_SHORT_DESCRIPTION)
+    except Exception:
+        logging.exception("Не удалось обновить описание бота")
 
 
 async def setup_menu_button(bot):
@@ -98,6 +110,7 @@ async def run_webhook():
 
     await init_db()
     await setup_menu_button(bot)
+    await setup_profile(bot)
     vibe_hour_task = asyncio.create_task(vibehour.loop(bot))
     alerts_task = alerts.install(bot, ADMIN_ID)
 
@@ -141,6 +154,7 @@ async def run_polling():
 
     await init_db()
     await setup_menu_button(bot)
+    await setup_profile(bot)
     vibe_hour_task = asyncio.create_task(vibehour.loop(bot))
     alerts_task = alerts.install(bot, ADMIN_ID)
 

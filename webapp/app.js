@@ -2322,6 +2322,7 @@ function errorHtml(e) {
   if (code === "banned") return emptyHtml("🚫", "Аккаунт заблокирован", "За нарушение правил Вайбометра");
   if (code === "no_profile") return `${emptyHtml("📝", "Сначала анкета", "Заполни её в чате с ботом: напиши /start, это минута")}
     <div style="text-align:center"><button class="btn btn-violet" onclick="tg && tg.close()">Открыть бота</button></div>`;
+  if (code === "no_photo") return emptyHtml("🤳", "Добавь своё фото", "Только своё фото, где видно лицо. Загрузи его в профиле или пришли в чат с ботом, и анкеты снова появятся");
   if (code === "bad_init_data") return emptyHtml("⏳", "Сессия устарела", "Закрой и снова открой Вайбометр из бота");
   return `${emptyHtml("📡", "Нет связи", "Не получилось загрузить. Проверь интернет и попробуй ещё раз")}
     <div style="text-align:center"><button class="btn btn-violet" onclick="boot()">Повторить</button></div>`;

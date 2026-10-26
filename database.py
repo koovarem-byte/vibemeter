@@ -103,6 +103,30 @@ async def init_db():
             ALTER TABLE users
             ADD COLUMN IF NOT EXISTS boost_until TIMESTAMPTZ
         """)
+        # Модерация фото и новости: предупреждения «нет лица», отписка от рассылок
+        await conn.execute("""
+            ALTER TABLE users
+            ADD COLUMN IF NOT EXISTS photo_warnings INTEGER NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS news_notify BOOLEAN NOT NULL DEFAULT TRUE
+        """)
+        # Рассылки: кому уже ушло (защита от двойной отправки и докатка после перезапуска)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS broadcast_log (
+                campaign TEXT NOT NULL,
+                user_id BIGINT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'sending',
+                sent_at TIMESTAMPTZ DEFAULT now(),
+                PRIMARY KEY (campaign, user_id)
+            )
+        """)
+        # Голоса за следующую функцию: один голос, можно передумать
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS feature_votes (
+                user_id BIGINT PRIMARY KEY,
+                feature TEXT NOT NULL,
+                created_at TIMESTAMPTZ DEFAULT now()
+            )
+        """)
         # Откуда пришли: метка партнёрской ссылки start=vtp_<метка>
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS start_sources (
@@ -1543,3 +1567,111 @@ async def find_user_by_username(username: str):
             "SELECT * FROM users WHERE lower(username) = lower($1)", username
         )
     return dict(row) if row else None
+
+
+# =========================================================
+# МОДЕРАЦИЯ ФОТО
+# =========================================================
+
+async def warn_photo(telegram_id: int) -> int | None:
+    """Фото без лица: убираем фото, +1 предупреждение. Возвращает их число."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        return await conn.fetchval("""
+            UPDATE users SET photo_warnings = photo_warnings + 1, photo_id = NULL
+            WHERE telegram_id = $1
+            RETURNING photo_warnings
+        """, telegram_id)
+
+
+async def set_photo(telegram_id: int, photo_id: str):
+    db = await get_pool()
+    async with db.acquire() as conn:
+        await conn.execute(
+            "UPDATE users SET photo_id = $2 WHERE telegram_id = $1", telegram_id, photo_id
+        )
+
+
+# =========================================================
+# РАССЫЛКИ И ГОЛОСА
+# =========================================================
+
+async def broadcast_targets(campaign: str) -> list[dict]:
+    """Кому ещё не отправляли: не в бане, не отписан. С данными для личной строки."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT u.telegram_id, u.age, u.photo_id, u.city,
+                   (SELECT COUNT(*) FROM likes l
+                    JOIN users f ON f.telegram_id = l.from_user AND NOT f.is_banned
+                    WHERE l.to_user = u.telegram_id
+                      AND NOT EXISTS (SELECT 1 FROM likes r
+                                      WHERE r.from_user = u.telegram_id AND r.to_user = l.from_user)
+                      AND NOT EXISTS (SELECT 1 FROM skips s
+                                      WHERE s.from_user = u.telegram_id AND s.to_user = l.from_user)
+                      AND NOT EXISTS (SELECT 1 FROM blocks b
+                                      WHERE (b.from_user = u.telegram_id AND b.to_user = l.from_user)
+                                         OR (b.from_user = l.from_user AND b.to_user = u.telegram_id))
+                   ) AS incoming
+            FROM users u
+            WHERE NOT u.is_banned AND u.news_notify
+              AND NOT EXISTS (SELECT 1 FROM broadcast_log b
+                              WHERE b.campaign = $1 AND b.user_id = u.telegram_id)
+            ORDER BY u.telegram_id
+        """, campaign)
+    return [dict(r) for r in rows]
+
+
+async def claim_broadcast(campaign: str, user_id: int) -> bool:
+    """True, если этому человеку ещё не отправляли (и теперь он занят нами)."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        return await conn.fetchval("""
+            INSERT INTO broadcast_log (campaign, user_id) VALUES ($1, $2)
+            ON CONFLICT DO NOTHING RETURNING TRUE
+        """, campaign, user_id) is not None
+
+
+async def mark_broadcast(campaign: str, user_id: int, status: str):
+    db = await get_pool()
+    async with db.acquire() as conn:
+        await conn.execute(
+            "UPDATE broadcast_log SET status = $3 WHERE campaign = $1 AND user_id = $2",
+            campaign, user_id, status,
+        )
+
+
+async def broadcast_stats(campaign: str) -> dict:
+    db = await get_pool()
+    async with db.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT status, COUNT(*) AS n FROM broadcast_log WHERE campaign = $1 GROUP BY status",
+            campaign,
+        )
+    return {r["status"]: r["n"] for r in rows}
+
+
+async def set_news_notify(telegram_id: int, value: bool):
+    db = await get_pool()
+    async with db.acquire() as conn:
+        await conn.execute(
+            "UPDATE users SET news_notify = $2 WHERE telegram_id = $1", telegram_id, value
+        )
+
+
+async def set_vote(user_id: int, feature: str):
+    db = await get_pool()
+    async with db.acquire() as conn:
+        await conn.execute("""
+            INSERT INTO feature_votes (user_id, feature) VALUES ($1, $2)
+            ON CONFLICT (user_id) DO UPDATE SET feature = EXCLUDED.feature, created_at = now()
+        """, user_id, feature)
+
+
+async def vote_stats() -> dict:
+    db = await get_pool()
+    async with db.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT feature, COUNT(*) AS n FROM feature_votes GROUP BY feature"
+        )
+    return {r["feature"]: r["n"] for r in rows}

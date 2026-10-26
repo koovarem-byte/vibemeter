@@ -15,12 +15,15 @@ from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
+import broadcast
 import weeklystats
 from vibehour import MSK
 from config import ADMIN_ID
 from database import (
     admin_counts,
     banned_users,
+    broadcast_stats,
+    broadcast_targets,
     count_reports,
     dismiss_reports,
     find_user_by_username,
@@ -31,6 +34,8 @@ from database import (
     open_reports,
     recent_profiles,
     set_banned,
+    vote_stats,
+    warn_photo,
     source_stats,
 )
 from states import AdminState
@@ -115,6 +120,7 @@ async def home_keyboard():
         [_b("🆕 Новые анкеты", "adm:new"), _b("🚫 Забаненные", "adm:banned")],
         [_b("🔎 Найти человека", "adm:find", "primary")],
         [_b("📊 Неделя", "adm:week"), _b("📈 Источники", "adm:sources")],
+        [_b("📣 Рассылка и голоса", "adm:bc")],
     )
 
 
@@ -234,6 +240,10 @@ async def card_text(person, note: str = "") -> str:
         f"💜 Получил(а) вайбов: {st['likes_received']} · отправил(а): {st['likes_sent']} · взаимных: {st['mutual_likes']}",
         f"🚩 Жалоб всего: {reports} · {status}",
     ]
+    if person.get("photo_warnings"):
+        lines.append(f"⚠️ Предупреждений за фото: {person['photo_warnings']} (следующее — бан)")
+    if person.get("age") and not person.get("photo_id") and not person["is_banned"]:
+        lines.append("🤳 Фото нет — анкета скрыта, ждём новое")
     if about:
         lines += ["", f"<i>{about}</i>"]
     if note:
@@ -248,6 +258,9 @@ def card_keyboard(person, report=False, review=False):
         else _b("🚫 Забанить", f"adm:ban:{pid}", "danger")
     )
     rows = [[first]]
+    if person.get("photo_id") and not person["is_banned"]:
+        warn = "🚫 Нет лица — 2-й раз, бан" if person.get("photo_warnings") else "⚠️ Нет лица / чужое"
+        rows.append([_b(warn, f"adm:warn:{pid}", "danger" if person.get("photo_warnings") else None)])
     if report and not person["is_banned"]:
         rows[0].append(_b("👌 Жалобы ложные", f"adm:dismiss:{pid}"))
     if review and not person["is_banned"]:
@@ -336,6 +349,27 @@ async def cb_dismiss(callback: CallbackQuery):
     await _refresh_card(callback, person_id, "Жалобы закрыты")
 
 
+@router.callback_query(F.data.startswith("adm:warn:"))
+async def cb_photo_warn(callback: CallbackQuery):
+    """Фото без лица или чужое: первый раз — фото убрать и предупредить, второй — бан."""
+    person_id = int(callback.data.split(":")[2])
+    person = await get_user(person_id)
+    if not person or not person.get("photo_id"):
+        await callback.answer("Фото уже убрано", show_alert=True)
+        return
+    warnings = await warn_photo(person_id)
+    if warnings >= 2:
+        await set_banned(person_id, True)
+        text, toast = ui.BANNED_PHOTO, "Второй раз — забанен"
+    else:
+        text, toast = ui.PHOTO_WARNING, "Фото убрано, предупреждение отправлено"
+    try:
+        await callback.bot.send_message(person_id, text)
+    except Exception:
+        pass
+    await _refresh_card(callback, person_id, toast)
+
+
 @router.callback_query(F.data.startswith("adm:ok:"))
 async def cb_photo_ok(callback: CallbackQuery):
     await _refresh_card(callback, int(callback.data.split(":")[2]), "Ок")
@@ -356,3 +390,90 @@ async def review_photo(bot, user_id: int, is_new: bool):
             await send_card(bot, person, note=note, review=True)
     except Exception:
         logging.exception("Не удалось отправить фото на проверку %s", user_id)
+
+
+# =========================================================
+# РАССЫЛКА И ГОЛОСА
+# =========================================================
+
+async def bc_text() -> str:
+    targets = await broadcast_targets(broadcast.CAMPAIGN)
+    no_profile = sum(1 for t in targets if t["age"] is None)
+    no_photo = sum(1 for t in targets if t["age"] is not None and not t["photo_id"])
+    waiting = sum(1 for t in targets if t["photo_id"] and t["incoming"])
+    rest = len(targets) - no_profile - no_photo - waiting
+    st = await broadcast_stats(broadcast.CAMPAIGN)
+    votes = await vote_stats()
+    total_votes = sum(votes.values())
+    lines = [
+        "📣 <b>Рассылка «что делаем дальше»</b>",
+        "",
+        "Каждому своя строка + голосование за функцию. Каждому один раз, "
+        "забаненным и отписавшимся не уходит",
+        "",
+        f"Осталось отправить: <b>{len(targets)}</b>",
+        f"· без анкеты: {no_profile} · без фото: {no_photo}",
+        f"· ждут вайбы: {waiting} · остальные: {rest}",
+    ]
+    if st:
+        lines.append(
+            f"Уже ушло: {st.get('sent', 0)} · заблокировали бота: {st.get('blocked', 0)} · "
+            f"ошибок: {st.get('error', 0)}"
+        )
+    if broadcast.is_running():
+        lines.append("⏳ Идёт отправка…")
+    lines += ["", f"🗳 <b>Голоса</b> ({total_votes})"]
+    for key, (label, _) in sorted(ui.FEATURES.items(), key=lambda kv: -votes.get(kv[0], 0)):
+        n = votes.get(key, 0)
+        lines.append(f"{label}: <b>{n}</b> ({_pct(n, total_votes)})")
+    return "\n".join(lines)
+
+
+def bc_keyboard():
+    return _kb(
+        [_b("👀 Пример себе", "adm:bc:preview"), _b("🔄 Обновить", "adm:bc")],
+        [_b("🚀 Отправить всем", "adm:bc:ask", "primary")],
+        [BACK],
+    )
+
+
+@router.callback_query(F.data == "adm:bc")
+async def cb_bc(callback: CallbackQuery):
+    await _show(callback, await bc_text(), bc_keyboard())
+
+
+@router.callback_query(F.data == "adm:bc:preview")
+async def cb_bc_preview(callback: CallbackQuery):
+    """Как увидят разные люди: четыре варианта личной строки."""
+    await callback.answer()
+    total = (await get_admin_stats())["total_users"]
+    username = (await callback.bot.me()).username
+    samples = [
+        {"age": None, "photo_id": None, "incoming": 0},
+        {"age": 20, "photo_id": None, "incoming": 0},
+        {"age": 20, "photo_id": "x", "incoming": 3},
+        {"age": 20, "photo_id": "x", "incoming": 0},
+    ]
+    for person in samples:
+        await callback.message.answer(
+            ui.broadcast_text(person, total),
+            reply_markup=broadcast.broadcast_keyboard(person, username),
+        )
+
+
+@router.callback_query(F.data == "adm:bc:ask")
+async def cb_bc_ask(callback: CallbackQuery):
+    n = len(await broadcast_targets(broadcast.CAMPAIGN))
+    await _show(
+        callback,
+        f"Точно отправить <b>{n}</b> людям? Отменить после старта нельзя",
+        _kb([_b(f"✅ Да, отправить {n}", "adm:bc:go", "success")], [_b("← Назад", "adm:bc")]),
+    )
+
+
+@router.callback_query(F.data == "adm:bc:go")
+async def cb_bc_go(callback: CallbackQuery):
+    if not broadcast.start(callback.bot, ADMIN_ID):
+        await callback.answer("Уже отправляется", show_alert=True)
+        return
+    await _show(callback, await bc_text() + "\n\nИтог пришлю отдельным сообщением", bc_keyboard())
