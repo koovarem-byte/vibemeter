@@ -111,7 +111,8 @@ def growth_text(g) -> str:
         f"💞 Есть взаимный вайб: <b>{g['with_mutual']}</b> из {g['profiles']} анкет "
         f"({_pct(g['with_mutual'], g['profiles'])})\n"
         f"✍️ Нажали «Написать»: <b>{g['writers']}</b> чел. · {g['write_clicks']} раз "
-        f"(Mini App и бот без @username)\n"
+        f"(Mini App и бот без @username)\n"        f"📇 С @username: <b>{_pct(g['with_username'], g['profiles'])}</b> анкет "
+        f"({g['with_username']} из {g['profiles']}) — остальным «Написать» может не открыться\n"
         f"🗄 База: {db_mb:.0f} МБ из {DB_LIMIT_MB}{db_warn}"
     )
 

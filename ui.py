@@ -378,11 +378,12 @@ def profile_card(person, vibe=None, common=None, same_city=False) -> str:
     return "\n\n".join(blocks)
 
 
-def search_card(person, vibe, common, same_city=False) -> str:
-    return (
-        profile_card(person, vibe=vibe, common=common, same_city=same_city)
-        + f"\n\n{e('lock')} <i>Фото откроется, если вайб взаимный</i>"
-    )
+def search_card(person, vibe, common, same_city=False, liked_me=False) -> str:
+    text = profile_card(person, vibe=vibe, common=common, same_city=same_city)
+    if liked_me:
+        # из «Мои вайбы»: человек уже выбрал тебя — один вайб, и взаимно
+        return text + f"\n\n{e('eye')} <b>Ты уже нравишься этому человеку</b>\nОтправь вайб — и откроются фото и чат"
+    return text + f"\n\n{e('lock')} <i>Фото откроется, если вайб взаимный</i>"
 
 
 def own_profile(user, stats=None, done=0, total=0, city=None) -> str:

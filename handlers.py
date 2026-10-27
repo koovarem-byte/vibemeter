@@ -186,7 +186,7 @@ def calculate_vibe(first, second):
     return min(score, 95), common
 
 
-async def send_profile(message, person, viewer_id):
+async def send_profile(message, person, viewer_id, liked_me=False):
     viewer = await get_user(viewer_id)
     vibe, common = calculate_vibe(viewer, person)
 
@@ -196,7 +196,7 @@ async def send_profile(message, person, viewer_id):
 
     # Фото скрыто до взаимного лайка. Кнопки — в нижнем меню ленты.
     await message.answer(
-        ui.search_card(person, vibe, common, same_city(viewer, person)),
+        ui.search_card(person, vibe, common, same_city(viewer, person), liked_me=liked_me),
         reply_markup=browse_menu(),
     )
 
@@ -219,6 +219,12 @@ async def show_next_profile(message, user_id):
     if viewer.get("age") and not viewer.get("description"):
         await message.answer(ui.PROFILE_REDO, reply_markup=main_menu())
         return
+
+    # Сначала те, кто уже выбрал тебя (новые сверху): из «Мои вайбы» сюда же
+    for person in await get_incoming_likes(user_id):
+        if is_adult(person["age"]) and person.get("photo_id") and person.get("description"):
+            await send_profile(message, person, user_id, liked_me=True)
+            return
 
     candidates = await get_candidates(user_id)
 
@@ -926,28 +932,15 @@ async def dismiss_callback(callback: CallbackQuery):
 
 
 async def show_incoming_likes(message, user_id):
+    """«Мои вайбы»: та же лента с нижним меню, первыми — кто выбрал тебя."""
     likes = await get_incoming_likes(user_id)
 
     if not likes:
         await message.answer(ui.NO_LIKES, reply_markup=main_menu())
         return
 
-    viewer = await get_user(user_id)
-
     await message.answer(ui.likes_header(len(likes)))
-
-    for person in likes[:10]:
-        vibe, common = calculate_vibe(viewer, person) if viewer else (None, None)
-
-        await message.answer(
-            ui.profile_card(
-                person,
-                vibe=vibe,
-                common=common,
-                same_city=bool(viewer) and same_city(viewer, person),
-            ),
-            reply_markup=incoming_actions(person["telegram_id"]),
-        )
+    await show_next_profile(message, user_id)
 
 
 @router.message(F.text.in_(ui.menu_texts(ui.MENU_PROFILE)))

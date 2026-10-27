@@ -1524,6 +1524,8 @@ async def growth_metrics() -> dict:
               (SELECT COUNT(*) FROM mutual) AS with_mutual,
               (SELECT COUNT(*) FROM users WHERE age IS NOT NULL) AS profiles,
               (SELECT COUNT(*) FROM users) AS total_users,
+              (SELECT COUNT(*) FROM users WHERE age IS NOT NULL
+                 AND COALESCE(username, '') <> '') AS with_username,
               (SELECT COUNT(DISTINCT from_user) FROM write_clicks) AS writers,
               (SELECT COUNT(*) FROM write_clicks) AS write_clicks,
               pg_database_size(current_database()) AS db_bytes
