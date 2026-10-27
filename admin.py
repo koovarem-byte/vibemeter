@@ -126,7 +126,7 @@ async def home_keyboard():
         [_b("📊 Неделя", "adm:week"), _b("📈 Источники", "adm:sources")],
         [_b("📣 Рассылка и голоса", "adm:bc")],
         [_b("🙏 «Мы снова в строю» всем", "adm:sorry")],
-        [_b("🧹 Проверить анкеты (мат, младше 18)", "adm:scan")],
+        [_b("🧹 Проверить анкеты на мат", "adm:scan")],
     )
 
 
@@ -418,13 +418,11 @@ async def cb_photo_ok(callback: CallbackQuery):
 # =========================================================
 
 def profile_flags(person) -> list[str]:
-    """Что подозрительного в текстах анкеты: мат, возраст младше 18."""
+    """Что подозрительного в текстах анкеты: мат и пошлость."""
     flags = []
     texts = [person.get(k) or "" for k in ("full_name", "city", "interests", "description")]
     if any(moderation.is_bad(t) for t in texts):
         flags.append("🤬 В анкете мат или пошлость")
-    if moderation.looks_underage(person.get("description") or ""):
-        flags.append("🔞 Похоже, младше 18 (пишет возраст в «о себе»)")
     return flags
 
 
@@ -601,7 +599,7 @@ async def cb_sorry_go(callback: CallbackQuery):
 
 @router.callback_query(F.data == "adm:scan")
 async def cb_scan(callback: CallbackQuery):
-    """Анкеты с матом или «мне 15»: карточками с кнопками, не больше LIST_LIMIT за раз."""
+    """Анкеты с матом: карточками с кнопками, не больше LIST_LIMIT за раз."""
     await callback.answer("Проверяю…")
     found = []
     for p in await active_profiles():
