@@ -22,6 +22,8 @@ from aiohttp import web
 from aiogram.types import BufferedInputFile
 from aiogram.utils.web_app import safe_parse_webapp_init_data
 
+import moderation
+import strikes
 import ui
 from daily import today_question
 import duo
@@ -265,6 +267,8 @@ async def api_next(request):
     # фото убрали на модерации: сначала своё фото
     if not user["photo_id"]:
         return error("no_photo", 403)
+    if not user["description"]:
+        return error("profile_hidden", 403)
     candidates = await get_candidates(user["telegram_id"])
     if not candidates:
         return web.json_response({"candidate": None})
@@ -353,7 +357,7 @@ async def api_question(request):
         return error("not_found", 404)
     warning = await check_text(request.app["bot"], user_id, text)
     if warning:
-        return web.json_response({"error": "bad_words", "message": warning}, status=422)
+        return web.json_response({"error": "bad_words", "message": _plain(warning)}, status=422)
     if not ratelimit.hit("question", user_id):
         return error("too_fast", 429)
 
@@ -419,6 +423,16 @@ async def api_profile(request):
         return error("bad_request", 400)
     if not isinstance(body, dict):
         return error("bad_request", 400)
+
+    # мат и пошлость в анкете: не сохраняем + предупреждение (на третье нарушение — бан)
+    texts = [str(body.get(k) or "") for k in ("name", "city", "about")]
+    if isinstance(body.get("interests"), list):
+        texts += [str(i) for i in body["interests"]]
+    bad = next((t for t in texts if moderation.is_bad(t)), None)
+    if bad:
+        verdict = await strikes.give(request.app["bot"], user["telegram_id"], "profile", ui.REASON_PROFILE, bad)
+        message = verdict if strikes.is_ban_text(verdict) else f"{ui.PROFILE_BAD_INPUT}\n\n{verdict}"
+        return web.json_response({"error": "bad_words", "message": _plain(message)}, status=422)
 
     changes = {}
 
@@ -947,6 +961,11 @@ async def api_vibes(request):
     })
 
 
+def _plain(text: str) -> str:
+    """Текст бота без HTML-тегов — для всплывашек Mini App."""
+    return re.sub(r"<[^>]+>", "", text)
+
+
 def question_json(q, viewer):
     """Вопрос мне: автор без имени, фото и id."""
     vibe, common = calculate_vibe(viewer, q)
@@ -987,7 +1006,7 @@ async def api_answer(request):
     user_id = request["user"]["telegram_id"]
     warning = await check_text(request.app["bot"], user_id, text)
     if warning:
-        return web.json_response({"error": "bad_words", "message": warning}, status=422)
+        return web.json_response({"error": "bad_words", "message": _plain(warning)}, status=422)
     if not await submit_answer(request.app["bot"], question["id"], text, user_id):
         return error("already", 409)
     return web.json_response({"ok": True})

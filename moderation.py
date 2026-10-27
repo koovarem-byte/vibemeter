@@ -43,3 +43,11 @@ def is_bad(text: str) -> bool:
     if _LATIN.search(text):
         return True
     return bool(_PATTERN.search(_normalize(text)))
+
+
+# «мне 15», «15 лет» в анкете — подсказка админу, что человек может быть младше 18
+_UNDERAGE = re.compile(r"\bмне\s*(1[0-7]|[1-9])\b|\b(1[0-7])\s*(лет|годиков)\b", re.IGNORECASE)
+
+
+def looks_underage(text: str) -> bool:
+    return bool(text and _UNDERAGE.search(text))

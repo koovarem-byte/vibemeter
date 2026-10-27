@@ -1,23 +1,17 @@
-import logging
-
 from aiogram import Bot
 
 import moderation
+import strikes
 import ui
 
 from database import (
     add_question,
-    add_question_strike,
     get_question,
     get_user,
     answer_question,
     is_blocked,
-    set_banned,
 )
 from keyboards import question_answer_keyboard
-
-# мат и оскорбления: 1-й и 2-й раз не пропускаем с предупреждением, 3-й — бан
-STRIKES_TO_BAN = 3
 
 
 MAX_QUESTION_LENGTH = 500
@@ -81,23 +75,14 @@ async def question_message(from_user: int, to_user: int, text: str) -> str:
 
 
 async def check_text(bot: Bot, user_id: int, text: str) -> str | None:
-    """None — текст чистый. Иначе текст ответа автору (и страйк, на 3-м бан)."""
+    """None — текст чистый. Иначе текст ответа автору: не отправлено + предупреждение
+    (общий счёт, на третье нарушение бан)."""
     if not moderation.is_bad(text):
         return None
-    strikes = await add_question_strike(user_id)
-    if strikes < STRIKES_TO_BAN:
-        return ui.BAD_WORDS_LAST if strikes == STRIKES_TO_BAN - 1 else ui.BAD_WORDS
-    await set_banned(user_id, True)
-    try:
-        import admin
-        person = await get_user(user_id)
-        await admin.send_card(
-            bot, person,
-            note=f"🤬 <b>Автобан</b>: {strikes}-й вопрос/ответ с матом — «{ui.esc(text[:200])}»",
-        )
-    except Exception:
-        logging.exception("Не удалось отправить автобан админу %s", user_id)
-    return ui.BANNED_WORDS
+    warning = await strikes.give(bot, user_id, "question", ui.REASON_WORDS, text)
+    if strikes.is_ban_text(warning):
+        return warning
+    return f"{ui.NOT_SENT}\n\n{warning}"
 
 
 # =========================================================

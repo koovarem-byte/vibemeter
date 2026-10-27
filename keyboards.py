@@ -109,6 +109,25 @@ def main_menu():
     )
 
 
+def browse_menu():
+    """Нижнее меню в ленте: лайкать одним пальцем, «Меню» — назад в главное.
+    Всё синее, как главное меню; иконки неоновые."""
+    def b(text):
+        icon = ui.BROWSE_ICONS.get(text)
+        extra = {"icon_custom_emoji_id": ui.icon(icon)} if icon else {}
+        return KeyboardButton(text=text, style=PRIMARY, **extra)
+
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [b(ui.BROWSE_LIKE), b(ui.BROWSE_SKIP)],
+            [b(ui.BROWSE_ASK), b(ui.BROWSE_REPORT)],
+            [b(ui.BROWSE_MENU)],
+        ],
+        resize_keyboard=True,
+        input_field_placeholder=ui.BROWSE_PLACEHOLDER,
+    )
+
+
 def cancel_keyboard():
     return ReplyKeyboardMarkup(
         keyboard=[[KeyboardButton(text=ui.CANCEL)]],

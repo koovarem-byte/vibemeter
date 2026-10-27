@@ -112,7 +112,9 @@ async def init_db():
             ALTER TABLE users
             ADD COLUMN IF NOT EXISTS photo_warnings INTEGER NOT NULL DEFAULT 0,
             ADD COLUMN IF NOT EXISTS news_notify BOOLEAN NOT NULL DEFAULT TRUE,
-            ADD COLUMN IF NOT EXISTS question_strikes INTEGER NOT NULL DEFAULT 0
+            ADD COLUMN IF NOT EXISTS question_strikes INTEGER NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS profile_strikes INTEGER NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS viewing BIGINT
         """)
         # Рассылки: кому уже ушло (защита от двойной отправки и докатка после перезапуска)
         await conn.execute("""
@@ -705,6 +707,7 @@ async def get_candidates(user_id: int):
             WHERE u.telegram_id != $1
               AND u.age IS NOT NULL
               AND u.photo_id IS NOT NULL
+              AND u.description IS NOT NULL
               AND u.age >= 18
               AND NOT u.is_banned
               {gender_condition}
@@ -1581,13 +1584,13 @@ async def find_user_by_username(username: str):
 # =========================================================
 
 async def warn_photo(telegram_id: int) -> int | None:
-    """Фото без лица: убираем фото, +1 предупреждение. Возвращает их число."""
+    """Фото без лица: убираем фото, +1 предупреждение. Возвращает общее число предупреждений."""
     db = await get_pool()
     async with db.acquire() as conn:
         return await conn.fetchval("""
             UPDATE users SET photo_warnings = photo_warnings + 1, photo_id = NULL
             WHERE telegram_id = $1
-            RETURNING photo_warnings
+            RETURNING photo_warnings + question_strikes + profile_strikes
         """, telegram_id)
 
 
@@ -1684,16 +1687,6 @@ async def vote_stats() -> dict:
     return {r["feature"]: r["n"] for r in rows}
 
 
-async def add_question_strike(telegram_id: int) -> int:
-    """Вопрос или ответ с матом/оскорблением: +1 страйк. Возвращает их число."""
-    db = await get_pool()
-    async with db.acquire() as conn:
-        return await conn.fetchval("""
-            UPDATE users SET question_strikes = question_strikes + 1
-            WHERE telegram_id = $1 RETURNING question_strikes
-        """, telegram_id) or 0
-
-
 async def questions_to(user_id: int, limit: int = 30) -> list[dict]:
     """Вопросы мне (новые сверху) с анкетой автора; от забаненных и заблокированных — нет."""
     db = await get_pool()
@@ -1712,4 +1705,58 @@ async def questions_to(user_id: int, limit: int = 30) -> list[dict]:
             ORDER BY q.created_at DESC
             LIMIT $2
         """, user_id, limit)
+    return [dict(r) for r in rows]
+
+
+# =========================================================
+# ПРЕДУПРЕЖДЕНИЯ (фото, мат в сообщениях, анкета) — общий счёт
+# =========================================================
+
+_STRIKE_COLUMNS = {
+    "photo": "photo_warnings",
+    "question": "question_strikes",
+    "profile": "profile_strikes",
+}
+
+
+async def add_strike(telegram_id: int, kind: str) -> int:
+    """+1 предупреждение нужного вида. Возвращает общее число предупреждений."""
+    column = _STRIKE_COLUMNS[kind]
+    db = await get_pool()
+    async with db.acquire() as conn:
+        return await conn.fetchval(f"""
+            UPDATE users SET {column} = {column} + 1
+            WHERE telegram_id = $1
+            RETURNING photo_warnings + question_strikes + profile_strikes
+        """, telegram_id) or 0
+
+
+async def hide_profile_text(telegram_id: int):
+    """Неадекватная анкета: убираем «о себе» и интересы — из поиска пропадает до новой анкеты."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        await conn.execute(
+            "UPDATE users SET description = NULL, interests = NULL WHERE telegram_id = $1",
+            telegram_id,
+        )
+
+
+async def set_viewing(telegram_id: int, person_id: int | None):
+    """Чью анкету человек сейчас смотрит в поиске (для кнопок нижнего меню)."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        await conn.execute(
+            "UPDATE users SET viewing = $2 WHERE telegram_id = $1", telegram_id, person_id
+        )
+
+
+async def active_profiles() -> list[dict]:
+    """Все анкеты не в бане — для проверки текстов админом."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT telegram_id, full_name, city, interests, description
+            FROM users WHERE age IS NOT NULL AND NOT is_banned
+            ORDER BY created_at DESC
+        """)
     return [dict(r) for r in rows]

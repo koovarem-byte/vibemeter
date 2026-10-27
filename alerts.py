@@ -22,6 +22,11 @@ class TelegramAlertHandler(logging.Handler):
         self.queue: asyncio.Queue = asyncio.Queue(maxsize=100)
 
     def emit(self, record):
+        # человек заблокировал бота или удалил аккаунт — это не сбой
+        if record.exc_info and record.exc_info[1] is not None:
+            text = str(record.exc_info[1])
+            if "bot was blocked by the user" in text or "user is deactivated" in text:
+                return
         try:
             self.queue.put_nowait(record)
         except Exception:

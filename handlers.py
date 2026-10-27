@@ -20,6 +20,9 @@ import boost
 import weeklystats
 import ratelimit
 import admin
+import moderation
+import strikes
+from aiogram.exceptions import TelegramForbiddenError
 from database import (
     is_blocked,
     add_referral,
@@ -27,6 +30,7 @@ from database import (
     add_start_source,
     add_write_click,
     set_news_notify,
+    set_viewing,
     set_photo,
     set_vote,
     source_stats,
@@ -51,10 +55,10 @@ from database import (
     touch_user,
 )
 from keyboards import (
+    browse_menu,
     main_menu,
     open_app_keyboard,
     cancel_keyboard,
-    profile_actions,
     incoming_actions,
     mutual_actions,
     mark_vote,
@@ -187,11 +191,13 @@ async def send_profile(message, person, viewer_id):
     vibe, common = calculate_vibe(viewer, person)
 
     current_profile[viewer_id] = person["telegram_id"]
+    # кого смотрим — в базе: кнопки ленты внизу работают и после пересборки
+    await set_viewing(viewer_id, person["telegram_id"])
 
-    # Фото скрыто до взаимного лайка
+    # Фото скрыто до взаимного лайка. Кнопки — в нижнем меню ленты.
     await message.answer(
         ui.search_card(person, vibe, common, same_city(viewer, person)),
-        reply_markup=profile_actions(person["telegram_id"]),
+        reply_markup=browse_menu(),
     )
 
 
@@ -207,6 +213,11 @@ async def show_next_profile(message, user_id):
     # без своего фото чужие не смотрим: при взаимности фото открывается у обоих
     if viewer.get("age") and not viewer.get("photo_id"):
         await message.answer(ui.PHOTO_NEEDED)
+        return
+
+    # анкету скрыли за мат — сначала заполнить заново
+    if viewer.get("age") and not viewer.get("description"):
+        await message.answer(ui.PROFILE_REDO, reply_markup=main_menu())
         return
 
     candidates = await get_candidates(user_id)
@@ -233,6 +244,7 @@ async def show_next_profile(message, user_id):
 
     if not filtered:
         current_profile.pop(user_id, None)
+        await set_viewing(user_id, None)
         await message.answer(ui.NO_CANDIDATES, reply_markup=main_menu())
         return
 
@@ -279,6 +291,8 @@ async def notify_liked(bot, person_id):
             ui.LIKED_YOU,
             reply_markup=liked_you_keyboard(),
         )
+    except TelegramForbiddenError:
+        pass  # человек заблокировал бота
     except Exception:
         logging.exception("Не удалось отправить уведомление %s", person_id)
 
@@ -549,13 +563,35 @@ async def start_handler(
 
 @router.message(F.text.in_(ui.CANCEL_ALIASES))
 async def cancel_handler(message: Message, state: FSMContext):
+    data = await state.get_data()
     await state.clear()
-    await message.answer(ui.CANCELLED, reply_markup=main_menu())
+    await message.answer(ui.CANCELLED, reply_markup=back_menu(data))
+
+
+def back_menu(data: dict):
+    """После вопроса из ленты возвращаемся в ленту, иначе — в главное меню."""
+    return browse_menu() if data.get("from_browse") else main_menu()
+
+
+async def bad_profile_input(message: Message, state: FSMContext, text: str) -> bool:
+    """Мат и пошлость в анкете: не принимаем + предупреждение (на третье — бан)."""
+    if not moderation.is_bad(text):
+        return False
+    verdict = await strikes.give(message.bot, message.from_user.id, "profile", ui.REASON_PROFILE, text)
+    if strikes.is_ban_text(verdict):
+        await state.clear()
+        await message.answer(verdict, reply_markup=ReplyKeyboardRemove())
+    else:
+        await message.answer(f"{ui.PROFILE_BAD_INPUT}\n\n{verdict}")
+    return True
 
 
 @router.message(ProfileState.name, F.text)
 async def profile_name(message: Message, state: FSMContext):
     name = message.text.strip()
+
+    if await bad_profile_input(message, state, name):
+        return
 
     if not valid_name(name):
         await message.answer(ui.ERR_NAME)
@@ -612,6 +648,9 @@ async def profile_gender(callback: CallbackQuery, state: FSMContext):
 async def profile_city(message: Message, state: FSMContext):
     city = message.text.strip()
 
+    if await bad_profile_input(message, state, city):
+        return
+
     if not valid_city(city):
         await message.answer(ui.ERR_CITY)
         return
@@ -623,6 +662,9 @@ async def profile_city(message: Message, state: FSMContext):
 
 @router.message(ProfileState.interests, F.text)
 async def profile_interests(message: Message, state: FSMContext):
+    if await bad_profile_input(message, state, message.text):
+        return
+
     interests = normalize_interests(message.text)
 
     if not interests:
@@ -637,6 +679,9 @@ async def profile_interests(message: Message, state: FSMContext):
 @router.message(ProfileState.description, F.text)
 async def profile_description(message: Message, state: FSMContext):
     description = message.text.strip()
+
+    if await bad_profile_input(message, state, description):
+        return
 
     if not valid_description(description):
         await message.answer(ui.ERR_ABOUT)
@@ -790,6 +835,75 @@ async def find_vibe_handler(message: Message):
     await show_next_profile(message, message.from_user.id)
 
 
+# =========================================================
+# ЛЕНТА: нижнее меню «Вайб / Дальше / Спросить / Пожаловаться / Меню»
+# =========================================================
+
+async def _viewing(message: Message):
+    """Чья анкета сейчас открыта; если никакой — сразу показываем следующую."""
+    viewer = await get_user(message.from_user.id)
+    person_id = viewer.get("viewing") if viewer else None
+    if not person_id:
+        await show_next_profile(message, message.from_user.id)
+        return None
+    return person_id
+
+
+@router.message(StateFilter(None), F.text == ui.BROWSE_LIKE)
+async def browse_like(message: Message):
+    person_id = await _viewing(message)
+    if not person_id:
+        return
+    user_id = message.from_user.id
+    if user_id != ADMIN_ID and not ratelimit.hit("like", user_id):
+        await message.answer(ui.TOO_FAST_LIKES)
+        return
+
+    is_new = await add_like(from_user=user_id, to_user=person_id)
+    if await has_like(from_user=person_id, to_user=user_id):
+        # взаимно: останавливаемся на этом моменте, «Дальше» — когда захочет
+        await set_viewing(user_id, None)
+        await notify_mutual(message.bot, user_id, person_id)
+        return
+    if is_new:
+        await notify_liked(message.bot, person_id)
+    await show_next_profile(message, user_id)
+
+
+@router.message(StateFilter(None), F.text == ui.BROWSE_SKIP)
+async def browse_skip(message: Message):
+    person_id = await _viewing(message)
+    if not person_id:
+        return
+    await add_skip(from_user=message.from_user.id, to_user=person_id)
+    await show_next_profile(message, message.from_user.id)
+
+
+@router.message(StateFilter(None), F.text == ui.BROWSE_ASK)
+async def browse_ask(message: Message, state: FSMContext):
+    person_id = await _viewing(message)
+    if not person_id:
+        return
+    await state.set_state(QuestionState.answering)
+    await state.update_data(question_to=person_id, from_browse=True)
+    await message.answer(ui.ASK_QUESTION, reply_markup=cancel_keyboard())
+
+
+@router.message(StateFilter(None), F.text == ui.BROWSE_REPORT)
+async def browse_report(message: Message):
+    person_id = await _viewing(message)
+    if not person_id:
+        return
+    await message.answer(ui.REPORT_ASK, reply_markup=report_reasons_keyboard(person_id))
+
+
+@router.message(StateFilter(None), F.text == ui.BROWSE_MENU)
+async def browse_menu_back(message: Message):
+    await set_viewing(message.from_user.id, None)
+    incoming = len(await get_incoming_likes(message.from_user.id))
+    await message.answer(ui.menu_home(incoming), reply_markup=main_menu())
+
+
 @router.message(F.text.in_(ui.menu_texts(ui.MENU_LIKES)))
 async def my_vibes_handler(message: Message):
     await show_incoming_likes(message, message.from_user.id)
@@ -911,22 +1025,23 @@ async def question_text_handler(
 
     warning = await check_text(message.bot, message.from_user.id, question_text)
     if warning:
-        if warning == ui.BANNED_WORDS:
+        if strikes.is_ban_text(warning):
             await state.clear()
         await message.answer(warning)
         return
 
+    data = await state.get_data()
+
     if message.from_user.id != ADMIN_ID and not ratelimit.hit("question", message.from_user.id):
         await state.clear()
-        await message.answer(ui.TOO_FAST_QUESTIONS, reply_markup=main_menu())
+        await message.answer(ui.TOO_FAST_QUESTIONS, reply_markup=back_menu(data))
         return
 
-    data = await state.get_data()
     person_id = data.get("question_to")
 
     if not person_id:
         await state.clear()
-        await message.answer(ui.QUESTION_NO_TARGET, reply_markup=main_menu())
+        await message.answer(ui.QUESTION_NO_TARGET, reply_markup=back_menu(data))
         return
 
     question_id = await send_question(
@@ -940,7 +1055,7 @@ async def question_text_handler(
 
     await message.answer(
         ui.QUESTION_SENT if question_id is not None else ui.QUESTION_FAILED,
-        reply_markup=main_menu(),
+        reply_markup=back_menu(data),
     )
 
 
@@ -1022,7 +1137,7 @@ async def question_reply_handler(
 ):
     warning = await check_text(message.bot, message.from_user.id, message.text or "")
     if warning:
-        if warning == ui.BANNED_WORDS:
+        if strikes.is_ban_text(warning):
             await state.clear()
         await message.answer(warning)
         return

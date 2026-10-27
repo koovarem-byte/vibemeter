@@ -16,11 +16,14 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 import broadcast
+import moderation
+import strikes
 import weeklystats
 from vibehour import MSK
 from config import ADMIN_ID
 from database import (
     admin_counts,
+    active_profiles,
     banned_users,
     broadcast_stats,
     broadcast_targets,
@@ -31,6 +34,7 @@ from database import (
     get_stats,
     get_user,
     growth_metrics,
+    hide_profile_text,
     open_reports,
     recent_profiles,
     set_banned,
@@ -122,6 +126,7 @@ async def home_keyboard():
         [_b("📊 Неделя", "adm:week"), _b("📈 Источники", "adm:sources")],
         [_b("📣 Рассылка и голоса", "adm:bc")],
         [_b("🙏 «Мы снова в строю» всем", "adm:sorry")],
+        [_b("🧹 Проверить анкеты (мат, младше 18)", "adm:scan")],
     )
 
 
@@ -241,15 +246,27 @@ async def card_text(person, note: str = "") -> str:
         f"💜 Получил(а) вайбов: {st['likes_received']} · отправил(а): {st['likes_sent']} · взаимных: {st['mutual_likes']}",
         f"🚩 Жалоб всего: {reports} · {status}",
     ]
-    if person.get("photo_warnings"):
-        lines.append(f"⚠️ Предупреждений за фото: {person['photo_warnings']} (следующее — бан)")
+    total = _strikes(person)
+    if total:
+        lines.append(
+            f"⚠️ Предупреждений: {total} из {strikes.MAX_WARNINGS} "
+            f"(фото {person.get('photo_warnings') or 0} · мат {person.get('question_strikes') or 0} · "
+            f"анкета {person.get('profile_strikes') or 0})"
+            + (" — следующее нарушение = бан" if total >= strikes.MAX_WARNINGS else "")
+        )
     if person.get("age") and not person.get("photo_id") and not person["is_banned"]:
         lines.append("🤳 Фото нет — анкета скрыта, ждём новое")
+    if person.get("age") and not person.get("description") and not person["is_banned"]:
+        lines.append("📝 Анкета скрыта — ждём, пока заполнит заново")
     if about:
         lines += ["", f"<i>{about}</i>"]
     if note:
         lines = [note, ""] + lines
     return "\n".join(lines)
+
+
+def _strikes(person) -> int:
+    return sum(person.get(k) or 0 for k in ("photo_warnings", "question_strikes", "profile_strikes"))
 
 
 def card_keyboard(person, report=False, review=False):
@@ -259,9 +276,13 @@ def card_keyboard(person, report=False, review=False):
         else _b("🚫 Забанить", f"adm:ban:{pid}", "danger")
     )
     rows = [[first]]
-    if person.get("photo_id") and not person["is_banned"]:
-        warn = "🚫 Нет лица — 2-й раз, бан" if person.get("photo_warnings") else "⚠️ Нет лица / чужое"
-        rows.append([_b(warn, f"adm:warn:{pid}", "danger" if person.get("photo_warnings") else None)])
+    if not person["is_banned"]:
+        last = _strikes(person) >= strikes.MAX_WARNINGS  # следующее нарушение — бан
+        mark = "🚫" if last else "⚠️"
+        if person.get("photo_id"):
+            rows.append([_b(f"{mark} Нет лица / чужое", f"adm:warn:{pid}", "danger" if last else None)])
+        if person.get("description"):
+            rows.append([_b(f"{mark} Неадекватная анкета", f"adm:badprof:{pid}", "danger" if last else None)])
     if report and not person["is_banned"]:
         rows[0].append(_b("👌 Жалобы ложные", f"adm:dismiss:{pid}"))
     if review and not person["is_banned"]:
@@ -352,23 +373,39 @@ async def cb_dismiss(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("adm:warn:"))
 async def cb_photo_warn(callback: CallbackQuery):
-    """Фото без лица или чужое: первый раз — фото убрать и предупредить, второй — бан."""
+    """Фото без лица или чужое: фото убираем + предупреждение (на третье нарушение — бан)."""
     person_id = int(callback.data.split(":")[2])
     person = await get_user(person_id)
     if not person or not person.get("photo_id"):
         await callback.answer("Фото уже убрано", show_alert=True)
         return
-    warnings = await warn_photo(person_id)
-    if warnings >= 2:
-        await set_banned(person_id, True)
-        text, toast = ui.BANNED_PHOTO, "Второй раз — забанен"
-    else:
-        text, toast = ui.PHOTO_WARNING, "Фото убрано, предупреждение отправлено"
+    total = await warn_photo(person_id)
+    verdict = await strikes.punish(callback.bot, person_id, total, ui.REASON_PHOTO)
+    text = verdict if strikes.is_ban_text(verdict) else f"{ui.PHOTO_WARNING}\n\n{verdict}"
+    await _notify(callback.bot, person_id, text)
+    await _refresh_card(callback, person_id, "Забанен" if strikes.is_ban_text(verdict) else "Фото убрано, предупреждение ушло")
+
+
+@router.callback_query(F.data.startswith("adm:badprof:"))
+async def cb_bad_profile(callback: CallbackQuery):
+    """Неадекватная анкета: скрываем, просим заполнить заново + предупреждение."""
+    person_id = int(callback.data.split(":")[2])
+    person = await get_user(person_id)
+    if not person or not person.get("description"):
+        await callback.answer("Анкета уже скрыта", show_alert=True)
+        return
+    await hide_profile_text(person_id)
+    verdict = await strikes.give(callback.bot, person_id, "profile", ui.REASON_PROFILE)
+    text = verdict if strikes.is_ban_text(verdict) else f"{ui.PROFILE_HIDDEN}\n\n{verdict}"
+    await _notify(callback.bot, person_id, text)
+    await _refresh_card(callback, person_id, "Забанен" if strikes.is_ban_text(verdict) else "Анкета скрыта, предупреждение ушло")
+
+
+async def _notify(bot, person_id: int, text: str):
     try:
-        await callback.bot.send_message(person_id, text)
+        await bot.send_message(person_id, text)
     except Exception:
-        pass
-    await _refresh_card(callback, person_id, toast)
+        pass  # заблокировал бота — ничего страшного
 
 
 @router.callback_query(F.data.startswith("adm:ok:"))
@@ -380,6 +417,17 @@ async def cb_photo_ok(callback: CallbackQuery):
 # ПРОВЕРКА ФОТО
 # =========================================================
 
+def profile_flags(person) -> list[str]:
+    """Что подозрительного в текстах анкеты: мат, возраст младше 18."""
+    flags = []
+    texts = [person.get(k) or "" for k in ("full_name", "city", "interests", "description")]
+    if any(moderation.is_bad(t) for t in texts):
+        flags.append("🤬 В анкете мат или пошлость")
+    if moderation.looks_underage(person.get("description") or ""):
+        flags.append("🔞 Похоже, младше 18 (пишет возраст в «о себе»)")
+    return flags
+
+
 async def review_photo(bot, user_id: int, is_new: bool):
     """Каждое новое фото — админу, бан в одну кнопку. Ошибки не мешают пользователю."""
     if user_id == ADMIN_ID:
@@ -388,6 +436,7 @@ async def review_photo(bot, user_id: int, is_new: bool):
         person = await get_user(user_id)
         if person and person.get("photo_id"):
             note = "🆕 <b>Новая анкета</b> — проверь фото" if is_new else "🔄 <b>Сменил(а) фото</b> — проверь"
+            note += "".join(f"\n{flag}" for flag in profile_flags(person))
             await send_card(bot, person, note=note, review=True)
     except Exception:
         logging.exception("Не удалось отправить фото на проверку %s", user_id)
@@ -544,3 +593,29 @@ async def cb_sorry_go(callback: CallbackQuery):
         await callback.answer("Уже идёт рассылка, дождись итога", show_alert=True)
         return
     await _show(callback, await sorry_text() + "\n\nИтог пришлю отдельным сообщением", sorry_keyboard_admin())
+
+
+# =========================================================
+# ПРОВЕРКА ТЕКСТОВ ВСЕХ АНКЕТ
+# =========================================================
+
+@router.callback_query(F.data == "adm:scan")
+async def cb_scan(callback: CallbackQuery):
+    """Анкеты с матом или «мне 15»: карточками с кнопками, не больше LIST_LIMIT за раз."""
+    await callback.answer("Проверяю…")
+    found = []
+    for p in await active_profiles():
+        flags = profile_flags(p)
+        if flags:
+            found.append((p["telegram_id"], flags))
+    if not found:
+        await callback.message.answer("🧹 Подозрительных анкет не нашёл", reply_markup=_kb([BACK]))
+        return
+    await callback.message.answer(
+        f"🧹 Подозрительных анкет: <b>{len(found)}</b>"
+        + (f", показываю первые {LIST_LIMIT}" if len(found) > LIST_LIMIT else "")
+    )
+    for person_id, flags in found[:LIST_LIMIT]:
+        person = await get_user(person_id)
+        if person:
+            await send_card(callback.bot, person, note="\n".join(flags))
