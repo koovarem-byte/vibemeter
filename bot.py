@@ -18,6 +18,7 @@ from handlers import router
 import admin
 from webapp_api import setup_webapp
 import vibehour
+import referral
 import ui
 import alerts
 from fsm_storage import PgStorage
@@ -132,6 +133,7 @@ async def run_webhook():
     await setup_menu_button(bot)
     await setup_profile(bot)
     vibe_hour_task = asyncio.create_task(vibehour.loop(bot))
+    referral_task = asyncio.create_task(referral.loop(bot))
     alerts_task = alerts.install(bot, ADMIN_ID)
 
     app = create_app(bot, dp, webhook=True)
@@ -152,6 +154,7 @@ async def run_webhook():
         await _stop.wait()
     finally:
         vibe_hour_task.cancel()
+        referral_task.cancel()
         alerts_task.cancel()
         await runner.cleanup()
         await bot.session.close()
@@ -176,6 +179,7 @@ async def run_polling():
     await setup_menu_button(bot)
     await setup_profile(bot)
     vibe_hour_task = asyncio.create_task(vibehour.loop(bot))
+    referral_task = asyncio.create_task(referral.loop(bot))
     alerts_task = alerts.install(bot, ADMIN_ID)
 
     # webhook здесь специально не снимаем: если бот уже работает
@@ -188,6 +192,7 @@ async def run_polling():
         await dp.start_polling(bot, handle_signals=False)
     finally:
         vibe_hour_task.cancel()
+        referral_task.cancel()
         alerts_task.cancel()
         await runner.cleanup()
         await bot.session.close()

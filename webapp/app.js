@@ -1069,7 +1069,7 @@ function cardHtml(c) {
       </div>
       <div class="pinfo" data-act="details">
         <div class="top">
-          <div class="grow"><div class="pname">${esc(c.name)}, ${c.age}</div><div class="pcity">📍 ${esc(c.city || "")}</div></div>
+          <div class="grow"><div class="pname">${esc(c.name)}, ${c.age}${c.vip ? " 💎" : ""}</div><div class="pcity">📍 ${esc(c.city || "")}</div></div>
           ${gauge(c.vibe, 78)}
         </div>
         ${c.daily ? `<div class="chips" style="margin-bottom:8px"><span class="chip daily-chip ${c.daily.match ? "common" : ""}">${c.daily.match ? "✦ " : ""}Вайб дня: ${esc(c.daily.label)}</span></div>` : ""}

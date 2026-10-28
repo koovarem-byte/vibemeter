@@ -86,6 +86,8 @@ import crush
 import vibehour
 import citygoal
 import boost
+import referral
+import vip
 import ratelimit
 import admin
 from utils import (
@@ -171,6 +173,7 @@ def person_json(person, viewer=None, full=False):
         "city": (person["city"] or "").strip(),
         "interests": interests_list(person),
         "about": person["description"],
+        "vip": vip.is_vip(person),
     }
     if viewer is not None:
         vibe, common = calculate_vibe(viewer, person)
@@ -239,6 +242,11 @@ async def is_mutual(a: int, b: int) -> bool:
 async def api_me(request):
     user = request["user"]
     await touch_user(user["telegram_id"])
+    # «Позвать подругу»: заход в Mini App — тоже активность приглашённой
+    try:
+        await referral.check(request.app["bot"], user["telegram_id"])
+    except Exception:
+        logging.exception("Рефералка: проверка %s", user["telegram_id"])
 
     stats = await get_stats(user["telegram_id"])
     done, total = ui.achievements_progress(stats)
@@ -282,7 +290,7 @@ async def api_next(request):
         key=lambda p: (
             p["telegram_id"] in liked_me,
             online_first and vibehour.is_online(p),
-            boost.is_boosted(p),
+            boost.is_boosted(p) or vip.is_vip(p),
             calculate_vibe(user, p)[0] + random.random() * 12,
         ),
     )

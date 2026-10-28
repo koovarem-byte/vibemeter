@@ -13,6 +13,8 @@
 
 from html import escape
 
+import vip
+
 
 # =========================================================
 # ЭМОДЗИ
@@ -342,11 +344,18 @@ def _about(text: str) -> str:
     return f"{tag}{esc(text)}</blockquote>"
 
 
+VIP_BADGE = "💎"
+
+
+def _badge(person) -> str:
+    return f" {VIP_BADGE}" if vip.is_vip(person) else ""
+
+
 def _name_age(person) -> str:
     text = f"<b>{esc(person['full_name'])}"
     if person["age"]:
         text += f", {person['age']}"
-    return text + "</b>"
+    return text + "</b>" + _badge(person)
 
 
 def profile_card(person, vibe=None, common=None, same_city=False) -> str:
@@ -407,6 +416,9 @@ def own_profile(user, stats=None, done=0, total=0, city=None) -> str:
             f"{e('crown')} Уровень {lvl_n} · {lvl_name} · {done} из {total} достижений"
         )
 
+    if vip.is_vip(user):
+        blocks.append(vip_status(user))
+
     if city:
         blocks.append(f"{city_progress(city)}\nЗови друзей: каждый двигает шкалу города")
 
@@ -459,6 +471,7 @@ def mutual_caption(other) -> str:
         line += f", {other['age']}"
     if other["city"]:
         line += f", {esc(other['city'])}"
+    line += _badge(other)
 
     return (
         f"{title('hands', 'Взаимный вайб. Вот как он выглядит')}\n"
@@ -702,6 +715,131 @@ def friend_joined(total: int, city: dict | None) -> str:
     if city:
         text += f"\n\n{city_progress(city)}\nШкала твоего города сдвинулась"
     return text
+
+
+# =========================================================
+# «ПОЗВАТЬ ПОДРУГУ» И VIP
+# =========================================================
+
+MENU_INVITE = "💌 Позвать подругу"
+BTN_SHARE_FRIEND = "Переслать подруге"
+BTN_WHO_LIKED = "💎 Кто меня лайкнул"
+BTN_INVITE = "💌 Позвать подругу"
+BTN_WRITE_MATCH = "✍️ Написать"
+BTN_FILL_PROFILE_CAMPAIGN = "✍️ Заполнить анкету"
+
+INVITE_SHARE_TEXT = (
+    "Нашёл аналог дайвинчика, только без фриков и оценки по внешности, "
+    "фото открывается только после взаимного вайба\n\n"
+    "Девушкам там вип бесплатно, глянь👇"
+)
+
+INVITE_REWARD = "Ты позвал 3 подруги, держи вип на 7 дней💎"
+
+MATCH_TEXT = (
+    "У вас взаимный вайб💜\n\n"
+    "Не жди пока напишет другой, напиши сам👇"
+)
+
+
+def vip_status(user) -> str:
+    if vip.is_forever(user):
+        return f"{VIP_BADGE} <b>VIP навсегда</b>: ты выше в ленте и видишь, кто тебя лайкнул"
+    return (
+        f"{VIP_BADGE} <b>VIP до {user['vip_until']:%d.%m}</b>: "
+        "ты выше в ленте и видишь, кто тебя лайкнул"
+    )
+
+
+def invite_screen(user, ref_link: str, qualified: int) -> str:
+    lines = [
+        plain_title("💌", "Позвать подругу"),
+        "",
+        "Подругам VIP бесплатно, а тебе за каждые 3 подруги — VIP на 7 дней💎",
+        "VIP: 💎 в анкете, ты выше в ленте и видишь, кто тебя лайкнул",
+        "",
+        "Подруга засчитывается, когда заполнит анкету с фото и зайдёт ещё раз на следующий день",
+        "",
+        f"Засчитано подруг: <b>{qualified % 3}/3</b>"
+        + (f" (до следующего VIP) · всего {qualified}" if qualified >= 3 else ""),
+    ]
+    if user and vip.is_vip(user):
+        lines += ["", vip_status(user)]
+    lines += ["", "Твоя ссылка👇", ref_link]
+    return "\n".join(lines)
+
+
+def who_liked(people: list, user) -> str:
+    if not people:
+        return f"{VIP_BADGE} <b>Кто меня лайкнул</b>\n\nПока никто. Полистай анкеты: вайбы приходят в ответ"
+    lines = [f"{VIP_BADGE} <b>Кто меня лайкнул</b> · {len(people)}", ""]
+    for p in people[:30]:
+        line = f"💜 {esc(p['full_name'])}"
+        if p["age"]:
+            line += f", {p['age']}"
+        if p["city"]:
+            line += f" · {esc(p['city'])}"
+        lines.append(line + _badge(p))
+    if len(people) > 30:
+        lines.append(f"…и ещё {len(people) - 30}")
+    lines += ["", "Фото откроется, когда ответишь вайбом. Жми «Посмотреть» — они первыми в ленте"]
+    return "\n".join(lines)
+
+
+def who_liked_locked(count: int) -> str:
+    who = plural(count, "человек", "человека", "человек")
+    return (
+        f"{VIP_BADGE} <b>Кто меня лайкнул</b>\n\n"
+        f"Тебя лайкнули: <b>{count}</b> {who}. Список сразу всех — для VIP\n\n"
+        "VIP дают за 3 подруги: позови их по своей ссылке, им VIP бесплатно"
+    )
+
+
+# Шаблоны рассылки из админки: {ref_link} — личная ссылка получателя
+CAMPAIGNS = {
+    "ref_boys1": {
+        "title": "Парням: позови подруг (VIP на 7 дней, 1000₽)",
+        "sticker": "sticker_3_vip_7days",
+        "button": "invite",
+        "text": (
+            "Нас уже 500🔥\n\n"
+            "Но девушек пока мало, сам понимаешь\n\n"
+            "Позови подруг, им вип бесплатно, а тебе за 3 подруги вип на 7 дней\n\n"
+            "Ещё среди всех кто приведёт хотя бы одну разыграю 1000₽\n\n"
+            "Твоя ссылка👇\n"
+            "{ref_link}"
+        ),
+    },
+    "vip_girls1": {
+        "title": "Девушкам: дарю VIP",
+        "sticker": "sticker_2_vip_girls",
+        "button": "invite",
+        "text": (
+            "Привет, спасибо что ты с нами💜\n\n"
+            "Дарю тебе вип, теперь ты выше в ленте и видишь кто тебя лайкнул\n\n"
+            "Позовёшь подруг, им тоже вип бесплатно👇\n"
+            "{ref_link}"
+        ),
+    },
+    "fill1": {
+        "title": "Без анкеты: доделай анкету",
+        "sticker": None,
+        "button": "fill",
+        "text": (
+            "Ты так и не доделал анкету😅\n\n"
+            "Без неё тебя никто не видит, а тут уже 500 человек. Заполни за минуту и погнали👇"
+        ),
+    },
+}
+# какую кампанию девушка получает сразу после анкеты (вместе с VIP)
+GIRLS_CAMPAIGN = "vip_girls1"
+
+SEGMENTS = {
+    "male": "👨 Парни",
+    "female": "👩 Девушки",
+    "noprofile": "📝 Без анкеты",
+    "all": "👥 Все",
+}
 
 
 # Вайб-час

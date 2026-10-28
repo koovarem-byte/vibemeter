@@ -10,6 +10,7 @@ import os
 from urllib.parse import quote
 
 import ui
+from referral import share_url
 
 
 # Цвет кнопки (Telegram даёт только три): синий — главное действие,
@@ -103,6 +104,7 @@ def main_menu():
                 menu_btn(ui.MENU_STATS),
                 menu_btn(ui.MENU_SETTINGS),
             ],
+            [KeyboardButton(text=ui.MENU_INVITE, style=PRIMARY)],
         ],
         resize_keyboard=True,
         input_field_placeholder=ui.MENU_PLACEHOLDER,
@@ -179,23 +181,58 @@ def play_button(person_id: int):
     )
 
 
-def mutual_actions(person_id: int, username: str | None, story=None):
-    """После взаимного вайба: сразу ссылка на чат, если есть username."""
+def write_button(person_id: int, username: str | None, text=ui.BTN_WRITE, neon="hands"):
+    """«Написать»: с username — сразу чат, без него — contact: (учёт в write_clicks)."""
     if username:
-        write = btn(
-            ui.BTN_WRITE,
-            url=f"https://t.me/{username.lstrip('@')}",
-            neon="hands",
-            style=SUCCESS,
-        )
-    else:
-        write = btn(ui.BTN_WRITE, f"contact:{person_id}", neon="hands", style=SUCCESS)
+        return btn(text, url=f"https://t.me/{username.lstrip('@')}", neon=neon, style=SUCCESS)
+    return btn(text, f"contact:{person_id}", neon=neon, style=SUCCESS)
 
-    keyboard = [[write, btn(ui.BTN_NEXT, "browse", neon="speedo")]]
+
+def mutual_actions(person_id: int, username: str | None, story=None, write=True):
+    """После взаимного вайба: сразу ссылка на чат, если есть username.
+    write=False — «Написать» придёт следующим сообщением (match_keyboard)."""
+    first = [write_button(person_id, username)] if write else []
+    keyboard = [first + [btn(ui.BTN_NEXT, "browse", neon="speedo")]]
     for extra in (play_button(person_id), story):
         if extra:
             keyboard.append([extra])
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def match_keyboard(person_id: int, username: str | None):
+    """«У вас взаимный вайб»: «✍️ Написать» — та же логика, что у «Написать»."""
+    return rows([write_button(person_id, username, text=ui.BTN_WRITE_MATCH, neon=None)])
+
+
+def invite_keyboard(ref_link: str):
+    return rows(
+        [btn(ui.BTN_SHARE_FRIEND, url=share_url(ref_link), style=SUCCESS)],
+        [btn(ui.BTN_WHO_LIKED, "who_liked", style=PRIMARY)],
+    )
+
+
+def who_liked_keyboard(has_people: bool, vip: bool):
+    if vip and has_people:
+        return rows([btn(ui.BTN_VIEW, "my_vibes", neon="heart", style=PRIMARY)])
+    if not vip:
+        return rows([btn(ui.BTN_INVITE, "invite", style=PRIMARY)])
+    return rows([btn(ui.BTN_FIND, "browse", neon="bolt", style=PRIMARY)])
+
+
+def likes_header_keyboard():
+    return rows([btn(ui.BTN_WHO_LIKED, "who_liked", style=PRIMARY)])
+
+
+def campaign_keyboard(button: str | None, bot_username: str):
+    """Кнопка под рассылкой из админки."""
+    if button == "invite":
+        return rows([btn(ui.BTN_INVITE, "invite", style=PRIMARY)])
+    if button == "fill":
+        return rows([btn(
+            ui.BTN_FILL_PROFILE_CAMPAIGN,
+            url=f"https://t.me/{bot_username}?start=bc", style=PRIMARY,
+        )])
+    return None
 
 
 def contact_keyboard(username: str):

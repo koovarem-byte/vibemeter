@@ -10,6 +10,9 @@ load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
 _pool = None
 
+# «навсегда» для VIP девушек
+VIP_FOREVER = "2099-01-01"
+
 
 async def get_pool():
     global _pool
@@ -328,6 +331,29 @@ async def init_db():
             )
         """)
 
+        # «Позвать подругу»: когда подруга засчитана (анкета с фото + вернулась на другой день)
+        await conn.execute("""
+            ALTER TABLE referrals
+            ADD COLUMN IF NOT EXISTS qualified_at TIMESTAMPTZ
+        """)
+        # invitee и так PRIMARY KEY, индекс — на случай старой таблицы без него
+        await conn.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS referrals_invitee_uniq ON referrals (invitee)
+        """)
+        # VIP: 💎 в анкете, выше в ленте, «Кто меня лайкнул».
+        # vip_rewards — сколько раз уже дали 7 дней за каждые 3 подруги
+        await conn.execute("""
+            ALTER TABLE users
+            ADD COLUMN IF NOT EXISTS vip_until TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS vip_rewards INTEGER NOT NULL DEFAULT 0
+        """)
+        # девушкам с готовой анкетой VIP навсегда (повторный запуск ничего не меняет)
+        await conn.execute(f"""
+            UPDATE users SET vip_until = '{VIP_FOREVER}'
+            WHERE gender = 'female' AND age IS NOT NULL AND photo_id IS NOT NULL
+              AND (vip_until IS NULL OR vip_until < '{VIP_FOREVER}')
+        """)
+
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS game_answers (
                 id BIGSERIAL PRIMARY KEY,
@@ -446,6 +472,121 @@ async def count_referrals(inviter: int) -> int:
             JOIN users u ON u.telegram_id = r.invitee
             WHERE r.inviter = $1 AND u.age IS NOT NULL AND u.photo_id IS NOT NULL
         """, inviter)
+
+
+# готовая анкета подруги: те же поля, что в счёте анкет админки
+_FEMALE_DONE = """
+    u.gender = 'female' AND u.age IS NOT NULL AND u.city IS NOT NULL
+    AND u.interests IS NOT NULL AND u.description IS NOT NULL
+    AND u.photo_id IS NOT NULL AND NOT u.is_banned
+"""
+
+
+async def pending_invitees() -> set[int]:
+    """Приглашённые, которых ещё могут засчитать (пол не мужской)."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT r.invitee FROM referrals r
+            JOIN users u ON u.telegram_id = r.invitee
+            WHERE r.qualified_at IS NULL AND COALESCE(u.gender, 'female') = 'female'
+        """)
+    return {r["invitee"] for r in rows}
+
+
+async def qualify_referrals(invitee: int | None = None) -> list[dict]:
+    """Засчитывает подруг: девушка, анкета с фото, не в бане и заходила
+    в день ПОСЛЕ регистрации. invitee=None — проверить всех.
+    Возвращает только что засчитанных: [{invitee, inviter}]."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        rows = await conn.fetch(f"""
+            UPDATE referrals r SET qualified_at = now()
+            FROM users u
+            WHERE u.telegram_id = r.invitee
+              AND r.qualified_at IS NULL
+              AND ($1::bigint IS NULL OR r.invitee = $1)
+              AND {_FEMALE_DONE}
+              AND EXISTS (
+                  SELECT 1 FROM user_days d
+                  WHERE d.user_id = u.telegram_id
+                    AND d.day > (u.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Moscow')::date
+              )
+            RETURNING r.invitee, r.inviter
+        """, invitee)
+    return [dict(r) for r in rows]
+
+
+async def count_qualified(inviter: int) -> int:
+    db = await get_pool()
+    async with db.acquire() as conn:
+        return await conn.fetchval(
+            "SELECT COUNT(*) FROM referrals WHERE inviter = $1 AND qualified_at IS NOT NULL",
+            inviter,
+        )
+
+
+async def grant_referral_vip(inviter: int) -> int:
+    """+7 дней VIP за каждые 3 засчитанные подруги, за которые ещё не давали.
+    Возвращает, сколько наград выдано сейчас (обычно 0 или 1)."""
+    db = await get_pool()
+    given = 0
+    async with db.acquire() as conn:
+        while await conn.fetchval("""
+            UPDATE users
+            SET vip_rewards = vip_rewards + 1,
+                vip_until = GREATEST(now(), COALESCE(vip_until, now())) + interval '7 days'
+            WHERE telegram_id = $1
+              AND vip_rewards < (
+                  SELECT COUNT(*) FROM referrals
+                  WHERE inviter = $1 AND qualified_at IS NOT NULL
+              ) / 3
+            RETURNING TRUE
+        """, inviter):
+            given += 1
+    return given
+
+
+async def grant_female_vip(telegram_id: int) -> bool:
+    """VIP навсегда девушке. True, если дали только что (а не было раньше)."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        return await conn.fetchval(f"""
+            UPDATE users SET vip_until = '{VIP_FOREVER}'
+            WHERE telegram_id = $1 AND gender = 'female'
+              AND (vip_until IS NULL OR vip_until < '{VIP_FOREVER}')
+            RETURNING TRUE
+        """, telegram_id) is not None
+
+
+async def raffle_participants() -> list[dict]:
+    """Розыгрыш: все, у кого есть хотя бы одна засчитанная подруга."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT u.telegram_id, u.full_name, u.username, u.age, u.city, u.is_banned,
+                   COUNT(*) AS friends
+            FROM referrals r JOIN users u ON u.telegram_id = r.inviter
+            WHERE r.qualified_at IS NOT NULL
+            GROUP BY u.telegram_id
+            ORDER BY friends DESC, MIN(r.qualified_at)
+        """)
+    return [dict(r) for r in rows]
+
+
+async def get_app_state(key: str) -> str | None:
+    db = await get_pool()
+    async with db.acquire() as conn:
+        return await conn.fetchval("SELECT value FROM app_state WHERE key = $1", key)
+
+
+async def set_app_state(key: str, value: str):
+    db = await get_pool()
+    async with db.acquire() as conn:
+        await conn.execute("""
+            INSERT INTO app_state (key, value) VALUES ($1, $2)
+            ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+        """, key, value)
 
 
 # DAILY VIBE
@@ -1471,7 +1612,12 @@ async def admin_counts() -> dict:
               (SELECT COUNT(*) FROM users WHERE age IS NOT NULL AND NOT is_banned
                  AND last_seen > now() - interval '15 minutes') AS online,
               (SELECT COUNT(*) FROM users WHERE age IS NOT NULL
-                 AND last_active = (now() AT TIME ZONE 'Europe/Moscow')::date) AS active_today
+                 AND last_active = (now() AT TIME ZONE 'Europe/Moscow')::date) AS active_today,
+              (SELECT COUNT(*) FROM referrals) AS invites,
+              (SELECT COUNT(*) FROM referrals WHERE qualified_at IS NOT NULL) AS qualified,
+              (SELECT COUNT(*) FROM users WHERE vip_until > now() AND NOT is_banned) AS vip_active,
+              (SELECT COUNT(*) FROM users WHERE vip_until > now() AND NOT is_banned
+                 AND gender IS DISTINCT FROM 'female') AS vip_by_friends
         """)
     return dict(row)
 
@@ -1632,6 +1778,30 @@ async def broadcast_targets(campaign: str) -> list[dict]:
             ORDER BY u.telegram_id
         """, campaign)
     return [dict(r) for r in rows]
+
+
+# сегменты рассылки с предпросмотром
+SEGMENTS_SQL = {
+    "male": "u.gender = 'male'",
+    "female": "u.gender = 'female'",
+    "noprofile": "u.gender IS NULL",
+    "all": "TRUE",
+}
+
+
+async def campaign_targets(campaign: str, segment: str) -> list[int]:
+    """Кому уйдёт кампания: сегмент, не в бане, не отписан, эту кампанию ещё не получал."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        rows = await conn.fetch(f"""
+            SELECT u.telegram_id FROM users u
+            WHERE {SEGMENTS_SQL[segment]}
+              AND NOT u.is_banned AND u.news_notify
+              AND NOT EXISTS (SELECT 1 FROM broadcast_log b
+                              WHERE b.campaign = $1 AND b.user_id = u.telegram_id)
+            ORDER BY u.telegram_id
+        """, campaign)
+    return [r["telegram_id"] for r in rows]
 
 
 async def claim_broadcast(campaign: str, user_id: int) -> bool:

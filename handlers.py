@@ -10,6 +10,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import (
     Message,
     CallbackQuery,
+    LinkPreviewOptions,
     ReplyKeyboardRemove,
 )
 
@@ -22,6 +23,10 @@ import ratelimit
 import admin
 import moderation
 import strikes
+import broadcast
+import referral
+import stickers
+import vip
 from aiogram.exceptions import TelegramForbiddenError
 from database import (
     is_blocked,
@@ -37,6 +42,7 @@ from database import (
     set_vibe_hour_notify,
     count_referrals,
     get_inviter,
+    grant_female_vip,
     create_user,
     get_user,
     update_user,
@@ -61,6 +67,10 @@ from keyboards import (
     cancel_keyboard,
     incoming_actions,
     mutual_actions,
+    match_keyboard,
+    invite_keyboard,
+    who_liked_keyboard,
+    likes_header_keyboard,
     mark_vote,
     contact_keyboard,
     liked_you_keyboard,
@@ -124,6 +134,13 @@ async def ban_middleware(handler, event, data):
         return None
 
     result = await handler(event, data)
+
+    # «Позвать подругу»: приглашённую засчитываем при её активности
+    if info and referral.is_pending(user.id):
+        try:
+            await referral.check(event.bot, user.id)
+        except Exception:
+            logging.exception("Рефералка: проверка %s", user.id)
 
     # первый заход за день: напоминаем про серию (на /start она и так видна)
     is_start = isinstance(event, Message) and (event.text or "").startswith("/start")
@@ -265,8 +282,8 @@ async def show_next_profile(message, user_id):
     # Вайб-час: сначала те, кто сейчас в сети
     if vibehour.is_active():
         pool = [p for p in pool if vibehour.is_online(p)] or pool
-    # Награда за друга: анкеты с бустом первыми
-    pool = [p for p in pool if boost.is_boosted(p)] or pool
+    # Награда за друга и VIP: такие анкеты первыми
+    pool = [p for p in pool if boost.is_boosted(p) or vip.is_vip(p)] or pool
 
     await send_profile(message, random.choice(pool), user_id)
 
@@ -316,10 +333,17 @@ async def notify_mutual(bot, user_id, person_id):
         caption = ui.mutual_caption(other)
         me_side = user if viewer_id == user_id else person
         vibe, _ = calculate_vibe(me_side, other)
+        # «Написать» — отдельным сообщением ниже («У вас взаимный вайб»)
         keyboard = mutual_actions(
             other["telegram_id"], other["username"],
             story=story_button(vibe, other["full_name"]),
+            write=False,
         )
+
+        try:
+            await stickers.send(bot, viewer_id, "sticker_5_match")
+        except Exception:
+            logging.warning("Не удалось отправить стикер мэтча %s", viewer_id)
 
         try:
             if other["photo_id"]:
@@ -335,6 +359,13 @@ async def notify_mutual(bot, user_id, person_id):
                     caption,
                     reply_markup=keyboard,
                 )
+            await bot.send_message(
+                viewer_id,
+                ui.MATCH_TEXT,
+                reply_markup=match_keyboard(other["telegram_id"], other["username"]),
+            )
+        except TelegramForbiddenError:
+            pass  # человек заблокировал бота
         except Exception:
             logging.exception(
                 "Не удалось отправить взаимный вайб %s", viewer_id
@@ -418,8 +449,8 @@ async def consent_accept_callback(
             username=callback.from_user.username,
             full_name=callback.from_user.full_name,
         )
-        if ref:
-            await add_referral(callback.from_user.id, ref)
+        if ref and await add_referral(callback.from_user.id, ref):
+            referral.add_pending(callback.from_user.id)
 
     await callback.answer()
     await callback.message.edit_reply_markup(reply_markup=None)
@@ -501,11 +532,15 @@ async def start_handler(
         return
 
     if not user:
-        await state.clear()
         # Ссылка друга: t.me/бот?start=ref_<id>, запоминаем до согласия
+        # (повторный /start без ссылки её не теряет)
+        ref = (await state.get_data()).get("ref")
+        await state.clear()
         arg = command.args or ""
         if arg.startswith("ref_") and arg[4:].isdigit():
-            await state.update_data(ref=int(arg[4:]))
+            ref = int(arg[4:])
+        if ref:
+            await state.update_data(ref=ref)
         await message.answer(ui.CONSENT, reply_markup=consent_keyboard())
         return
 
@@ -755,6 +790,9 @@ async def profile_search_gender(
     )
 
     if creating:
+        await give_girl_vip(callback.bot, callback.from_user.id)
+
+    if creating:
         inviter = await get_inviter(callback.from_user.id)
         if inviter:
             try:
@@ -767,6 +805,16 @@ async def profile_search_gender(
                 )
             except Exception:
                 logging.exception("referral notify failed")
+
+
+async def give_girl_vip(bot, user_id: int):
+    """Девушке после анкеты: VIP навсегда + сообщение рассылки девушкам
+    (один раз: кампания пишется в broadcast_log, рассылка ей не повторится)."""
+    try:
+        if await grant_female_vip(user_id):
+            await broadcast.deliver(bot, user_id, ui.GIRLS_CAMPAIGN, (await bot.me()).username)
+    except Exception:
+        logging.exception("VIP девушке %s", user_id)
 
 
 @router.message(StateFilter(None), F.photo)
@@ -939,8 +987,54 @@ async def show_incoming_likes(message, user_id):
         await message.answer(ui.NO_LIKES, reply_markup=main_menu())
         return
 
-    await message.answer(ui.likes_header(len(likes)))
+    await message.answer(ui.likes_header(len(likes)), reply_markup=likes_header_keyboard())
     await show_next_profile(message, user_id)
+
+
+# =========================================================
+# «ПОЗВАТЬ ПОДРУГУ» И «КТО МЕНЯ ЛАЙКНУЛ» (VIP)
+# =========================================================
+
+async def show_invite(message: Message, user_id: int):
+    user = await get_user(user_id)
+    if not user:
+        await message.answer(ui.NEED_START)
+        return
+    link = referral.link((await message.bot.me()).username, user_id)
+    qualified = await referral.progress(user_id)
+    await message.answer(
+        ui.invite_screen(user, link, qualified),
+        reply_markup=invite_keyboard(link),
+        link_preview_options=LinkPreviewOptions(is_disabled=True),
+    )
+
+
+@router.message(F.text.in_({ui.MENU_INVITE, "Позвать подругу"}))
+async def invite_handler(message: Message):
+    await show_invite(message, message.from_user.id)
+
+
+@router.callback_query(F.data == "invite")
+async def invite_callback(callback: CallbackQuery):
+    await callback.answer()
+    await show_invite(callback.message, callback.from_user.id)
+
+
+@router.callback_query(F.data == "who_liked")
+async def who_liked_callback(callback: CallbackQuery):
+    await callback.answer()
+    user = await get_user(callback.from_user.id)
+    if not user:
+        await callback.message.answer(ui.NEED_START)
+        return
+    people = await get_incoming_likes(callback.from_user.id)
+    if vip.is_vip(user):
+        text = ui.who_liked(people, user)
+    else:
+        text = ui.who_liked_locked(len(people))
+    await callback.message.answer(
+        text, reply_markup=who_liked_keyboard(bool(people), vip.is_vip(user)),
+    )
 
 
 @router.message(F.text.in_(ui.menu_texts(ui.MENU_PROFILE)))

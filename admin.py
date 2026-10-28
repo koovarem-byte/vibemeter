@@ -7,7 +7,9 @@
 """
 
 import html
+import json
 import logging
+import random
 from datetime import datetime, timezone
 
 from aiogram import F, Router
@@ -17,7 +19,9 @@ from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMar
 
 import broadcast
 import moderation
+import referral
 import strikes
+import vip
 import weeklystats
 from vibehour import MSK
 from config import ADMIN_ID
@@ -27,10 +31,14 @@ from database import (
     banned_users,
     broadcast_stats,
     broadcast_targets,
+    campaign_targets,
     count_reports,
     dismiss_reports,
     find_user_by_username,
     get_admin_stats,
+    get_app_state,
+    raffle_participants,
+    set_app_state,
     get_stats,
     get_user,
     growth_metrics,
@@ -79,6 +87,8 @@ async def home_text() -> str:
         f"💜 Вайбов: {s['likes']} · взаимных: <b>{s['mutual']}</b>\n"
         f"🎮 Игр: {s['games']} · ❓ вопросов: {s['questions']}\n\n"
         f"🚩 Открытых жалоб: <b>{c['open_reports']}</b> · 🚫 в бане: {c['banned']}\n\n"
+        f"💌 Приглашений: <b>{c['invites']}</b> · засчитано подруг: <b>{c['qualified']}</b>\n"
+        f"💎 Активных VIP: <b>{c['vip_active']}</b> (за подруг: {c['vip_by_friends']})\n\n"
         f"{growth_text(await growth_metrics())}\n\n"
         f"<i>Обновлено {datetime.now(MSK).strftime('%H:%M')} МСК</i>"
     )
@@ -125,6 +135,8 @@ async def home_keyboard():
         [_b("🆕 Новые анкеты", "adm:new"), _b("🚫 Забаненные", "adm:banned")],
         [_b("🔎 Найти человека", "adm:find", "primary")],
         [_b("📊 Неделя", "adm:week"), _b("📈 Источники", "adm:sources")],
+        [_b("📨 Рассылка с предпросмотром", "adm:cmp", "primary")],
+        [_b("💌 Розыгрыш (/raffle)", "adm:raffle")],
         [_b("📣 Рассылка и голоса", "adm:bc")],
         [_b("🙏 «Мы снова в строю» всем", "adm:sorry")],
         [_b("🧹 Проверить анкеты на мат", "adm:scan")],
@@ -247,6 +259,8 @@ async def card_text(person, note: str = "") -> str:
         f"💜 Получил(а) вайбов: {st['likes_received']} · отправил(а): {st['likes_sent']} · взаимных: {st['mutual_likes']}",
         f"🚩 Жалоб всего: {reports} · {status}",
     ]
+    if vip.is_vip(person):
+        lines.append("💎 VIP навсегда" if vip.is_forever(person) else f"💎 VIP до {person['vip_until']:%d.%m %H:%M}")
     total = _strikes(person)
     if total:
         lines.append(
@@ -618,3 +632,147 @@ async def cb_scan(callback: CallbackQuery):
         person = await get_user(person_id)
         if person:
             await send_card(callback.bot, person, note="\n".join(flags))
+
+
+# =========================================================
+# РАССЫЛКА С ПРЕДПРОСМОТРОМ: сегмент → шаблон → пример себе → «Отправить»
+# =========================================================
+
+@router.callback_query(F.data == "adm:cmp")
+async def cb_cmp(callback: CallbackQuery):
+    rows = [[_b(label, f"adm:cmp:s:{seg}")] for seg, label in ui.SEGMENTS.items()]
+    text = "📨 <b>Рассылка</b>\n\nКому отправляем?"
+    if broadcast.is_running():
+        text += "\n\n⏳ Сейчас идёт другая рассылка — новую можно запустить после её итога"
+    await _show(callback, text, _kb(*rows, [BACK]))
+
+
+@router.callback_query(F.data.startswith("adm:cmp:s:"))
+async def cb_cmp_segment(callback: CallbackQuery):
+    seg = callback.data.split(":")[3]
+    if seg not in ui.SEGMENTS:
+        await callback.answer()
+        return
+    rows = [[_b(t["title"], f"adm:cmp:t:{seg}:{key}")] for key, t in ui.CAMPAIGNS.items()]
+    await _show(
+        callback,
+        f"📨 <b>Рассылка</b> · {ui.SEGMENTS[seg]}\n\nКакой шаблон?",
+        _kb(*rows, [_b("← Назад", "adm:cmp")]),
+    )
+
+
+def _cmp_args(data: str):
+    _, _, _, seg, key = data.split(":")
+    if seg not in ui.SEGMENTS or key not in ui.CAMPAIGNS:
+        return None, None
+    return seg, key
+
+
+@router.callback_query(F.data.startswith("adm:cmp:t:"))
+async def cb_cmp_preview(callback: CallbackQuery):
+    """Админу — ровно то, что получат люди (ссылка — админа), и число получателей."""
+    seg, key = _cmp_args(callback.data)
+    if not seg:
+        await callback.answer()
+        return
+    await callback.answer()
+    username = (await callback.bot.me()).username
+    try:
+        await broadcast.send_campaign(
+            callback.bot, callback.from_user.id, key, username,
+            ref_link=referral.link(username, callback.from_user.id),
+        )
+    except Exception:
+        logging.exception("Предпросмотр рассылки %s", key)
+    n = len(await campaign_targets(key, seg))
+    done = await broadcast_stats(key)
+    already = f"\nЭту кампанию уже получили: {done.get('sent', 0)} (им не уйдёт)" if done else ""
+    await callback.message.answer(
+        f"👆 Так увидят люди (ссылка в тексте у каждого своя)\n\n"
+        f"Кому: {ui.SEGMENTS[seg]} · шаблон «{html.escape(ui.CAMPAIGNS[key]['title'])}»\n"
+        f"Получателей: <b>{n}</b> (без забаненных и отписавшихся){already}",
+        reply_markup=_kb(
+            [_b(f"✅ Отправить {n}", f"adm:cmp:go:{seg}:{key}", "success"),
+             _b("❌ Отмена", "adm:cmp:no")],
+        ),
+    )
+
+
+@router.callback_query(F.data == "adm:cmp:no")
+async def cb_cmp_cancel(callback: CallbackQuery):
+    await _show(callback, "❌ Рассылка отменена", _kb([BACK]))
+
+
+@router.callback_query(F.data.startswith("adm:cmp:go:"))
+async def cb_cmp_go(callback: CallbackQuery):
+    seg, key = _cmp_args(callback.data)
+    if not seg:
+        await callback.answer()
+        return
+    if not broadcast.start_campaign(callback.bot, ADMIN_ID, key, seg):
+        await callback.answer("Уже идёт рассылка, дождись итога", show_alert=True)
+        return
+    await _show(
+        callback,
+        f"🚀 Рассылка «{html.escape(ui.CAMPAIGNS[key]['title'])}» · {ui.SEGMENTS[seg]} пошла "
+        f"(не быстрее {broadcast.RATE} сообщений в секунду)\n\nИтог пришлю отдельным сообщением",
+        _kb([BACK]),
+    )
+
+
+# =========================================================
+# РОЗЫГРЫШ: все, у кого ≥1 засчитанная подруга
+# =========================================================
+
+RAFFLE_KEY = "raffle_winner"
+
+
+async def raffle_text() -> str:
+    people = await raffle_participants()
+    lines = ["🎲 <b>Розыгрыш 1000₽</b>", "", f"Участников (≥1 засчитанная подруга): <b>{len(people)}</b>", ""]
+    for p in people[:40]:
+        name = html.escape(p["full_name"] or "—")
+        user = f" @{html.escape(p['username'])}" if p.get("username") else ""
+        ban = " 🚫" if p["is_banned"] else ""
+        lines.append(f"{name}{user} — {p['friends']} · /u_{p['telegram_id']}{ban}")
+    if len(people) > 40:
+        lines.append(f"…и ещё {len(people) - 40}")
+    if not people:
+        lines.append("Пока никого")
+    saved = await get_app_state(RAFFLE_KEY)
+    if saved:
+        w = json.loads(saved)
+        lines += ["", f"🏆 Победитель: <b>{html.escape(w['name'])}</b> — /u_{w['id']} "
+                      f"(выбран {w['at']}, из {w['of']})"]
+    return "\n".join(lines)
+
+
+def raffle_keyboard():
+    return _kb([_b("🎲 Выбрать победителя", "adm:raffle:go", "primary")], [BACK])
+
+
+@router.message(Command("raffle"))
+async def raffle_command(message: Message):
+    await message.answer(await raffle_text(), reply_markup=raffle_keyboard())
+
+
+@router.callback_query(F.data == "adm:raffle")
+async def cb_raffle(callback: CallbackQuery):
+    await _show(callback, await raffle_text(), raffle_keyboard())
+
+
+@router.callback_query(F.data == "adm:raffle:go")
+async def cb_raffle_go(callback: CallbackQuery):
+    people = [p for p in await raffle_participants() if not p["is_banned"]]
+    if not people:
+        await callback.answer("Участников пока нет", show_alert=True)
+        return
+    winner = random.choice(people)
+    await set_app_state(RAFFLE_KEY, json.dumps({
+        "id": winner["telegram_id"],
+        "name": winner["full_name"] or "—",
+        "username": winner["username"],
+        "at": datetime.now(MSK).strftime("%d.%m %H:%M"),
+        "of": len(people),
+    }, ensure_ascii=False))
+    await _show(callback, await raffle_text(), raffle_keyboard())
