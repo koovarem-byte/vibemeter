@@ -224,15 +224,16 @@ def likes_header_keyboard():
 
 
 def campaign_keyboard(button: str | None, bot_username: str):
-    """Кнопка под рассылкой из админки."""
+    """Кнопки под рассылкой из админки: главное действие + канал."""
+    channel = [btn(ui.BTN_CHANNEL_CAMPAIGN, url=ui.CHANNEL_URL)]
     if button == "invite":
-        return rows([btn(ui.BTN_INVITE, "invite", style=PRIMARY)])
+        return rows([btn(ui.BTN_INVITE, "invite", style=PRIMARY)], channel)
     if button == "fill":
         return rows([btn(
             ui.BTN_FILL_PROFILE_CAMPAIGN,
             url=f"https://t.me/{bot_username}?start=bc", style=PRIMARY,
-        )])
-    return None
+        )], channel)
+    return rows(channel)
 
 
 def contact_keyboard(username: str):

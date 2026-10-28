@@ -727,6 +727,7 @@ BTN_WHO_LIKED = "💎 Кто меня лайкнул"
 BTN_INVITE = "💌 Позвать подругу"
 BTN_WRITE_MATCH = "✍️ Написать"
 BTN_FILL_PROFILE_CAMPAIGN = "✍️ Заполнить анкету"
+BTN_CHANNEL_CAMPAIGN = "📣 Наш канал"
 
 INVITE_SHARE_TEXT = (
     "Нашёл аналог дайвинчика, только без фриков и оценки по внешности, "

@@ -675,7 +675,7 @@ async def hub_text() -> str:
         button = {"invite": "«💌 Позвать подругу»", "fill": "«✍️ Заполнить анкету»"}[t["button"]]
         lines += [
             f"<b>{html.escape(t['title'])}</b> — {ui.SEGMENTS[seg]}",
-            f"   {extra}текст + кнопка {button}",
+            f"   {extra}текст + кнопки {button} и «{ui.BTN_CHANNEL_CAMPAIGN}»",
             f"   {_st(await broadcast_stats(key))} · ждут: {left}",
         ]
     vote_left = len(await broadcast_targets(broadcast.CAMPAIGN))

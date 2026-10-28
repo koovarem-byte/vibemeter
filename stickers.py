@@ -1,8 +1,11 @@
-"""Стикеры из assets/stickers/<имя>.webp.
+"""Стикеры рассылок и мэтча.
 
-Первый раз файл загружается в Telegram, его file_id сохраняется в
-app_state (sticker_<имя>), дальше шлём по file_id. Нет файла — стикер
-просто пропускаем, сообщение уходит без него.
+Сначала — эмодзи из пака VibemeterNeon (t.me/addemoji/VibemeterNeon, id в
+ui.NEON): бот берёт его file_id через getCustomEmojiStickers. Если Telegram
+не примет его стикером — запасной файл assets/stickers/<имя>.webp
+(нарисован make_stickers.py). Удачный file_id сохраняется в app_state
+(sticker_<имя>), дальше шлём по нему. Ничего не вышло — сообщение уходит
+без стикера.
 """
 
 import logging
@@ -12,11 +15,20 @@ from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import FSInputFile
 
 from database import get_app_state, set_app_state
+import ui
 
 DIR = Path(__file__).resolve().parent / "assets" / "stickers"
 
+# какой эмодзи пака VibemeterNeon за каким стикером
+PACK = {
+    "sticker_2_vip_girls": "diamond",
+    "sticker_3_vip_7days": "crown",
+    "sticker_5_match": "heart",
+}
+
 _cache: dict[str, str] = {}
 _missing: set[str] = set()
+_pack_failed: set[str] = set()
 
 
 def _key(name: str) -> str:
@@ -47,6 +59,19 @@ async def send(bot, chat_id: int, name: str | None):
             # file_id протух (другой бот/токен) — загрузим файл заново
             logging.warning("Стикер %s: file_id не принят, загружаю файл", key)
             _cache.pop(key, None)
+
+    emoji = PACK.get(key)
+    if emoji and key not in _pack_failed:
+        try:
+            found = await bot.get_custom_emoji_stickers(custom_emoji_ids=[ui.icon(emoji)])
+            if found:
+                msg = await bot.send_sticker(chat_id, found[0].file_id)
+                _cache[key] = found[0].file_id
+                await set_app_state(key, found[0].file_id)
+                return msg
+        except TelegramBadRequest as e:
+            logging.warning("Стикер %s: эмодзи из пака не отправился (%s), беру файл", key, e.message)
+        _pack_failed.add(key)
 
     path = _file(name)
     if not path:
