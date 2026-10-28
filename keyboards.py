@@ -13,13 +13,15 @@ import ui
 from referral import share_url
 
 
-# Цвет кнопки (Telegram даёт только три): синий — главное действие,
-# зелёный — написать/начать, красный — 18+, жалоба, удаление.
-PRIMARY, SUCCESS, DANGER = "primary", "success", "danger"
+# Цвет кнопки (Telegram даёт только три). Все кнопки синие в нашем стиле
+# (решение 28.10), красные — только 18+, жалоба, удаление.
+# SUCCESS оставлен именем для старых вызовов, но тоже синий.
+PRIMARY, DANGER = "primary", "danger"
+SUCCESS = PRIMARY
 
 
-def btn(text, callback_data=None, url=None, neon=None, style=None):
-    """Inline-кнопка. neon — имя эмодзи из ui.NEON для иконки, style — цвет."""
+def btn(text, callback_data=None, url=None, neon=None, style=PRIMARY):
+    """Inline-кнопка. neon — имя эмодзи из ui.NEON для иконки, style — цвет (по умолчанию синий)."""
     extra = {"icon_custom_emoji_id": ui.icon(neon)} if neon else {}
     if style:
         extra["style"] = style
@@ -71,7 +73,7 @@ def story_button(percent: int, name: str, matches=None, total=None):
     return InlineKeyboardButton(
         text=ui.BTN_STORY,
         web_app=WebAppInfo(url=f"{base}/app/#{page}"),
-        icon_custom_emoji_id=ui.icon("spark"),
+        icon_custom_emoji_id=ui.icon("spark"), style=PRIMARY,
     )
 
 
@@ -104,7 +106,7 @@ def main_menu():
                 menu_btn(ui.MENU_STATS),
                 menu_btn(ui.MENU_SETTINGS),
             ],
-            [KeyboardButton(text=ui.MENU_INVITE, style=PRIMARY)],
+            [menu_btn(ui.MENU_INVITE)],
         ],
         resize_keyboard=True,
         input_field_placeholder=ui.MENU_PLACEHOLDER,
@@ -132,7 +134,7 @@ def browse_menu():
 
 def cancel_keyboard():
     return ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text=ui.CANCEL)]],
+        keyboard=[[KeyboardButton(text=ui.CANCEL, style=PRIMARY)]],
         resize_keyboard=True,
     )
 
@@ -200,38 +202,37 @@ def mutual_actions(person_id: int, username: str | None, story=None, write=True)
 
 
 def match_keyboard(person_id: int, username: str | None):
-    """«У вас взаимный вайб»: «✍️ Написать» — та же логика, что у «Написать»."""
-    return rows([write_button(person_id, username, text=ui.BTN_WRITE_MATCH, neon=None)])
+    """«У вас взаимный вайб»: «Написать» — та же логика, что у «Написать» на карточке."""
+    return rows([write_button(person_id, username)])
 
 
 def invite_keyboard(ref_link: str):
     return rows(
-        [btn(ui.BTN_SHARE_FRIEND, url=share_url(ref_link), style=SUCCESS)],
-        [btn(ui.BTN_WHO_LIKED, "who_liked", style=PRIMARY)],
+        [btn(ui.BTN_SHARE_FRIEND, url=share_url(ref_link), neon="heart")],
+        [btn(ui.BTN_WHO_LIKED, "who_liked", neon="diamond")],
     )
 
 
 def who_liked_keyboard(has_people: bool, vip: bool):
     if vip and has_people:
-        return rows([btn(ui.BTN_VIEW, "my_vibes", neon="heart", style=PRIMARY)])
+        return rows([btn(ui.BTN_VIEW, "my_vibes", neon="heart")])
     if not vip:
-        return rows([btn(ui.BTN_INVITE, "invite", style=PRIMARY)])
-    return rows([btn(ui.BTN_FIND, "browse", neon="bolt", style=PRIMARY)])
+        return rows([btn(ui.BTN_INVITE, "invite", neon="heart")])
+    return rows([btn(ui.BTN_FIND, "browse", neon="bolt")])
 
 
 def likes_header_keyboard():
-    return rows([btn(ui.BTN_WHO_LIKED, "who_liked", style=PRIMARY)])
+    return rows([btn(ui.BTN_WHO_LIKED, "who_liked", neon="diamond")])
 
 
 def campaign_keyboard(button: str | None, bot_username: str):
     """Кнопки под рассылкой из админки: главное действие + канал."""
-    channel = [btn(ui.BTN_CHANNEL_CAMPAIGN, url=ui.CHANNEL_URL)]
+    channel = [btn(ui.BTN_CHANNEL, url=ui.CHANNEL_URL, neon="star")]
     if button == "invite":
-        return rows([btn(ui.BTN_INVITE, "invite", style=PRIMARY)], channel)
+        return rows([btn(ui.BTN_INVITE, "invite", neon="heart")], channel)
     if button == "fill":
         return rows([btn(
-            ui.BTN_FILL_PROFILE_CAMPAIGN,
-            url=f"https://t.me/{bot_username}?start=bc", style=PRIMARY,
+            ui.BTN_FILL_PROFILE, url=f"https://t.me/{bot_username}?start=bc", neon="star",
         )], channel)
     return rows(channel)
 

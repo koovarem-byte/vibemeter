@@ -96,6 +96,7 @@ MENU_PROFILE = "Профиль"
 MENU_GAMES = "Игры"
 MENU_STATS = "Статистика"
 MENU_SETTINGS = "Настройки"
+MENU_INVITE = "Позвать подругу"
 
 MENU_ICONS = {
     MENU_FIND: "bolt",
@@ -104,6 +105,7 @@ MENU_ICONS = {
     MENU_GAMES: "gamepad",
     MENU_STATS: "crown",
     MENU_SETTINGS: "gear",
+    MENU_INVITE: "diamond",
 }
 MENU_PLACEHOLDER = "Выбери действие"
 
@@ -116,6 +118,7 @@ MENU_ALIASES = {
     MENU_GAMES: {"🎮 Вайб-игры", "🍭 Игры"},
     MENU_STATS: {"📊 Статистика", "👑 Статистика"},
     MENU_SETTINGS: {"⚙️ Настройки"},
+    MENU_INVITE: {"💌 Позвать подругу"},
 }
 
 
@@ -344,11 +347,8 @@ def _about(text: str) -> str:
     return f"{tag}{esc(text)}</blockquote>"
 
 
-VIP_BADGE = "💎"
-
-
 def _badge(person) -> str:
-    return f" {VIP_BADGE}" if vip.is_vip(person) else ""
+    return f" {e('diamond')}" if vip.is_vip(person) else ""
 
 
 def _name_age(person) -> str:
@@ -721,13 +721,9 @@ def friend_joined(total: int, city: dict | None) -> str:
 # «ПОЗВАТЬ ПОДРУГУ» И VIP
 # =========================================================
 
-MENU_INVITE = "💌 Позвать подругу"
 BTN_SHARE_FRIEND = "Переслать подруге"
-BTN_WHO_LIKED = "💎 Кто меня лайкнул"
-BTN_INVITE = "💌 Позвать подругу"
-BTN_WRITE_MATCH = "✍️ Написать"
-BTN_FILL_PROFILE_CAMPAIGN = "✍️ Заполнить анкету"
-BTN_CHANNEL_CAMPAIGN = "📣 Наш канал"
+BTN_WHO_LIKED = "Кто меня лайкнул"
+BTN_INVITE = "Позвать подругу"
 
 INVITE_SHARE_TEXT = (
     "Нашёл аналог дайвинчика, только без фриков и оценки по внешности, "
@@ -735,28 +731,28 @@ INVITE_SHARE_TEXT = (
     "Девушкам там вип бесплатно, глянь👇"
 )
 
-INVITE_REWARD = "Ты позвал 3 подруги, держи вип на 7 дней💎"
+INVITE_REWARD = f"Ты позвал 3 подруги, держи вип на 7 дней{e('diamond')}"
 
 MATCH_TEXT = (
-    "У вас взаимный вайб💜\n\n"
+    f"У вас взаимный вайб{e('heart')}\n\n"
     "Не жди пока напишет другой, напиши сам👇"
 )
 
 
 def vip_status(user) -> str:
     if vip.is_forever(user):
-        return f"{VIP_BADGE} <b>VIP навсегда</b>: ты выше в ленте и видишь, кто тебя лайкнул"
+        return f"{e('diamond')} <b>VIP навсегда</b>: ты выше в ленте и видишь, кто тебя лайкнул"
     return (
-        f"{VIP_BADGE} <b>VIP до {user['vip_until']:%d.%m}</b>: "
+        f"{e('diamond')} <b>VIP до {user['vip_until']:%d.%m}</b>: "
         "ты выше в ленте и видишь, кто тебя лайкнул"
     )
 
 
 def invite_screen(user, ref_link: str, qualified: int) -> str:
     lines = [
-        plain_title("💌", "Позвать подругу"),
+        title("heart", "Позвать подругу"),
         "",
-        "Подругам VIP бесплатно, а тебе за каждые 3 подруги — VIP на 7 дней💎",
+        f"Подругам VIP бесплатно, а тебе за каждые 3 подруги — VIP на 7 дней{e('diamond')}",
         "VIP: 💎 в анкете, ты выше в ленте и видишь, кто тебя лайкнул",
         "",
         "Подруга засчитывается, когда заполнит анкету с фото и зайдёт ещё раз на следующий день",
@@ -772,8 +768,8 @@ def invite_screen(user, ref_link: str, qualified: int) -> str:
 
 def who_liked(people: list, user) -> str:
     if not people:
-        return f"{VIP_BADGE} <b>Кто меня лайкнул</b>\n\nПока никто. Полистай анкеты: вайбы приходят в ответ"
-    lines = [f"{VIP_BADGE} <b>Кто меня лайкнул</b> · {len(people)}", ""]
+        return f"{e('diamond')} <b>Кто меня лайкнул</b>\n\nПока никто. Полистай анкеты: вайбы приходят в ответ"
+    lines = [f"{e('diamond')} <b>Кто меня лайкнул</b> · {len(people)}", ""]
     for p in people[:30]:
         line = f"💜 {esc(p['full_name'])}"
         if p["age"]:
@@ -790,7 +786,7 @@ def who_liked(people: list, user) -> str:
 def who_liked_locked(count: int) -> str:
     who = plural(count, "человек", "человека", "человек")
     return (
-        f"{VIP_BADGE} <b>Кто меня лайкнул</b>\n\n"
+        f"{e('diamond')} <b>Кто меня лайкнул</b>\n\n"
         f"Тебя лайкнули: <b>{count}</b> {who}. Список сразу всех — для VIP\n\n"
         "VIP дают за 3 подруги: позови их по своей ссылке, им VIP бесплатно"
     )
@@ -804,7 +800,7 @@ CAMPAIGNS = {
         "sticker": "sticker_3_vip_7days",
         "button": "invite",
         "text": (
-            "Нас уже 500🔥\n\n"
+            f"Нас уже 500{e('fire')}\n\n"
             "Но девушек пока мало, сам понимаешь\n\n"
             "Позови подруг, им вип бесплатно, а тебе за 3 подруги вип на 7 дней\n\n"
             "Ещё среди всех кто приведёт хотя бы одну разыграю 1000₽\n\n"
@@ -818,7 +814,7 @@ CAMPAIGNS = {
         "sticker": "sticker_2_vip_girls",
         "button": "invite",
         "text": (
-            "Привет, спасибо что ты с нами💜\n\n"
+            f"Привет, спасибо что ты с нами{e('heart')}\n\n"
             "Дарю тебе вип, теперь ты выше в ленте и видишь кто тебя лайкнул\n\n"
             "Позовёшь подруг, им тоже вип бесплатно👇\n"
             "{ref_link}"

@@ -1009,7 +1009,7 @@ async def show_invite(message: Message, user_id: int):
     )
 
 
-@router.message(F.text.in_({ui.MENU_INVITE, "Позвать подругу"}))
+@router.message(F.text.in_(ui.menu_texts(ui.MENU_INVITE)))
 async def invite_handler(message: Message):
     await show_invite(message, message.from_user.id)
 

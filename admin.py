@@ -62,9 +62,11 @@ router.callback_query.filter(F.from_user.id == ADMIN_ID)
 LIST_LIMIT = 15
 
 
-def _b(text, data, style=None):
-    extra = {"style": style} if style else {}
-    return InlineKeyboardButton(text=text, callback_data=data, **extra)
+def _b(text, data, style="primary"):
+    # все кнопки синие, красные — только бан и опасное (решение 28.10)
+    if style == "success":
+        style = "primary"
+    return InlineKeyboardButton(text=text, callback_data=data, style=style)
 
 
 def _kb(*rows):
@@ -671,11 +673,11 @@ async def hub_text() -> str:
     for key, t in ui.CAMPAIGNS.items():
         seg = t["audience"]
         left = len(await campaign_targets(key, seg))
-        extra = "стикер + " if t["sticker"] else ""
-        button = {"invite": "«💌 Позвать подругу»", "fill": "«✍️ Заполнить анкету»"}[t["button"]]
+        extra = "анимированный стикер + " if t["sticker"] else ""
+        button = {"invite": f"«{ui.BTN_INVITE}»", "fill": f"«{ui.BTN_FILL_PROFILE}»"}[t["button"]]
         lines += [
             f"<b>{html.escape(t['title'])}</b> — {ui.SEGMENTS[seg]}",
-            f"   {extra}текст + кнопки {button} и «{ui.BTN_CHANNEL_CAMPAIGN}»",
+            f"   {extra}текст + кнопки {button} и «{ui.BTN_CHANNEL}»",
             f"   {_st(await broadcast_stats(key))} · ждут: {left}",
         ]
     vote_left = len(await broadcast_targets(broadcast.CAMPAIGN))

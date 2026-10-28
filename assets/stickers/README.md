@@ -1,13 +1,13 @@
 # Стикеры
 
-Основные — эмодзи из пака [VibemeterNeon](https://t.me/addemoji/VibemeterNeon)
-(`stickers.PACK`: 💎 девушкам, 👑 парням «VIP на 7 дней», 💜 мэтч). Если Telegram
-не примет эмодзи стикером, бот шлёт эти запасные файлы:
+Анимированные неоновые видеостикеры (WEBM VP9 с прозрачностью, 512×512, 3 с):
 
-- `sticker_2_vip_girls.webp` — VIP девушкам (после анкеты и рассылка девушкам)
-- `sticker_3_vip_7days.webp` — рассылка парням «за 3 подруги VIP на 7 дней»
-- `sticker_5_match.webp` — взаимный вайб
+- `sticker_2_vip_girls.webm` — 💎 VIP девушкам (после анкеты и рассылка девушкам)
+- `sticker_3_vip_7days.webm` — 👑 рассылка парням «за 3 подруги VIP на 7 дней»
+- `sticker_5_match.webm` — 💜 взаимный вайб
 
-Перерисовать: `python3 assets/stickers/make_stickers.py`. Свои картинки — просто
-заменить файлы (512×512 webp) и убрать имя из `stickers.PACK`.
-Удачный `file_id` бот хранит в `app_state` (`sticker_<имя>`).
+Рядом `.webp` — статичный кадр, запасной, если Telegram не примет видео.
+
+Перерисовать: `python3 assets/stickers/make_stickers.py` (нужны Pillow и ffmpeg с libvpx-vp9).
+Свои — просто заменить файлы с теми же именами: бот хранит `file_id` по хешу файла
+(`app_state`, `sticker_<имя>:<хеш>`), новый файл загрузит сам.
