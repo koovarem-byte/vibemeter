@@ -798,7 +798,8 @@ def who_liked_locked(count: int) -> str:
 # Шаблоны рассылки из админки: {ref_link} — личная ссылка получателя
 CAMPAIGNS = {
     "ref_boys1": {
-        "title": "Парням: позови подруг (VIP на 7 дней, 1000₽)",
+        "title": "💌 Позови подруг (VIP 7 дней, 1000₽)",
+        "audience": "male",
         "sticker": "sticker_3_vip_7days",
         "button": "invite",
         "text": (
@@ -811,7 +812,8 @@ CAMPAIGNS = {
         ),
     },
     "vip_girls1": {
-        "title": "Девушкам: дарю VIP",
+        "title": "💎 Дарю VIP",
+        "audience": "female",
         "sticker": "sticker_2_vip_girls",
         "button": "invite",
         "text": (
@@ -822,7 +824,8 @@ CAMPAIGNS = {
         ),
     },
     "fill1": {
-        "title": "Без анкеты: доделай анкету",
+        "title": "✍️ Доделай анкету",
+        "audience": "noprofile",
         "sticker": None,
         "button": "fill",
         "text": (

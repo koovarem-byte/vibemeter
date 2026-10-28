@@ -20,6 +20,7 @@ from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMar
 import broadcast
 import moderation
 import referral
+import stickers
 import strikes
 import vip
 import weeklystats
@@ -50,6 +51,7 @@ from database import (
     warn_photo,
     source_stats,
 )
+from keyboards import liked_you_keyboard, match_keyboard, vibe_hour_keyboard
 from states import AdminState
 import ui
 
@@ -70,6 +72,7 @@ def _kb(*rows):
 
 
 BACK = _b("← Админка", "adm:home")
+HUB = _b("← Рассылки", "adm:cmp")
 
 
 # =========================================================
@@ -135,10 +138,8 @@ async def home_keyboard():
         [_b("🆕 Новые анкеты", "adm:new"), _b("🚫 Забаненные", "adm:banned")],
         [_b("🔎 Найти человека", "adm:find", "primary")],
         [_b("📊 Неделя", "adm:week"), _b("📈 Источники", "adm:sources")],
-        [_b("📨 Рассылка с предпросмотром", "adm:cmp", "primary")],
-        [_b("💌 Розыгрыш (/raffle)", "adm:raffle")],
-        [_b("📣 Рассылка и голоса", "adm:bc")],
-        [_b("🙏 «Мы снова в строю» всем", "adm:sorry")],
+        [_b("📨 Рассылки: что, кому, отправить", "adm:cmp", "primary")],
+        [_b("🎲 Розыгрыш 1000₽ (/raffle)", "adm:raffle")],
         [_b("🧹 Проверить анкеты на мат", "adm:scan")],
     )
 
@@ -496,7 +497,7 @@ def bc_keyboard():
     return _kb(
         [_b("👀 Пример себе", "adm:bc:preview"), _b("🔄 Обновить", "adm:bc")],
         [_b("🚀 Отправить всем", "adm:bc:ask", "primary")],
-        [BACK],
+        [HUB],
     )
 
 
@@ -571,7 +572,7 @@ def sorry_keyboard_admin():
     return _kb(
         [_b("👀 Пример себе", "adm:sorry:preview"), _b("🔄 Обновить", "adm:sorry")],
         [_b("🚀 Отправить всем", "adm:sorry:ask", "primary")],
-        [BACK],
+        [HUB],
     )
 
 
@@ -638,13 +639,134 @@ async def cb_scan(callback: CallbackQuery):
 # РАССЫЛКА С ПРЕДПРОСМОТРОМ: сегмент → шаблон → пример себе → «Отправить»
 # =========================================================
 
+def _st(st: dict) -> str:
+    if not st:
+        return "ещё не отправляли"
+    return (f"ушло {st.get('sent', 0)} · заблокировали {st.get('blocked', 0)} · "
+            f"ошибок {st.get('error', 0)}")
+
+
+# что бот пишет сам: (кому и когда, как выглядит) — для экрана и «👀 Автосообщения»
+AUTO = [
+    ("💎 Девушке сразу после анкеты",
+     "VIP навсегда + стикер и текст «Дарю VIP» (это та же кампания — ручная ей уже не придёт)"),
+    ("💌 Пригласившему за каждые 3 засчитанные подруги", "+7 дней VIP и «Ты позвал 3 подруги…»"),
+    ("⭐ Пригласившему, когда друг заполнил анкету", "«Твой друг в Вайбометре», анкета сутки первая"),
+    ("💜 Обоим при взаимном вайбе",
+     "стикер, карточка с фото, «У вас взаимный вайб💜» с «✍️ Написать»"),
+    ("👀 Кому отправили вайб", "«Тебе отправили вайб» без имени"),
+    ("⚡ В 20:50 МСК", "напоминание о вайб-часе (анкета есть, заходил недавно, не отключал)"),
+    ("🔥 Первый заход за день, серия от 2 дней", "«Серия N дней подряд»"),
+]
+
+
+async def hub_text() -> str:
+    lines = [
+        "📨 <b>Рассылки — всё, что бот пишет людям</b>",
+        "",
+        "<b>Ручные</b> — запускаешь сам: сегмент → шаблон → пример себе → «Отправить». "
+        "Каждому один раз, забаненным и отписавшимся не уходит",
+        "",
+    ]
+    for key, t in ui.CAMPAIGNS.items():
+        seg = t["audience"]
+        left = len(await campaign_targets(key, seg))
+        extra = "стикер + " if t["sticker"] else ""
+        button = {"invite": "«💌 Позвать подругу»", "fill": "«✍️ Заполнить анкету»"}[t["button"]]
+        lines += [
+            f"<b>{html.escape(t['title'])}</b> — {ui.SEGMENTS[seg]}",
+            f"   {extra}текст + кнопка {button}",
+            f"   {_st(await broadcast_stats(key))} · ждут: {left}",
+        ]
+    vote_left = len(await broadcast_targets(broadcast.CAMPAIGN))
+    sorry_left = len(await broadcast_targets(broadcast.SORRY))
+    lines += [
+        f"<b>🗳 Голосование «что делаем дальше»</b> — 👥 Все",
+        "   личная строка по состоянию + голоса за функцию",
+        f"   {_st(await broadcast_stats(broadcast.CAMPAIGN))} · ждут: {vote_left}",
+        f"<b>🙏 Мы снова в строю</b> — 👥 Все (после сбоя 27.10)",
+        f"   {_st(await broadcast_stats(broadcast.SORRY))} · ждут: {sorry_left}",
+        "",
+        "<b>Автоматические</b> — бот пишет сам:",
+    ]
+    lines += [f"· {who}: {what}" for who, what in AUTO]
+    if broadcast.is_running():
+        lines += ["", "⏳ Сейчас идёт рассылка, итог придёт отдельным сообщением"]
+    return "\n".join(lines)
+
+
+def hub_keyboard():
+    return _kb(
+        [_b("📤 Новая рассылка", "adm:cmp:new", "primary")],
+        [_b("👀 Тексты рассылок", "adm:cmp:texts"), _b("👀 Автосообщения", "adm:cmp:auto")],
+        [_b("🗳 Голосование", "adm:bc"), _b("🙏 Мы снова в строю", "adm:sorry")],
+        [_b("🔄 Обновить", "adm:cmp"), BACK],
+    )
+
+
 @router.callback_query(F.data == "adm:cmp")
-async def cb_cmp(callback: CallbackQuery):
+async def cb_cmp(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    await _show(callback, await hub_text(), hub_keyboard())
+
+
+@router.callback_query(F.data == "adm:cmp:texts")
+async def cb_cmp_texts(callback: CallbackQuery):
+    """Каждый ручной шаблон ровно как у людей, перед ним — кому он."""
+    await callback.answer()
+    username = (await callback.bot.me()).username
+    for key, t in ui.CAMPAIGNS.items():
+        await callback.message.answer(
+            f"⬇️ <b>{html.escape(t['title'])}</b> — {ui.SEGMENTS[t['audience']]}"
+        )
+        try:
+            await broadcast.send_campaign(
+                callback.bot, callback.from_user.id, key, username,
+                ref_link=referral.link(username, callback.from_user.id),
+            )
+        except Exception:
+            logging.exception("Пример рассылки %s", key)
+    await callback.message.answer(
+        "Голосование и «Мы снова в строю» — «👀 Пример себе» на их экранах",
+        reply_markup=_kb([HUB]),
+    )
+
+
+@router.callback_query(F.data == "adm:cmp:auto")
+async def cb_cmp_auto(callback: CallbackQuery):
+    """Автосообщения как у людей (кнопки ведут в твой же бот)."""
+    await callback.answer()
+    bot, me = callback.bot, callback.from_user.id
+    username = (await bot.me()).username
+
+    async def head(i):
+        who, what = AUTO[i]
+        await callback.message.answer(f"⬇️ <b>{who}</b>\n<i>{what}</i>")
+
+    await head(0)
+    await broadcast.send_campaign(bot, me, ui.GIRLS_CAMPAIGN, username, ref_link=referral.link(username, me))
+    await head(1)
+    await callback.message.answer(ui.INVITE_REWARD)
+    await head(2)
+    await callback.message.answer(ui.friend_joined(1, None))
+    await head(3)
+    await stickers.send(bot, me, "sticker_5_match")
+    await callback.message.answer(ui.MATCH_TEXT, reply_markup=match_keyboard(me, username))
+    await head(4)
+    await callback.message.answer(ui.LIKED_YOU, reply_markup=liked_you_keyboard())
+    await head(5)
+    await callback.message.answer(ui.vibe_hour_soon(10), reply_markup=vibe_hour_keyboard())
+    await head(6)
+    await callback.message.answer(ui.streak_notice(3), reply_markup=_kb([HUB]))
+
+
+@router.callback_query(F.data == "adm:cmp:new")
+async def cb_cmp_new(callback: CallbackQuery):
     rows = [[_b(label, f"adm:cmp:s:{seg}")] for seg, label in ui.SEGMENTS.items()]
-    text = "📨 <b>Рассылка</b>\n\nКому отправляем?"
+    text = "📤 <b>Новая рассылка</b>\n\nКому отправляем?"
     if broadcast.is_running():
         text += "\n\n⏳ Сейчас идёт другая рассылка — новую можно запустить после её итога"
-    await _show(callback, text, _kb(*rows, [BACK]))
+    await _show(callback, text, _kb(*rows, [HUB]))
 
 
 @router.callback_query(F.data.startswith("adm:cmp:s:"))
@@ -653,11 +775,14 @@ async def cb_cmp_segment(callback: CallbackQuery):
     if seg not in ui.SEGMENTS:
         await callback.answer()
         return
-    rows = [[_b(t["title"], f"adm:cmp:t:{seg}:{key}")] for key, t in ui.CAMPAIGNS.items()]
+    rows = [
+        [_b(("✓ " if t["audience"] == seg else "") + t["title"], f"adm:cmp:t:{seg}:{key}")]
+        for key, t in ui.CAMPAIGNS.items()
+    ]
     await _show(
         callback,
-        f"📨 <b>Рассылка</b> · {ui.SEGMENTS[seg]}\n\nКакой шаблон?",
-        _kb(*rows, [_b("← Назад", "adm:cmp")]),
+        f"📤 <b>Новая рассылка</b> · {ui.SEGMENTS[seg]}\n\nКакой шаблон? ✓ — написан для этих людей",
+        _kb(*rows, [_b("← Назад", "adm:cmp:new")]),
     )
 
 
@@ -700,7 +825,7 @@ async def cb_cmp_preview(callback: CallbackQuery):
 
 @router.callback_query(F.data == "adm:cmp:no")
 async def cb_cmp_cancel(callback: CallbackQuery):
-    await _show(callback, "❌ Рассылка отменена", _kb([BACK]))
+    await _show(callback, "❌ Рассылка отменена", _kb([HUB]))
 
 
 @router.callback_query(F.data.startswith("adm:cmp:go:"))
@@ -716,7 +841,7 @@ async def cb_cmp_go(callback: CallbackQuery):
         callback,
         f"🚀 Рассылка «{html.escape(ui.CAMPAIGNS[key]['title'])}» · {ui.SEGMENTS[seg]} пошла "
         f"(не быстрее {broadcast.RATE} сообщений в секунду)\n\nИтог пришлю отдельным сообщением",
-        _kb([BACK]),
+        _kb([HUB]),
     )
 
 
