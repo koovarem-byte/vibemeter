@@ -94,6 +94,7 @@ def vibe_hour_on_keyboard():
 def main_menu():
     return ReplyKeyboardMarkup(
         keyboard=[
+            [menu_btn(ui.MENU_CHESS)],
             [
                 menu_btn(ui.MENU_FIND),
                 menu_btn(ui.MENU_LIKES),
@@ -437,4 +438,16 @@ def sorry_keyboard(person: dict, bot_username: str):
     return rows(
         [main],
         [btn(ui.BTN_CHANNEL, url=ui.CHANNEL_URL, neon="star", style=PRIMARY)],
+    )
+
+
+def puzzle_keyboard(puzzle_id: int, moves):
+    """Ходы задачи «Шах и чат»: по кнопке на ответ."""
+    return rows(*[[btn(text[:60], f"pz:{puzzle_id}:{i}")] for i, (text, _, _) in enumerate(moves)])
+
+
+def puzzle_after_keyboard():
+    return rows(
+        [btn(ui.BTN_PZ_NEXT, "pz_next", neon="crown")],
+        [btn(ui.BTN_FACT, "fact", neon="spark")],
     )

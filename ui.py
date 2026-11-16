@@ -97,6 +97,7 @@ MENU_GAMES = "Игры"
 MENU_STATS = "Статистика"
 MENU_SETTINGS = "Настройки"
 MENU_INVITE = "Позвать подругу"
+MENU_CHESS = "Шах и чат"
 
 MENU_ICONS = {
     MENU_FIND: "bolt",
@@ -106,6 +107,7 @@ MENU_ICONS = {
     MENU_STATS: "crown",
     MENU_SETTINGS: "gear",
     MENU_INVITE: "diamond",
+    MENU_CHESS: "crown",
 }
 MENU_PLACEHOLDER = "Выбери действие"
 
@@ -119,6 +121,7 @@ MENU_ALIASES = {
     MENU_STATS: {"📊 Статистика", "👑 Статистика"},
     MENU_SETTINGS: {"⚙️ Настройки"},
     MENU_INVITE: {"💌 Позвать подругу"},
+    MENU_CHESS: {"♟ Шах и чат"},
 }
 
 
@@ -1158,4 +1161,41 @@ SORRY_TEXT = (
     "Прости, что пришлось подождать\n\n"
     f"{e('hands')} Всё работает: вайбы, вопросы и игры на месте. Можно продолжать общаться\n\n"
     f"{e('star')} Новости и голосования — в нашем канале"
+)
+
+
+# =========================================================
+# «ШАХ И ЧАТ» — задачи по переписке
+# =========================================================
+
+BTN_PZ_NEXT = "Следующая задача"
+BTN_FACT = "Факт об общении"
+
+
+def puzzle_text(puzzle, number: int, rating: int, rank: str) -> str:
+    return (
+        f"{title('crown', f'Шах и чат · задача {number}')}\n\n"
+        f"<blockquote>{esc(puzzle['chat'])}</blockquote>\n\n"
+        "Твой ход? Выбери ответ — оценю как в шахматах: !! бриллиант, ! хорошо, ?! сомнительно, ?? зевок\n\n"
+        f"{e('fire')} Рейтинг: <b>{rating}</b> · {rank}"
+    )
+
+
+def puzzle_result(move: str, mark: str, name: str, why: str, best: str, delta: int, rating: int, rank: str) -> str:
+    sign = f"+{delta}" if delta > 0 else str(delta)
+    lines = [
+        f"<b>{mark} {name}</b>",
+        "",
+        f"Твой ход: «{esc(move)}»",
+        f"💡 {esc(why)}",
+    ]
+    if mark != "!!":
+        lines += ["", f"Лучший ход: «{esc(best)}»"]
+    lines += ["", f"{e('fire')} Рейтинг: <b>{rating}</b> ({sign}) · {rank}"]
+    return "\n".join(lines)
+
+
+PUZZLES_DONE = (
+    f"{title('trophy', 'Все задачи решены')}\n\n"
+    "Новые задачи появляются регулярно. А пока — факт об общении 👇"
 )

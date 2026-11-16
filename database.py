@@ -354,6 +354,21 @@ async def init_db():
               AND (vip_until IS NULL OR vip_until < '{VIP_FOREVER}')
         """)
 
+        # «Шах и чат»: решённые задачи и рейтинг
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS puzzle_answers (
+                user_id BIGINT NOT NULL,
+                puzzle_id INTEGER NOT NULL,
+                mark TEXT NOT NULL,
+                created_at TIMESTAMPTZ DEFAULT now(),
+                PRIMARY KEY (user_id, puzzle_id)
+            )
+        """)
+        await conn.execute("""
+            ALTER TABLE users
+            ADD COLUMN IF NOT EXISTS chess_rating INTEGER NOT NULL DEFAULT 1200
+        """)
+
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS game_answers (
                 id BIGSERIAL PRIMARY KEY,
@@ -1932,3 +1947,31 @@ async def active_profiles() -> list[dict]:
             ORDER BY created_at DESC
         """)
     return [dict(r) for r in rows]
+
+
+# =========================================================
+# «ШАХ И ЧАТ»
+# =========================================================
+
+async def solve_puzzle(user_id: int, puzzle_id: int, mark: str, delta: int):
+    """Записывает ход. None, если задача уже решена; иначе новый рейтинг."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        async with conn.transaction():
+            ok = await conn.fetchval("""
+                INSERT INTO puzzle_answers (user_id, puzzle_id, mark) VALUES ($1, $2, $3)
+                ON CONFLICT DO NOTHING RETURNING TRUE
+            """, user_id, puzzle_id, mark)
+            if not ok:
+                return None
+            return await conn.fetchval("""
+                UPDATE users SET chess_rating = GREATEST(100, chess_rating + $2)
+                WHERE telegram_id = $1 RETURNING chess_rating
+            """, user_id, delta)
+
+
+async def solved_puzzles(user_id: int) -> set[int]:
+    db = await get_pool()
+    async with db.acquire() as conn:
+        rows = await conn.fetch("SELECT puzzle_id FROM puzzle_answers WHERE user_id = $1", user_id)
+    return {r["puzzle_id"] for r in rows}

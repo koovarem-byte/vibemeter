@@ -27,8 +27,12 @@ import broadcast
 import referral
 import stickers
 import vip
+import facts
+import puzzles
 from aiogram.exceptions import TelegramForbiddenError
 from database import (
+    solve_puzzle,
+    solved_puzzles,
     is_blocked,
     add_referral,
     get_vibe_test,
@@ -61,6 +65,8 @@ from database import (
     touch_user,
 )
 from keyboards import (
+    puzzle_keyboard,
+    puzzle_after_keyboard,
     browse_menu,
     main_menu,
     open_app_keyboard,
@@ -989,6 +995,80 @@ async def show_incoming_likes(message, user_id):
 
     await message.answer(ui.likes_header(len(likes)), reply_markup=likes_header_keyboard())
     await show_next_profile(message, user_id)
+
+
+# =========================================================
+# «ШАХ И ЧАТ»: задачи по переписке с оценкой ходов
+# =========================================================
+
+async def show_puzzle(message: Message, user_id: int):
+    user = await get_user(user_id)
+    if not user:
+        await message.answer(ui.NEED_START)
+        return
+    done = await solved_puzzles(user_id)
+    total = len(puzzles.PUZZLES)
+    # сначала задача дня, потом остальные по кругу
+    order = [(puzzles.today_index() + i) % total for i in range(total)]
+    left = [i for i in order if i not in done]
+    if not left:
+        await message.answer(ui.PUZZLES_DONE)
+        await message.answer(facts.render(facts.random_fact()), reply_markup=puzzle_after_keyboard())
+        return
+    pid = left[0]
+    rating = user.get("chess_rating") or 1200
+    await message.answer(
+        ui.puzzle_text(puzzles.PUZZLES[pid], len(done) + 1, rating, puzzles.rank(rating)),
+        reply_markup=puzzle_keyboard(pid, puzzles.PUZZLES[pid]["moves"]),
+    )
+
+
+@router.message(F.text.in_(ui.menu_texts(ui.MENU_CHESS)))
+async def chess_handler(message: Message):
+    await show_puzzle(message, message.from_user.id)
+
+
+@router.message(Command("chess"))
+async def chess_command(message: Message):
+    await show_puzzle(message, message.from_user.id)
+
+
+@router.callback_query(F.data == "pz_next")
+async def puzzle_next(callback: CallbackQuery):
+    await callback.answer()
+    await show_puzzle(callback.message, callback.from_user.id)
+
+
+@router.callback_query(F.data.startswith("pz:"))
+async def puzzle_move(callback: CallbackQuery):
+    try:
+        _, pid, idx = callback.data.split(":")
+        puzzle = puzzles.PUZZLES[int(pid)]
+        move, mark, why = puzzle["moves"][int(idx)]
+    except (ValueError, IndexError):
+        await callback.answer()
+        return
+    delta = puzzles.DELTA[mark]
+    rating = await solve_puzzle(callback.from_user.id, int(pid), mark, delta)
+    if rating is None:
+        await callback.answer("Эта задача уже решена", show_alert=True)
+        return
+    await callback.answer(f"{mark} {puzzles.NAMES[mark]}")
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+    best = max(puzzle["moves"], key=lambda m: puzzles.DELTA[m[1]])[0]
+    await callback.message.answer(
+        ui.puzzle_result(move, mark, puzzles.NAMES[mark], why, best, delta, rating, puzzles.rank(rating)),
+        reply_markup=puzzle_after_keyboard(),
+    )
+
+
+@router.callback_query(F.data == "fact")
+async def fact_callback(callback: CallbackQuery):
+    await callback.answer()
+    await callback.message.answer(facts.render(facts.random_fact()), reply_markup=puzzle_after_keyboard())
 
 
 # =========================================================
