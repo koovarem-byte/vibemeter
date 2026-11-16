@@ -92,22 +92,12 @@ def vibe_hour_on_keyboard():
 
 
 def main_menu():
+    """Главное меню игры «Шах и чат» (знакомства убраны 16.11)."""
     return ReplyKeyboardMarkup(
         keyboard=[
             [menu_btn(ui.MENU_CHESS)],
-            [
-                menu_btn(ui.MENU_FIND),
-                menu_btn(ui.MENU_LIKES),
-            ],
-            [
-                menu_btn(ui.MENU_PROFILE),
-                menu_btn(ui.MENU_GAMES),
-            ],
-            [
-                menu_btn(ui.MENU_STATS),
-                menu_btn(ui.MENU_SETTINGS),
-            ],
-            [menu_btn(ui.MENU_INVITE)],
+            [menu_btn(ui.MENU_TOP), menu_btn(ui.MENU_FACT)],
+            [menu_btn(ui.MENU_ME), menu_btn(ui.MENU_FRIEND)],
         ],
         resize_keyboard=True,
         input_field_placeholder=ui.MENU_PLACEHOLDER,
@@ -229,6 +219,8 @@ def likes_header_keyboard():
 def campaign_keyboard(button: str | None, bot_username: str):
     """Кнопки под рассылкой из админки: главное действие + канал."""
     channel = [btn(ui.BTN_CHANNEL, url=ui.CHANNEL_URL, neon="star")]
+    if button == "play":
+        return rows([btn(ui.BTN_PZ_SOLVE, "pz_next", neon="crown")], channel)
     if button == "invite":
         return rows([btn(ui.BTN_INVITE, "invite", neon="heart")], channel)
     if button == "fill":
@@ -464,4 +456,19 @@ def chess_reminder_keyboard():
     return rows(
         [btn(ui.BTN_PZ_SOLVE, "pz_next", neon="crown")],
         [btn(ui.BTN_PZ_OFF, "pz_off")],
+    )
+
+
+def friend_keyboard(link: str):
+    return rows([btn(
+        ui.BTN_SHARE_FRIEND_GAME,
+        url=f"https://t.me/share/url?url={quote(link)}&text={quote(ui.FRIEND_SHARE_TEXT)}",
+        neon="hands",
+    )])
+
+
+def fact_keyboard():
+    return rows(
+        [btn(ui.BTN_FACT, "fact", neon="spark")],
+        [btn(ui.BTN_PZ_NEXT, "pz_next", neon="crown")],
     )

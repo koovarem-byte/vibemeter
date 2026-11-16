@@ -9,7 +9,7 @@ from aiohttp import web
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.filters import ExceptionMessageFilter
-from aiogram.types import MenuButtonWebApp, WebAppInfo
+from aiogram.types import BotCommand, MenuButtonCommands
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler
 
 from config import ADMIN_ID, BOT_TOKEN
@@ -17,8 +17,6 @@ from database import init_db, close_db
 from handlers import router
 import admin
 from webapp_api import setup_webapp
-import vibehour
-import referral
 import chessdaily
 import ui
 import alerts
@@ -91,17 +89,18 @@ async def setup_profile(bot):
 
 
 async def setup_menu_button(bot):
-    # Без WEBAPP_URL кнопку не трогаем: локально её ставит deploy/dev_tunnel.sh
-    if not WEBAPP_URL:
-        return
+    """16.11: Mini App знакомств убрана из кнопки меню — там теперь команды игры."""
     try:
-        await bot.set_chat_menu_button(menu_button=MenuButtonWebApp(
-            text="Вайбометр",
-            web_app=WebAppInfo(url=f"{WEBAPP_URL}/app/"),
-        ))
-        print(f"Mini App: {WEBAPP_URL}/app/")
+        await bot.set_my_commands([
+            BotCommand(command="chess", description="Задача «Шах и чат»"),
+            BotCommand(command="top", description="Топ игроков"),
+            BotCommand(command="fact", description="Факт дня"),
+            BotCommand(command="me", description="Мой рейтинг"),
+            BotCommand(command="start", description="Главное меню"),
+        ])
+        await bot.set_chat_menu_button(menu_button=MenuButtonCommands())
     except Exception:
-        logging.exception("Не удалось поставить кнопку Mini App")
+        logging.exception("Не удалось поставить команды и кнопку меню")
 
 
 def create_app(bot, dp, webhook=True):
@@ -133,8 +132,7 @@ async def run_webhook():
     await init_db()
     await setup_menu_button(bot)
     await setup_profile(bot)
-    vibe_hour_task = asyncio.create_task(vibehour.loop(bot))
-    referral_task = asyncio.create_task(referral.loop(bot))
+    # вайб-час и засчитывание подруг — механики знакомств, с 16.11 выключены
     chess_task = asyncio.create_task(chessdaily.loop(bot))
     alerts_task = alerts.install(bot, ADMIN_ID)
 
@@ -155,8 +153,6 @@ async def run_webhook():
     try:
         await _stop.wait()
     finally:
-        vibe_hour_task.cancel()
-        referral_task.cancel()
         chess_task.cancel()
         alerts_task.cancel()
         await runner.cleanup()
@@ -181,8 +177,7 @@ async def run_polling():
     await init_db()
     await setup_menu_button(bot)
     await setup_profile(bot)
-    vibe_hour_task = asyncio.create_task(vibehour.loop(bot))
-    referral_task = asyncio.create_task(referral.loop(bot))
+    # вайб-час и засчитывание подруг — механики знакомств, с 16.11 выключены
     chess_task = asyncio.create_task(chessdaily.loop(bot))
     alerts_task = alerts.install(bot, ADMIN_ID)
 
@@ -195,8 +190,6 @@ async def run_polling():
         # сигналы ловит run_forever, иначе после перезапуска SIGTERM терялся бы
         await dp.start_polling(bot, handle_signals=False)
     finally:
-        vibe_hour_task.cancel()
-        referral_task.cancel()
         chess_task.cancel()
         alerts_task.cancel()
         await runner.cleanup()

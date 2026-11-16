@@ -2050,3 +2050,13 @@ async def set_chess_notify(telegram_id: int, value: bool):
     db = await get_pool()
     async with db.acquire() as conn:
         await conn.execute("UPDATE users SET chess_notify = $2 WHERE telegram_id = $1", telegram_id, value)
+
+
+async def chess_me(user_id: int) -> dict:
+    db = await get_pool()
+    async with db.acquire() as conn:
+        row = await conn.fetchrow("""
+            SELECT COUNT(*) AS solved, COUNT(*) FILTER (WHERE mark = '!!') AS brilliant
+            FROM puzzle_answers WHERE user_id = $1
+        """, user_id)
+    return dict(row)

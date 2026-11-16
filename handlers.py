@@ -31,6 +31,7 @@ import facts
 import puzzles
 from aiogram.exceptions import TelegramForbiddenError
 from database import (
+    chess_me,
     set_chess_notify,
     chess_place,
     chess_top,
@@ -68,6 +69,8 @@ from database import (
     touch_user,
 )
 from keyboards import (
+    fact_keyboard,
+    friend_keyboard,
     puzzle_keyboard,
     puzzle_after_keyboard,
     browse_menu,
@@ -179,6 +182,118 @@ router.message.outer_middleware(flood_middleware)
 router.callback_query.outer_middleware(flood_middleware)
 router.message.outer_middleware(ban_middleware)
 router.callback_query.outer_middleware(ban_middleware)
+
+
+# =========================================================
+# «ШАХ И ЧАТ» — ГЛАВНОЕ МЕНЮ (16.11 знакомства убраны)
+# Зарегистрировано первым: меню работает из любого состояния,
+# старые кнопки знакомств ведут в игру.
+# =========================================================
+
+# старые кнопки нижнего меню знакомств и ленты
+DATING_TEXTS = (
+    ui.menu_texts(ui.MENU_FIND) | ui.menu_texts(ui.MENU_LIKES) | ui.menu_texts(ui.MENU_PROFILE)
+    | ui.menu_texts(ui.MENU_GAMES) | ui.menu_texts(ui.MENU_STATS) | ui.menu_texts(ui.MENU_SETTINGS)
+    | ui.menu_texts(ui.MENU_INVITE)
+    | {ui.BROWSE_LIKE, ui.BROWSE_SKIP, ui.BROWSE_ASK, ui.BROWSE_REPORT, ui.BROWSE_MENU}
+)
+# старые inline-кнопки знакомств (у людей в чатах остались)
+DATING_CALLBACKS = (
+    "browse", "my_vibes", "bc_vibes", "invite", "who_liked", "edit_profile",
+    "search_settings", "play_again", "achievements",
+)
+DATING_PREFIXES = (
+    "like:", "skip:", "incoming_like:", "incoming_skip:", "question:", "answer_q:",
+    "q_like:", "q_report:", "search_gender:", "game_like:",
+)
+
+
+async def _menu(message: Message, state: FSMContext):
+    """Сбрасываем любые старые состояния (анкета, вопрос) — их больше нет."""
+    if await state.get_state() is not None:
+        await state.clear()
+    if not await get_user(message.from_user.id):
+        await message.answer(ui.NEED_START)
+        return False
+    return True
+
+
+@router.message(F.text.in_(ui.menu_texts(ui.MENU_CHESS)))
+async def menu_chess(message: Message, state: FSMContext):
+    if await _menu(message, state):
+        await show_puzzle(message, message.from_user.id)
+
+
+@router.message(F.text.in_(ui.menu_texts(ui.MENU_TOP)))
+@router.message(Command("top"))
+async def menu_top(message: Message, state: FSMContext):
+    if not await _menu(message, state):
+        return
+    user = await get_user(message.from_user.id)
+    place, total = await chess_place(message.from_user.id)
+    await message.answer(
+        ui.chess_top(await chess_top(10), place, total, user["chess_rating"]),
+        reply_markup=puzzle_after_keyboard(),
+    )
+
+
+@router.message(F.text.in_(ui.menu_texts(ui.MENU_FACT)))
+@router.message(Command("fact"))
+async def menu_fact(message: Message, state: FSMContext):
+    if await _menu(message, state):
+        await message.answer(ui.fact_of_day(facts.render(facts.fact_of_day())), reply_markup=fact_keyboard())
+
+
+@router.message(F.text.in_(ui.menu_texts(ui.MENU_ME)))
+@router.message(Command("me"))
+async def menu_me(message: Message, state: FSMContext):
+    if not await _menu(message, state):
+        return
+    user = await get_user(message.from_user.id)
+    me = await chess_me(message.from_user.id)
+    place, total = await chess_place(message.from_user.id)
+    rating = user["chess_rating"]
+    await message.answer(
+        ui.my_rating(rating, puzzles.rank(rating), me["solved"], len(puzzles.PUZZLES), me["brilliant"], place, total),
+        reply_markup=puzzle_after_keyboard(),
+    )
+
+
+@router.message(F.text.in_(ui.menu_texts(ui.MENU_FRIEND)))
+async def menu_friend(message: Message, state: FSMContext):
+    if not await _menu(message, state):
+        return
+    link = f"https://t.me/{(await message.bot.me()).username}?start=pz_{puzzles.today_index()}"
+    await message.answer(
+        ui.friend_invite(link),
+        reply_markup=friend_keyboard(link),
+        link_preview_options=LinkPreviewOptions(is_disabled=True),
+    )
+
+
+@router.message(F.text.in_(DATING_TEXTS))
+async def dating_closed(message: Message, state: FSMContext):
+    if await _menu(message, state):
+        await message.answer(ui.DATING_CLOSED, reply_markup=main_menu())
+
+
+@router.callback_query(F.data.in_(DATING_CALLBACKS) | F.data.startswith(DATING_PREFIXES))
+async def dating_closed_callback(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    if await state.get_state() is not None:
+        await state.clear()
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+    await callback.message.answer(ui.DATING_CLOSED, reply_markup=main_menu())
+
+
+@router.message(StateFilter(ProfileState, QuestionState))
+async def stale_state(message: Message, state: FSMContext):
+    """Человек застрял на шаге старой анкеты или вопроса — отпускаем в игру."""
+    await state.clear()
+    await message.answer(ui.DATING_CLOSED, reply_markup=main_menu())
 
 
 # =========================================================
@@ -466,13 +581,9 @@ async def consent_accept_callback(
     await callback.message.edit_reply_markup(reply_markup=None)
 
     await state.clear()
-    if pz is not None:
-        # пришёл по задаче от друга: сначала игра, анкета — потом через /start
-        await callback.message.answer(ui.PZ_FRIEND, reply_markup=main_menu())
-        await show_puzzle(callback.message, callback.from_user.id, pz)
-        return
-    await callback.message.answer(ui.PROFILE_START)
-    await state.set_state(ProfileState.name)
+    # анкеты больше нет: сразу в игру (по ссылке друга — его задача)
+    await callback.message.answer(ui.PZ_FRIEND if pz is not None else ui.WELCOME_NEW, reply_markup=main_menu())
+    await show_puzzle(callback.message, callback.from_user.id, pz)
 
 
 # =========================================================
@@ -571,6 +682,11 @@ async def start_handler(
             await state.update_data(ref=ref)
         await message.answer(ui.CONSENT, reply_markup=consent_keyboard())
         return
+
+    # 16.11: знакомства убраны — всем, кто уже согласился, сразу меню игры
+    await state.clear()
+    await message.answer(ui.welcome_back(user["streak_days"]), reply_markup=main_menu())
+    return
 
     profile_complete = all(
         user.get(field)
@@ -839,7 +955,7 @@ async def give_girl_vip(bot, user_id: int):
     """Девушке после анкеты: VIP навсегда + сообщение рассылки девушкам
     (один раз: кампания пишется в broadcast_log, рассылка ей не повторится)."""
     try:
-        if await grant_female_vip(user_id):
+        if ui.GIRLS_CAMPAIGN in ui.CAMPAIGNS and await grant_female_vip(user_id):
             await broadcast.deliver(bot, user_id, ui.GIRLS_CAMPAIGN, (await bot.me()).username)
     except Exception:
         logging.exception("VIP девушке %s", user_id)
@@ -1045,11 +1161,6 @@ async def show_puzzle(message: Message, user_id: int, first: int | None = None):
         ui.puzzle_text(puzzles.PUZZLES[pid], len(done) + 1, rating, puzzles.rank(rating)),
         reply_markup=puzzle_keyboard(pid, puzzles.PUZZLES[pid]["moves"]),
     )
-
-
-@router.message(F.text.in_(ui.menu_texts(ui.MENU_CHESS)))
-async def chess_handler(message: Message):
-    await show_puzzle(message, message.from_user.id)
 
 
 @router.message(Command("chess"))

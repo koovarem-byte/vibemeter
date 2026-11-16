@@ -176,6 +176,134 @@ FACTS = [
         "url": "https://www.scandinaviastandard.com/t-gen-z-loneliness-80-percent-baby-boomers-45-percent/",
         "reliability": "mid",
     },
+    {
+        "id": "four_horsemen",
+        "text": "Готтман назвал четыре «всадника», которые чаще всего предсказывают расставание: критика личности («ты всегда…»), презрение (сарказм, закатывание глаз), оборона («а сам-то») и стена молчания",
+        "tip": "Жалуйся на поступок, а не на человека: «меня задело, что…» вместо «ты всегда…»",
+        "source": "Исследования Готтмана; Wikipedia: John Gottman",
+        "url": "https://en.wikipedia.com/wiki/John_Gottman",
+        "reliability": "mid",
+    },
+    {
+        "id": "five_to_one",
+        "text": "У устойчивых пар во время ссоры на одно негативное действие приходится около пяти позитивных: шутка, согласие, тёплое слово. В обычной жизни соотношение у них ещё выше",
+        "tip": "Ссориться можно. Важно, чтобы хорошего между вами было в разы больше",
+        "source": "Gottman Institute, «The Magic Ratio»",
+        "url": "https://www.gottman.com/blog/the-magic-ratio/",
+        "reliability": "mid",
+    },
+    {
+        "id": "perpetual_problems",
+        "text": "По Готтману, около 69% того, из-за чего ссорятся пары, — вечные проблемы: разница характеров и привычек. Решить их нельзя, но можно научиться о них говорить без войны",
+        "tip": "Не каждый спор нужно выиграть. Иногда цель — понять, а не переубедить",
+        "source": "Gottman Institute (по пересказам)",
+        "url": "https://www.psychologytoday.com/us/blog/social-instincts/202512/why-69-percent-of-couples-conflict-will-never-go-away",
+        "reliability": "mid",
+    },
+    {
+        "id": "harsh_startup",
+        "text": "Как пройдёт трудный разговор, видно по первым трём минутам. Если начать с упрёка или сарказма, разговор почти всегда заканчивается плохо",
+        "tip": "Начни мягко: «мне важно поговорить о…», а не «опять ты…»",
+        "source": "Gottman Institute, исследование 130 пар молодожёнов",
+        "url": "https://www.gottman.com/blog/the-6-things-that-predict-divorce/",
+        "reliability": "mid",
+    },
+    {
+        "id": "good_news",
+        "text": "Как ты реагируешь на хорошие новости близкого человека, говорит об отношениях больше, чем поддержка в беде. Пары, где радуются активно и расспрашивают, довольнее отношениями",
+        "tip": "Друг похвастался? Не «ну норм», а «ого! как это было? расскажи»",
+        "source": "Gable, Reis и др., 2004",
+        "url": "https://www.sas.rochester.edu/psy/people/faculty/reis_harry/assets/pdf/GableReisImpettAsher_2004.pdf",
+        "reliability": "high",
+    },
+    {
+        "id": "phubbing",
+        "text": "Когда партнёр «залипает» в телефон при тебе, это снижает удовлетворённость отношениями — через ссоры из-за телефона. Почти половина опрошенных сталкивались с этим",
+        "tip": "Разговор важный? Положи телефон экраном вниз",
+        "source": "Roberts, David, Computers in Human Behavior, 2016",
+        "url": "https://kellercenter.hankamer.baylor.edu/news/story/2017/partner-phubbing-how-cell-phones-impact-romantic-partnerships",
+        "reliability": "high",
+    },
+    {
+        "id": "fight_by_text",
+        "text": "Пары, которые выясняют отношения и извиняются в переписке, в среднем менее довольны отношениями. А вот тёплые сообщения связаны с более счастливыми отношениями",
+        "tip": "Нежность — в чат. Серьёзный разговор — голосом или вживую",
+        "source": "Schade, Sandberg, BYU, 2013 (корреляция)",
+        "url": "https://news.byu.edu/news/too-much-texting-can-disconnect-couples-research-finds",
+        "reliability": "mid",
+    },
+    {
+        "id": "divorce_denmark",
+        "text": "В опросе 2371 недавно разведённого датчанина чаще всего называли нехватку любви и близости (47%) и проблемы в общении (44%). Измену — только 27%",
+        "tip": "Чаще всего пары рушит не измена, а то, что люди перестают говорить друг с другом",
+        "source": "Journal of Sex & Marital Therapy (Дания)",
+        "url": "https://www.yahoo.com/lifestyle/4-most-common-reasons-divorce-165149580.html",
+        "reliability": "mid",
+    },
+    {
+        "id": "divorce_russia",
+        "text": "Россияне по опросу ВЦИОМ главной причиной разводов называют деньги (46%), потом поведение партнёра — измены, вредные привычки (31%) — и проблемы в общении (23%)",
+        "tip": "Про деньги тоже надо уметь говорить — это такой же разговор, как остальные",
+        "source": "ВЦИОМ",
+        "url": "https://mel.fm/novosti/2715649-vtsiom-pochti-polovina-rossiyan-nazvala-glavnoy-prichinoy-razvodov-denezhnyye-trudnosti",
+        "reliability": "mid",
+    },
+    {
+        "id": "active_listening",
+        "text": "Когда в ответ пересказывают твою мысль своими словами и уточняют, люди чувствуют себя понятыми сильнее, чем когда им дают совет",
+        "tip": "Вместо совета: «то есть тебя больше всего задело, что…?»",
+        "source": "Weger и др., International Journal of Listening, 2014",
+        "url": "https://reachfamilies.umn.edu/node/5262",
+        "reliability": "high",
+    },
+    {
+        "id": "apology",
+        "text": "Самая важная часть извинения — признать свою ответственность, на втором месте — предложить исправить. Слабее всего работает «прости меня»",
+        "tip": "Не «извини, если обидел», а «я был неправ, что… Давай я…»",
+        "source": "Lewicki и др., Ohio State University, 2016",
+        "url": "https://news.osu.edu/the-6-elements-of-an-effective-apology-according-to-science/",
+        "reliability": "high",
+    },
+    {
+        "id": "gratitude",
+        "text": "Благодарность скрепляет отношения: сказанное «спасибо» делает человека в глазах другого теплее, и тот охотнее продолжает общение",
+        "tip": "Скажи спасибо за мелочь, которую обычно не замечаешь",
+        "source": "Algoe и др., Emotion, 2014; обзор Algoe, 2012",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/25111881/",
+        "reliability": "high",
+    },
+    {
+        "id": "humblebrag",
+        "text": "Скромное хвастовство («ну вот, опять меня повысили, устал») нравится людям меньше, чем честное хвастовство и даже чем жалоба. Его считывают как неискренность",
+        "tip": "Хочешь похвастаться — хвастайся прямо. Это честнее и симпатичнее",
+        "source": "Sezer, Gino, Norton, Journal of Personality and Social Psychology, 2018",
+        "url": "https://www.library.hbs.edu/working-knowledge/humblebragging-is-a-bad-strategy-especially-in-a-job-interview",
+        "reliability": "high",
+    },
+    {
+        "id": "spotlight",
+        "text": "Эффект прожектора: нам кажется, что наши промахи замечают все. В эксперименте студенты в нелепой футболке думали, что её заметили вдвое больше людей, чем на самом деле",
+        "tip": "Ляпнул что-то? Скорее всего, никто кроме тебя этого уже не помнит",
+        "source": "Gilovich, Medvec, Savitsky, 2000",
+        "url": "https://www.psychologytoday.com/us/blog/between-you-and-me/201311/have-you-fallen-prey-to-the-spotlight-effect",
+        "reliability": "high",
+    },
+    {
+        "id": "reach_out",
+        "text": "Написать старому другу, с которым давно не общались, — люди ценят это сильно больше, чем ждёт отправитель. 13 экспериментов, почти 6 тысяч участников",
+        "tip": "Вспомнил человека — напиши ему прямо сейчас. Даже «привет, вспомнил тебя»",
+        "source": "Liu и др., Journal of Personality and Social Psychology, 2022",
+        "url": "https://www.psypost.org/2022/08/study-identifies-a-robust-tendency-to-underestimate-how-much-others-appreciate-being-reached-out-to-63627",
+        "reliability": "high",
+    },
+    {
+        "id": "unsolicited_advice",
+        "text": "Непрошеный совет часто считывают как критику: будто человек сам не справится. Даже от друга",
+        "tip": "Прежде чем советовать, спроси: «хочешь совет или просто выговориться?»",
+        "source": "Исследования непрошеной помощи (PsyPost; Cambridge Judge, 2021)",
+        "url": "https://www.jbs.cam.ac.uk/2021/tainted-suggestions/",
+        "reliability": "mid",
+    },
 ]
 
 
@@ -192,3 +320,11 @@ def random_fact(exclude: set[str] | None = None):
 def render(fact) -> str:
     """Факт для сообщения бота (HTML)."""
     return f"🧠 <b>Факт</b>\n\n{fact['text']}\n\n💡 {fact['tip']}\n\n<i>{fact['source']}</i>"
+
+
+def fact_of_day():
+    """Один факт на день (по Москве), у всех одинаковый."""
+    from datetime import datetime, timedelta, timezone
+    pool = for_bot()
+    day = datetime.now(timezone(timedelta(hours=3))).date().toordinal()
+    return pool[day % len(pool)]

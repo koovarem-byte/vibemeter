@@ -653,16 +653,9 @@ def _st(st: dict) -> str:
 
 # что бот пишет сам: (кому и когда, как выглядит) — для экрана и «👀 Автосообщения»
 AUTO = [
-    ("💎 Девушке сразу после анкеты",
-     "VIP навсегда + стикер и текст «Дарю VIP» (это та же кампания — ручная ей уже не придёт)"),
-    ("💌 Пригласившему за каждые 3 засчитанные подруги", "+7 дней VIP и «Ты позвал 3 подруги…»"),
-    ("⭐ Пригласившему, когда друг заполнил анкету", "«Твой друг в Вайбометре», анкета сутки первая"),
-    ("💜 Обоим при взаимном вайбе",
-     "стикер, карточка с фото, «У вас взаимный вайб💜» с «✍️ Написать»"),
-    ("👀 Кому отправили вайб", "«Тебе отправили вайб» без имени"),
-    ("⚡ В 20:50 МСК", "напоминание о вайб-часе (анкета есть, заходил недавно, не отключал)"),
-    ("🔥 Первый заход за день, серия от 2 дней", "«Серия N дней подряд»"),
     ("♟ В 13:00 МСК", "«Задача дня ждёт» — кто играл в «Шах и чат», заходил за 7 дней и сегодня не решал"),
+    ("🔥 Первый заход за день, серия от 2 дней", "«Серия N дней подряд»"),
+    ("💜 Старые пары при взаимном вайбе", "знакомства закрыты 16.11 — новых мэтчей нет, сообщение не уходит"),
 ]
 
 
@@ -678,7 +671,8 @@ async def hub_text() -> str:
         seg = t["audience"]
         left = len(await campaign_targets(key, seg))
         extra = "анимированный стикер + " if t["sticker"] else ""
-        button = {"invite": f"«{ui.BTN_INVITE}»", "fill": f"«{ui.BTN_FILL_PROFILE}»"}[t["button"]]
+        button = {"invite": f"«{ui.BTN_INVITE}»", "fill": f"«{ui.BTN_FILL_PROFILE}»",
+                  "play": f"«{ui.BTN_PZ_SOLVE}»"}[t["button"]]
         lines += [
             f"<b>{html.escape(t['title'])}</b> — {ui.SEGMENTS[seg]}",
             f"   {extra}текст + кнопки {button} и «{ui.BTN_CHANNEL}»",
@@ -750,23 +744,9 @@ async def cb_cmp_auto(callback: CallbackQuery):
         await callback.message.answer(f"⬇️ <b>{who}</b>\n<i>{what}</i>")
 
     await head(0)
-    await broadcast.send_campaign(bot, me, ui.GIRLS_CAMPAIGN, username, ref_link=referral.link(username, me))
-    await head(1)
-    await callback.message.answer(ui.INVITE_REWARD)
-    await head(2)
-    await callback.message.answer(ui.friend_joined(1, None))
-    await head(3)
-    await stickers.send(bot, me, "sticker_5_match")
-    await callback.message.answer(ui.MATCH_TEXT, reply_markup=match_keyboard(me, username))
-    await head(4)
-    await callback.message.answer(ui.LIKED_YOU, reply_markup=liked_you_keyboard())
-    await head(5)
-    await callback.message.answer(ui.vibe_hour_soon(10), reply_markup=vibe_hour_keyboard())
-    await head(6)
-    await callback.message.answer(ui.streak_notice(3))
-    await head(7)
     await callback.message.answer(ui.chess_reminder(1215, "Разрядник"), reply_markup=chess_reminder_keyboard())
-    await callback.message.answer("Это все автосообщения", reply_markup=_kb([HUB]))
+    await head(1)
+    await callback.message.answer(ui.streak_notice(3), reply_markup=_kb([HUB]))
 
 
 @router.callback_query(F.data == "adm:cmp:new")
