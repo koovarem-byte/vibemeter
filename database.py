@@ -369,7 +369,7 @@ async def init_db():
             ADD COLUMN IF NOT EXISTS chess_rating INTEGER NOT NULL DEFAULT 0,
             ADD COLUMN IF NOT EXISTS chess_notify BOOLEAN NOT NULL DEFAULT TRUE
         """)
-        # (16.11, вечер) был переход на шкалу с 0 — заменён на Эло с 1200 по ТЗ ниже
+        # (16.11, вечер) первый переход на шкалу с 0 (потом было Эло 1200, теперь снова очки — ниже)
         if await conn.fetchval("""
             INSERT INTO app_state (key, value) VALUES ('chess_rating_zero', '1')
             ON CONFLICT (key) DO NOTHING RETURNING key
@@ -382,13 +382,6 @@ async def init_db():
                 ), 0)
             """)
 
-        # ТЗ «Тренажёр переписки»: рейтинг Эло с 1200 (один раз всем 1200)
-        await conn.execute("ALTER TABLE users ALTER COLUMN chess_rating SET DEFAULT 1200")
-        if await conn.fetchval("""
-            INSERT INTO app_state (key, value) VALUES ('chess_rating_elo', '1')
-            ON CONFLICT (key) DO NOTHING RETURNING key
-        """):
-            await conn.execute("UPDATE users SET chess_rating = 1200")
         # партии с ИИ-девушкой
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS chat_games (
@@ -408,6 +401,35 @@ async def init_db():
             )
         """)
         await conn.execute("CREATE INDEX IF NOT EXISTS chat_games_user ON chat_games (user_id, created_at)")
+        # 16.11 (решение владельца): рейтинг — очки с 0, не Эло с 1200. Один раз пересчитываем всем:
+        # задачи (!! +15, ! +8, ?! 0, ?? −5) + доигранные партии (puzzles.game_points)
+        await conn.execute("ALTER TABLE users ALTER COLUMN chess_rating SET DEFAULT 0")
+        if await conn.fetchval("""
+            INSERT INTO app_state (key, value) VALUES ('chess_rating_points', '1')
+            ON CONFLICT (key) DO NOTHING RETURNING key
+        """):
+            import puzzles
+            totals: dict[int, int] = {}
+            for r in await conn.fetch("""
+                SELECT user_id, SUM(CASE mark WHEN '!!' THEN 15 WHEN '!' THEN 8
+                                              WHEN '?!' THEN 0 ELSE -5 END) AS pts
+                FROM puzzle_answers GROUP BY user_id
+            """):
+                totals[r["user_id"]] = int(r["pts"] or 0)
+            for g in await conn.fetch("""
+                SELECT id, user_id, history, result, difficulty FROM chat_games
+                WHERE status = 'finished' ORDER BY finished_at
+            """):
+                hist = g["history"] if isinstance(g["history"], list) else json.loads(g["history"] or "[]")
+                badges = [m.get("badge") for m in hist if m.get("who") == "me"]
+                before = totals.get(g["user_id"], 0)
+                after = max(0, before + puzzles.game_points(badges, g["result"] or "", g["difficulty"]))
+                totals[g["user_id"]] = after
+                await conn.execute("UPDATE chat_games SET rating_before = $2, rating_after = $3 WHERE id = $1",
+                                   g["id"], before, after)
+            await conn.execute("UPDATE users SET chess_rating = 0")
+            for uid, pts in totals.items():
+                await conn.execute("UPDATE users SET chess_rating = $2 WHERE telegram_id = $1", uid, max(0, pts))
         # задача дня со свободным ответом: один ответ в день
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS chat_daily (
@@ -2054,7 +2076,7 @@ async def solve_puzzle(user_id: int, puzzle_id: int, mark: str, delta: int):
             if not ok:
                 return None
             return await conn.fetchval("""
-                UPDATE users SET chess_rating = GREATEST(100, chess_rating + $2)
+                UPDATE users SET chess_rating = GREATEST(0, chess_rating + $2)
                 WHERE telegram_id = $1 RETURNING chess_rating
             """, user_id, delta)
 

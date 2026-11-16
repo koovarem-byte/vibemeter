@@ -217,10 +217,9 @@ async def end_game(message: Message, state: FSMContext, game, sit, history, last
     result = last_verdict.get("result")
     if result not in ("mate", "stalemate", "win"):
         result = "win" if avg >= 3 else ("mate" if avg <= -3 else "stalemate")
-    score = max(0.0, min(1.0, (avg + 10) / 20))
     user = await get_user(message.chat.id)
     before = user["chess_rating"]
-    after = puzzles.elo(before, game["difficulty"], score)
+    after = max(0, before + puzzles.game_points([m.get("badge") for m in my_moves], result, game["difficulty"]))
     # лучший ход — подсказка судьи к самому слабому ходу партии
     worst = min(my_moves, key=lambda m: m["eval"])
     best = worst.get("best") if worst["badge"] not in ("!!", "#") else None
@@ -467,7 +466,7 @@ async def top_cb(callback: CallbackQuery):
     user = await get_user(callback.from_user.id)
     place, total = await chat_place(callback.from_user.id)
     await callback.message.answer(
-        ui.trainer_top(await chat_top(20), place, total, (user or {}).get("chess_rating") or 1200),
+        ui.trainer_top(await chat_top(20), place, total, (user or {}).get("chess_rating") or 0),
         reply_markup=after_game_keyboard())
 
 

@@ -1106,7 +1106,7 @@ async def show_puzzle(message: Message, user_id: int, first: int | None = None):
         await message.answer(facts.render(facts.random_fact()), reply_markup=puzzle_after_keyboard())
         return
     pid = left[0]
-    rating = user.get("chess_rating") or 1200
+    rating = user.get("chess_rating") or 0
     await message.answer(
         ui.puzzle_text(puzzles.PUZZLES[pid], len(done) + 1, rating, puzzles.rank(rating)),
         reply_markup=puzzle_keyboard(pid, puzzles.PUZZLES[pid]["moves"]),
@@ -1133,8 +1133,8 @@ async def puzzle_move(callback: CallbackQuery):
     except (ValueError, IndexError):
         await callback.answer()
         return
-    before = ((await get_user(callback.from_user.id)) or {}).get("chess_rating") or 1200
-    delta = puzzles.elo(before, puzzles.PUZZLE_OPPONENT, puzzles.PUZZLE_SCORE[mark], puzzles.PUZZLE_K) - before
+    before = ((await get_user(callback.from_user.id)) or {}).get("chess_rating") or 0
+    delta = puzzles.DELTA[mark]
     rating = await solve_puzzle(callback.from_user.id, int(pid), mark, delta)
     if rating is None:
         await callback.answer("Эта задача уже решена", show_alert=True)
@@ -1157,7 +1157,7 @@ async def puzzle_top(callback: CallbackQuery):
     user = await get_user(callback.from_user.id)
     place, total = await chess_place(callback.from_user.id)
     await callback.message.answer(
-        ui.chess_top(await chess_top(10), place, total, (user or {}).get("chess_rating") or 1200),
+        ui.chess_top(await chess_top(10), place, total, (user or {}).get("chess_rating") or 0),
         reply_markup=puzzle_after_keyboard(),
     )
 

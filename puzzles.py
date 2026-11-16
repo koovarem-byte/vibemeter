@@ -1,6 +1,6 @@
 """«Шах и чат»: задачи по переписке. Выбери ход — получи оценку как в шахматах.
 
-!! бриллиант, ! хороший ход, ?! сомнительно, ?? зевок. Рейтинг — Эло с 1200 (как в партиях с ИИ).
+!! бриллиант, ! хороший ход, ?! сомнительно, ?? зевок. Рейтинг — очки с 0, ниже нуля не падает (как в партиях с ИИ).
 Объяснения опираются на исследования из facts.py.
 """
 
@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 
 MSK = timezone(timedelta(hours=3))
 
-# очки старой шкалы (нужны только для разовой миграции в init_db); рейтинг теперь Эло
+# очки за ход задачи; рейтинг — очки с 0, ниже нуля не падает
 DELTA = {"!!": 15, "!": 8, "?!": 0, "??": -5}
 NAMES = {"!!": "Бриллиант", "!": "Хороший ход", "?!": "Сомнительно", "??": "Зевок"}
 
@@ -308,11 +308,11 @@ def today_index() -> int:
     return datetime.now(MSK).date().toordinal() % len(PUZZLES)
 
 
-RANKS = [(2200, "Гроссмейстер"), (1900, "Ферзь"), (1700, "Ладья"), (1500, "Слон"), (1300, "Конь")]
+RANKS = [(1500, "Гроссмейстер"), (1000, "Ферзь"), (600, "Ладья"), (300, "Слон"), (100, "Конь")]
 
 
 def rank(rating: int) -> str:
-    """Звания по ТЗ: до 1300 Пешка … 2200+ Гроссмейстер."""
+    """Звания: с 0 Пешка, 100 Конь, 300 Слон, 600 Ладья, 1000 Ферзь, 1500 Гроссмейстер."""
     for limit, name in RANKS:
         if rating >= limit:
             return name
@@ -327,15 +327,23 @@ def next_rank(rating: int):
     return None
 
 
-def elo(rating: int, opponent: int, score: float, k: int = 24) -> int:
-    """Эло: score 0…1 (результат партии), opponent — рейтинг соперницы."""
-    expected = 1 / (1 + 10 ** ((opponent - rating) / 400))
-    return round(rating + k * (score - expected))
+# очки за ход партии с ИИ (# — мат в твою пользу)
+MOVE_POINTS = {"!!": 15, "!": 8, "?": -3, "??": -5, "#": 20}
 
 
-# быстрая задача с вариантами — мини-партия против 1300 с K=12
-PUZZLE_OPPONENT, PUZZLE_K = 1300, 12
-PUZZLE_SCORE = {"!!": 1.0, "!": 0.75, "?!": 0.35, "??": 0.0}
+def stars(difficulty: int) -> int:
+    """Сложность ситуации 1000–2200 -> 1–5 звёзд."""
+    return max(1, min(5, (difficulty - 1000) // 250 + 1))
+
+
+def game_points(badges: list[str], result: str, difficulty: int) -> int:
+    """Очки за партию: сумма ходов + бонус за победу (больше за сложную) или −5 за мат."""
+    pts = sum(MOVE_POINTS.get(b, 0) for b in badges)
+    if result == "win":
+        pts += 5 * stars(difficulty)
+    elif result == "mate":
+        pts -= 5
+    return pts
 
 
 def move_order(puzzle_id: int) -> list[int]:

@@ -10,6 +10,7 @@ import os
 from urllib.parse import quote
 
 import ui
+from puzzles import stars
 from referral import share_url
 
 
@@ -484,7 +485,7 @@ def play_button():
 
 
 def situations_keyboard(items):
-    keyboard = [[btn(f"{s.get('title') or s['key']} ({s['difficulty']})", f"play:{s['key']}")]
+    keyboard = [[btn(f"{s.get('title') or s['key']} {'★' * stars(s['difficulty'])}", f"play:{s['key']}")]
                 for s in sorted(items, key=lambda s: s["difficulty"])]
     keyboard.append([btn(ui.BTN_RANDOM, "play:random", neon="spark")])
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
