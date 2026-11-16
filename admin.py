@@ -63,10 +63,10 @@ router.callback_query.filter(F.from_user.id == ADMIN_ID)
 LIST_LIMIT = 15
 
 
-def _b(text, data, style="primary"):
-    # все кнопки синие, красные — только бан и опасное (решение 28.10)
-    if style == "success":
-        style = "primary"
+def _b(text, data, style="success"):
+    # все кнопки зелёные, красные — только бан и опасное (решение 16.11)
+    if style == "primary":
+        style = "success"
     return InlineKeyboardButton(text=text, callback_data=data, style=style)
 
 

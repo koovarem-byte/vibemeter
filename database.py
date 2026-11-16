@@ -366,9 +366,23 @@ async def init_db():
         """)
         await conn.execute("""
             ALTER TABLE users
-            ADD COLUMN IF NOT EXISTS chess_rating INTEGER NOT NULL DEFAULT 1200,
+            ADD COLUMN IF NOT EXISTS chess_rating INTEGER NOT NULL DEFAULT 0,
             ADD COLUMN IF NOT EXISTS chess_notify BOOLEAN NOT NULL DEFAULT TRUE
         """)
+        # 16.11: рейтинг начинается с 0, а не с 1200. Один раз пересчитываем
+        # всех по уже решённым задачам (новая шкала очков), дальше — только новые
+        await conn.execute("ALTER TABLE users ALTER COLUMN chess_rating SET DEFAULT 0")
+        if await conn.fetchval("""
+            INSERT INTO app_state (key, value) VALUES ('chess_rating_zero', '1')
+            ON CONFLICT (key) DO NOTHING RETURNING key
+        """):
+            await conn.execute("""
+                UPDATE users u SET chess_rating = COALESCE((
+                    SELECT GREATEST(0, SUM(CASE p.mark WHEN '!!' THEN 15 WHEN '!' THEN 8
+                                                      WHEN '?!' THEN 0 ELSE -5 END))
+                    FROM puzzle_answers p WHERE p.user_id = u.telegram_id
+                ), 0)
+            """)
 
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS game_answers (
@@ -1966,7 +1980,7 @@ async def solve_puzzle(user_id: int, puzzle_id: int, mark: str, delta: int):
             if not ok:
                 return None
             return await conn.fetchval("""
-                UPDATE users SET chess_rating = GREATEST(100, chess_rating + $2)
+                UPDATE users SET chess_rating = GREATEST(0, chess_rating + $2)
                 WHERE telegram_id = $1 RETURNING chess_rating
             """, user_id, delta)
 

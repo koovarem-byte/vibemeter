@@ -13,11 +13,11 @@ import ui
 from referral import share_url
 
 
-# Цвет кнопки (Telegram даёт только три). Все кнопки синие в нашем стиле
-# (решение 28.10), красные — только 18+, жалоба, удаление.
-# SUCCESS оставлен именем для старых вызовов, но тоже синий.
-PRIMARY, DANGER = "primary", "danger"
-SUCCESS = PRIMARY
+# Цвет кнопки (Telegram даёт только три). С 16.11 все кнопки зелёные
+# («Шах и чат»), красные — только 18+, жалоба, удаление.
+# PRIMARY и SUCCESS оставлены именами для старых вызовов — оба зелёные.
+DANGER = "danger"
+PRIMARY = SUCCESS = "success"
 
 
 def btn(text, callback_data=None, url=None, neon=None, style=PRIMARY):

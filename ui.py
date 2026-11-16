@@ -1172,7 +1172,7 @@ def puzzle_result(move: str, mark: str, name: str, why: str, best: str, delta: i
     def q(text):
         return esc(text) if text.startswith(("«", "(")) else f"«{esc(text)}»"
 
-    sign = f"+{delta}" if delta > 0 else str(delta)
+    sign = f"+{delta}" if delta > 0 else ("±0" if delta == 0 else str(delta))
     lines = [
         f"<b>{mark} {name}</b>",
         "",
