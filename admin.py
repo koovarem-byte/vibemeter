@@ -7,6 +7,7 @@
 """
 
 import html
+import re
 import json
 import logging
 import random
@@ -39,6 +40,8 @@ from database import (
     get_admin_stats,
     get_app_state,
     chess_stats,
+    add_custom_situation,
+    trainer_stats,
     raffle_participants,
     set_app_state,
     get_stats,
@@ -890,3 +893,48 @@ async def cb_raffle_go(callback: CallbackQuery):
         "of": len(people),
     }, ensure_ascii=False))
     await _show(callback, await raffle_text(), raffle_keyboard())
+
+
+# =========================================================
+# ТРЕНАЖЁР (ТЗ): /stats, /add_situation, /broadcast
+# =========================================================
+
+@router.message(Command("stats"))
+async def trainer_stats_cmd(message: Message):
+    t = await trainer_stats()
+    import llm
+    await message.answer(
+        "📊 <b>Тренажёр · сегодня</b>\n\n"
+        f"👥 Новых пользователей: <b>{t['new_today']}</b>\n"
+        f"♟ Партий начато: <b>{t['games_today']}</b> · доиграно: {t['finished_today']}"
+        f" ({_pct(t['finished_today'], t['games_today'])})\n"
+        f"🔥 Задача дня: {t['daily_today']} · 📋 разборов: {t['razbor_today']} · ✍️ вопросов: {t['ask_today']}\n\n"
+        f"Средний рейтинг игравших: <b>{t['avg_rating'] or '—'}</b> · всего игроков: {t['players']}\n"
+        f"ИИ: {'включён (' + llm.MODEL + ')' if llm.available() else '⚠️ нет ANTHROPIC_API_KEY — режимы с ИИ выключены'}",
+        reply_markup=_kb([BACK]),
+    )
+
+
+@router.message(Command("add_situation"))
+async def add_situation_cmd(message: Message):
+    """/add_situation ключ | её первое сообщение | контекст | сложность | название"""
+    parts = [p.strip() for p in (message.text or "").split(maxsplit=1)[-1].split("|")]
+    if len(parts) < 4 or not parts[3].isdigit() or not re.fullmatch(r"[a-z0-9_]{2,30}", parts[0]):
+        await message.answer(
+            "Формат:\n<code>/add_situation ключ | её сообщение | контекст | сложность | название</code>\n\n"
+            "Пример:\n<code>/add_situation late | ты где? | договорились встретиться, ты опаздываешь на 15 минут | 1600 | Опаздываешь</code>\n\n"
+            "Ключ — латиница, сложность 1000–2200. Если она молчит и первым пишет он — оставь её сообщение пустым"
+        )
+        return
+    key, opening, context, difficulty = parts[0], parts[1], parts[2], int(parts[3])
+    title = parts[4] if len(parts) > 4 and parts[4] else key
+    if not 1000 <= difficulty <= 2200:
+        await message.answer("Сложность — от 1000 до 2200")
+        return
+    await add_custom_situation(key, opening, context, difficulty, title)
+    await message.answer(f"✅ Ситуация «{html.escape(title)}» добавлена — уже есть в /play")
+
+
+@router.message(Command("broadcast"))
+async def broadcast_cmd(message: Message):
+    await message.answer(await hub_text(), reply_markup=hub_keyboard())

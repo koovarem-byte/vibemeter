@@ -1,6 +1,6 @@
 """«Шах и чат»: задачи по переписке. Выбери ход — получи оценку как в шахматах.
 
-!! бриллиант, ! хороший ход, ?! сомнительно, ?? зевок. Рейтинг начинается с 0, ниже нуля не падает.
+!! бриллиант, ! хороший ход, ?! сомнительно, ?? зевок. Рейтинг — Эло с 1200 (как в партиях с ИИ).
 Объяснения опираются на исследования из facts.py.
 """
 
@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 
 MSK = timezone(timedelta(hours=3))
 
-# очки за ход; при смене — поправить пересчёт в init_db (chess_rating_zero)
+# очки старой шкалы (нужны только для разовой миграции в init_db); рейтинг теперь Эло
 DELTA = {"!!": 15, "!": 8, "?!": 0, "??": -5}
 NAMES = {"!!": "Бриллиант", "!": "Хороший ход", "?!": "Сомнительно", "??": "Зевок"}
 
@@ -308,11 +308,34 @@ def today_index() -> int:
     return datetime.now(MSK).date().toordinal() % len(PUZZLES)
 
 
+RANKS = [(2200, "Гроссмейстер"), (1900, "Ферзь"), (1700, "Ладья"), (1500, "Слон"), (1300, "Конь")]
+
+
 def rank(rating: int) -> str:
-    for limit, name in ((500, "Гроссмейстер переписки"), (300, "Мастер"), (150, "Кандидат"), (50, "Разрядник")):
+    """Звания по ТЗ: до 1300 Пешка … 2200+ Гроссмейстер."""
+    for limit, name in RANKS:
         if rating >= limit:
             return name
-    return "Новичок"
+    return "Пешка"
+
+
+def next_rank(rating: int):
+    """(порог, звание) следующего звания или None."""
+    for limit, name in reversed(RANKS):
+        if rating < limit:
+            return limit, name
+    return None
+
+
+def elo(rating: int, opponent: int, score: float, k: int = 24) -> int:
+    """Эло: score 0…1 (результат партии), opponent — рейтинг соперницы."""
+    expected = 1 / (1 + 10 ** ((opponent - rating) / 400))
+    return round(rating + k * (score - expected))
+
+
+# быстрая задача с вариантами — мини-партия против 1300 с K=12
+PUZZLE_OPPONENT, PUZZLE_K = 1300, 12
+PUZZLE_SCORE = {"!!": 1.0, "!": 0.75, "?!": 0.35, "??": 0.0}
 
 
 def move_order(puzzle_id: int) -> list[int]:

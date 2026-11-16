@@ -369,9 +369,7 @@ async def init_db():
             ADD COLUMN IF NOT EXISTS chess_rating INTEGER NOT NULL DEFAULT 0,
             ADD COLUMN IF NOT EXISTS chess_notify BOOLEAN NOT NULL DEFAULT TRUE
         """)
-        # 16.11: рейтинг начинается с 0, а не с 1200. Один раз пересчитываем
-        # всех по уже решённым задачам (новая шкала очков), дальше — только новые
-        await conn.execute("ALTER TABLE users ALTER COLUMN chess_rating SET DEFAULT 0")
+        # (16.11, вечер) был переход на шкалу с 0 — заменён на Эло с 1200 по ТЗ ниже
         if await conn.fetchval("""
             INSERT INTO app_state (key, value) VALUES ('chess_rating_zero', '1')
             ON CONFLICT (key) DO NOTHING RETURNING key
@@ -383,6 +381,82 @@ async def init_db():
                     FROM puzzle_answers p WHERE p.user_id = u.telegram_id
                 ), 0)
             """)
+
+        # ТЗ «Тренажёр переписки»: рейтинг Эло с 1200 (один раз всем 1200)
+        await conn.execute("ALTER TABLE users ALTER COLUMN chess_rating SET DEFAULT 1200")
+        if await conn.fetchval("""
+            INSERT INTO app_state (key, value) VALUES ('chess_rating_elo', '1')
+            ON CONFLICT (key) DO NOTHING RETURNING key
+        """):
+            await conn.execute("UPDATE users SET chess_rating = 1200")
+        # партии с ИИ-девушкой
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS chat_games (
+                id BIGSERIAL PRIMARY KEY,
+                user_id BIGINT NOT NULL,
+                situation TEXT NOT NULL,
+                difficulty INTEGER NOT NULL,
+                history JSONB NOT NULL DEFAULT '[]',
+                status TEXT NOT NULL DEFAULT 'active',
+                result TEXT,
+                avg_eval REAL,
+                rating_before INTEGER,
+                rating_after INTEGER,
+                best_move TEXT,
+                created_at TIMESTAMPTZ DEFAULT now(),
+                finished_at TIMESTAMPTZ
+            )
+        """)
+        await conn.execute("CREATE INDEX IF NOT EXISTS chat_games_user ON chat_games (user_id, created_at)")
+        # задача дня со свободным ответом: один ответ в день
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS chat_daily (
+                user_id BIGINT NOT NULL,
+                day DATE NOT NULL,
+                situation TEXT NOT NULL,
+                move TEXT NOT NULL,
+                badge TEXT NOT NULL,
+                eval REAL NOT NULL,
+                coach TEXT,
+                created_at TIMESTAMPTZ DEFAULT now(),
+                PRIMARY KEY (user_id, day)
+            )
+        """)
+        # разборы переписки (только счётчик для лимита, текст и картинки не храним)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS razbor_log (
+                user_id BIGINT NOT NULL,
+                created_at TIMESTAMPTZ DEFAULT now()
+            )
+        """)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS author_questions (
+                id BIGSERIAL PRIMARY KEY,
+                user_id BIGINT NOT NULL,
+                question TEXT NOT NULL,
+                answer TEXT,
+                forwarded BOOLEAN NOT NULL DEFAULT FALSE,
+                created_at TIMESTAMPTZ DEFAULT now()
+            )
+        """)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS custom_situations (
+                key TEXT PRIMARY KEY,
+                opening TEXT NOT NULL,
+                context TEXT NOT NULL,
+                difficulty INTEGER NOT NULL,
+                title TEXT
+            )
+        """)
+        # события воронки: start, game_start, game_end, daily_done, razbor_done, ask_sent
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS events (
+                user_id BIGINT,
+                kind TEXT NOT NULL,
+                data TEXT,
+                created_at TIMESTAMPTZ DEFAULT now()
+            )
+        """)
 
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS game_answers (
@@ -1980,7 +2054,7 @@ async def solve_puzzle(user_id: int, puzzle_id: int, mark: str, delta: int):
             if not ok:
                 return None
             return await conn.fetchval("""
-                UPDATE users SET chess_rating = GREATEST(0, chess_rating + $2)
+                UPDATE users SET chess_rating = GREATEST(100, chess_rating + $2)
                 WHERE telegram_id = $1 RETURNING chess_rating
             """, user_id, delta)
 
@@ -2073,4 +2147,216 @@ async def chess_me(user_id: int) -> dict:
             SELECT COUNT(*) AS solved, COUNT(*) FILTER (WHERE mark = '!!') AS brilliant
             FROM puzzle_answers WHERE user_id = $1
         """, user_id)
+    return dict(row)
+
+
+# =========================================================
+# «ТРЕНАЖЁР ПЕРЕПИСКИ» (ТЗ 16.11)
+# =========================================================
+
+TODAY_MSK = "(now() AT TIME ZONE 'Europe/Moscow')::date"
+
+
+async def log_event(user_id: int | None, kind: str, data: str | None = None):
+    db = await get_pool()
+    async with db.acquire() as conn:
+        await conn.execute("INSERT INTO events (user_id, kind, data) VALUES ($1, $2, $3)", user_id, kind, data)
+
+
+async def list_custom_situations() -> list[dict]:
+    db = await get_pool()
+    async with db.acquire() as conn:
+        rows = await conn.fetch("SELECT key, opening, context, difficulty, title FROM custom_situations ORDER BY key")
+    return [dict(r) for r in rows]
+
+
+async def add_custom_situation(key: str, opening: str, context: str, difficulty: int, title: str):
+    db = await get_pool()
+    async with db.acquire() as conn:
+        await conn.execute("""
+            INSERT INTO custom_situations (key, opening, context, difficulty, title) VALUES ($1, $2, $3, $4, $5)
+            ON CONFLICT (key) DO UPDATE SET opening = EXCLUDED.opening, context = EXCLUDED.context,
+                difficulty = EXCLUDED.difficulty, title = EXCLUDED.title
+        """, key, opening, context, difficulty, title)
+
+
+async def games_today(user_id: int) -> int:
+    db = await get_pool()
+    async with db.acquire() as conn:
+        return await conn.fetchval(f"""
+            SELECT COUNT(*) FROM chat_games WHERE user_id = $1
+              AND (created_at AT TIME ZONE 'Europe/Moscow')::date = {TODAY_MSK}
+        """, user_id)
+
+
+async def create_chat_game(user_id: int, situation: str, difficulty: int, history: list) -> int:
+    db = await get_pool()
+    async with db.acquire() as conn:
+        # незаконченные партии этого игрока закрываем
+        await conn.execute("UPDATE chat_games SET status = 'abandoned' WHERE user_id = $1 AND status = 'active'", user_id)
+        return await conn.fetchval("""
+            INSERT INTO chat_games (user_id, situation, difficulty, history) VALUES ($1, $2, $3, $4::jsonb)
+            RETURNING id
+        """, user_id, situation, difficulty, json.dumps(history, ensure_ascii=False))
+
+
+async def active_chat_game(user_id: int):
+    db = await get_pool()
+    async with db.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT * FROM chat_games WHERE user_id = $1 AND status = 'active' ORDER BY id DESC LIMIT 1", user_id)
+    if not row:
+        return None
+    game = dict(row)
+    game["history"] = json.loads(game["history"]) if isinstance(game["history"], str) else game["history"]
+    return game
+
+
+async def save_chat_history(game_id: int, history: list):
+    db = await get_pool()
+    async with db.acquire() as conn:
+        await conn.execute("UPDATE chat_games SET history = $2::jsonb WHERE id = $1",
+                           game_id, json.dumps(history, ensure_ascii=False))
+
+
+async def finish_chat_game(game_id: int, user_id: int, history: list, result: str, avg_eval: float,
+                           rating_before: int, rating_after: int, best_move: str | None):
+    db = await get_pool()
+    async with db.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute("""
+                UPDATE chat_games SET history = $2::jsonb, status = 'finished', result = $3, avg_eval = $4,
+                    rating_before = $5, rating_after = $6, best_move = $7, finished_at = now()
+                WHERE id = $1
+            """, game_id, json.dumps(history, ensure_ascii=False), result, avg_eval,
+                rating_before, rating_after, best_move)
+            await conn.execute("UPDATE users SET chess_rating = $2 WHERE telegram_id = $1", user_id, rating_after)
+
+
+async def chat_me(user_id: int) -> dict:
+    db = await get_pool()
+    async with db.acquire() as conn:
+        row = await conn.fetchrow("""
+            SELECT COUNT(*) FILTER (WHERE status = 'finished') AS games,
+                   COUNT(*) FILTER (WHERE result = 'win') AS wins,
+                   MAX(avg_eval) AS best_avg,
+                   (SELECT situation FROM chat_games g2 WHERE g2.user_id = $1 AND g2.status = 'finished'
+                    ORDER BY avg_eval DESC NULLS LAST LIMIT 1) AS best_situation
+            FROM chat_games WHERE user_id = $1
+        """, user_id)
+    return dict(row)
+
+
+async def chat_top(limit: int = 20) -> list[dict]:
+    """Топ по рейтингу: кто сыграл хотя бы партию или задачу. Только имя (без @username)."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT u.telegram_id, u.full_name, u.chess_rating FROM users u
+            WHERE NOT u.is_banned AND (
+                EXISTS (SELECT 1 FROM chat_games g WHERE g.user_id = u.telegram_id AND g.status = 'finished')
+                OR EXISTS (SELECT 1 FROM puzzle_answers p WHERE p.user_id = u.telegram_id)
+                OR EXISTS (SELECT 1 FROM chat_daily d WHERE d.user_id = u.telegram_id))
+            ORDER BY u.chess_rating DESC LIMIT $1
+        """, limit)
+    return [dict(r) for r in rows]
+
+
+async def chat_place(user_id: int) -> tuple[int, int]:
+    db = await get_pool()
+    async with db.acquire() as conn:
+        row = await conn.fetchrow("""
+            WITH players AS (
+                SELECT u.telegram_id, u.chess_rating FROM users u
+                WHERE NOT u.is_banned AND (
+                    EXISTS (SELECT 1 FROM chat_games g WHERE g.user_id = u.telegram_id AND g.status = 'finished')
+                    OR EXISTS (SELECT 1 FROM puzzle_answers p WHERE p.user_id = u.telegram_id)
+                    OR EXISTS (SELECT 1 FROM chat_daily d WHERE d.user_id = u.telegram_id))
+            )
+            SELECT (SELECT COUNT(*) FROM players) AS total,
+                   (SELECT COUNT(*) + 1 FROM players WHERE chess_rating >
+                       (SELECT chess_rating FROM users WHERE telegram_id = $1)) AS place,
+                   EXISTS (SELECT 1 FROM players WHERE telegram_id = $1) AS plays
+        """, user_id)
+    return (row["place"] if row["plays"] else 0), row["total"]
+
+
+async def get_chat_daily(user_id: int):
+    db = await get_pool()
+    async with db.acquire() as conn:
+        row = await conn.fetchrow(f"SELECT * FROM chat_daily WHERE user_id = $1 AND day = {TODAY_MSK}", user_id)
+    return dict(row) if row else None
+
+
+async def save_chat_daily(user_id: int, situation: str, move: str, badge: str, ev: float, coach: str) -> bool:
+    db = await get_pool()
+    async with db.acquire() as conn:
+        return await conn.fetchval(f"""
+            INSERT INTO chat_daily (user_id, day, situation, move, badge, eval, coach)
+            VALUES ($1, {TODAY_MSK}, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING RETURNING TRUE
+        """, user_id, situation, move, badge, ev, coach) is not None
+
+
+async def daily_better_than(ev: float) -> tuple[int, int]:
+    """(процент сегодняшних ответов хуже этого, всего ответов сегодня)."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        row = await conn.fetchrow(f"""
+            SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE eval < $1) AS worse
+            FROM chat_daily WHERE day = {TODAY_MSK}
+        """, ev)
+    total = row["total"]
+    return (round(row["worse"] * 100 / (total - 1)) if total > 1 else 100), total
+
+
+async def razbors_today(user_id: int) -> int:
+    db = await get_pool()
+    async with db.acquire() as conn:
+        return await conn.fetchval(f"""
+            SELECT COUNT(*) FROM razbor_log WHERE user_id = $1
+              AND (created_at AT TIME ZONE 'Europe/Moscow')::date = {TODAY_MSK}
+        """, user_id)
+
+
+async def log_razbor(user_id: int):
+    db = await get_pool()
+    async with db.acquire() as conn:
+        await conn.execute("INSERT INTO razbor_log (user_id) VALUES ($1)", user_id)
+
+
+async def add_author_question(user_id: int, question: str, answer: str | None) -> int:
+    db = await get_pool()
+    async with db.acquire() as conn:
+        return await conn.fetchval(
+            "INSERT INTO author_questions (user_id, question, answer) VALUES ($1, $2, $3) RETURNING id",
+            user_id, question, answer)
+
+
+async def take_author_question(qid: int, user_id: int):
+    """Помечает вопрос «передан автору». None — нет такого или уже передан."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        row = await conn.fetchrow("""
+            UPDATE author_questions SET forwarded = TRUE
+            WHERE id = $1 AND user_id = $2 AND NOT forwarded RETURNING question
+        """, qid, user_id)
+    return row["question"] if row else None
+
+
+async def trainer_stats() -> dict:
+    db = await get_pool()
+    async with db.acquire() as conn:
+        row = await conn.fetchrow(f"""
+            SELECT
+              (SELECT COUNT(*) FROM users WHERE (created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Moscow')::date = {TODAY_MSK}) AS new_today,
+              (SELECT COUNT(*) FROM chat_games WHERE (created_at AT TIME ZONE 'Europe/Moscow')::date = {TODAY_MSK}) AS games_today,
+              (SELECT COUNT(*) FROM chat_games WHERE status = 'finished'
+                 AND (created_at AT TIME ZONE 'Europe/Moscow')::date = {TODAY_MSK}) AS finished_today,
+              (SELECT COUNT(*) FROM chat_daily WHERE day = {TODAY_MSK}) AS daily_today,
+              (SELECT COUNT(*) FROM razbor_log WHERE (created_at AT TIME ZONE 'Europe/Moscow')::date = {TODAY_MSK}) AS razbor_today,
+              (SELECT COUNT(*) FROM author_questions WHERE (created_at AT TIME ZONE 'Europe/Moscow')::date = {TODAY_MSK}) AS ask_today,
+              (SELECT ROUND(AVG(chess_rating)) FROM users u WHERE EXISTS
+                 (SELECT 1 FROM chat_games g WHERE g.user_id = u.telegram_id AND g.status = 'finished')) AS avg_rating,
+              (SELECT COUNT(DISTINCT user_id) FROM chat_games) AS players
+        """)
     return dict(row)

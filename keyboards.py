@@ -92,12 +92,13 @@ def vibe_hour_on_keyboard():
 
 
 def main_menu():
-    """Главное меню игры «Шах и чат» (знакомства убраны 16.11)."""
+    """Главное меню тренажёра «Шах и чат» (ТЗ 16.11)."""
     return ReplyKeyboardMarkup(
         keyboard=[
-            [menu_btn(ui.MENU_CHESS)],
-            [menu_btn(ui.MENU_TOP), menu_btn(ui.MENU_FACT)],
-            [menu_btn(ui.MENU_ME), menu_btn(ui.MENU_FRIEND)],
+            [menu_btn(ui.MENU_PLAY)],
+            [menu_btn(ui.MENU_DAILY), menu_btn(ui.MENU_RAZBOR)],
+            [menu_btn(ui.MENU_BAZA), menu_btn(ui.MENU_ASK)],
+            [menu_btn(ui.MENU_ME), menu_btn(ui.MENU_TOP)],
         ],
         resize_keyboard=True,
         input_field_placeholder=ui.MENU_PLACEHOLDER,
@@ -472,3 +473,39 @@ def fact_keyboard():
         [btn(ui.BTN_FACT, "fact", neon="spark")],
         [btn(ui.BTN_PZ_NEXT, "pz_next", neon="crown")],
     )
+
+
+# =========================================================
+# ТРЕНАЖЁР ПЕРЕПИСКИ
+# =========================================================
+
+def play_button():
+    return rows([btn(ui.BTN_PLAY, "play_menu", neon="crown")])
+
+
+def situations_keyboard(items):
+    keyboard = [[btn(f"{s.get('title') or s['key']} ({s['difficulty']})", f"play:{s['key']}")]
+                for s in sorted(items, key=lambda s: s["difficulty"])]
+    keyboard.append([btn(ui.BTN_RANDOM, "play:random", neon="spark")])
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def after_game_keyboard():
+    return rows(
+        [btn(ui.BTN_PLAY_AGAIN, "play_menu", neon="crown"), btn(ui.BTN_DAILY, "daily", neon="fire")],
+        [btn(ui.BTN_SHAH_CHANNEL, url=ui.SHAH_CHANNEL_URL, neon="star")],
+    )
+
+
+def baza_keyboard(items: dict):
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [btn(item["title"], f"baza:{key}")] for key, item in items.items()
+    ])
+
+
+def baza_back_keyboard():
+    return rows([btn("Другая ситуация", "baza_menu", neon="spark"), btn(ui.BTN_PLAY, "play_menu", neon="crown")])
+
+
+def ask_keyboard(qid: int):
+    return rows([btn(ui.BTN_ASK_FORWARD, f"ask_fwd:{qid}", neon="eye")])

@@ -14,8 +14,9 @@ from aiogram.webhook.aiohttp_server import SimpleRequestHandler
 
 from config import ADMIN_ID, BOT_TOKEN
 from database import init_db, close_db
-from handlers import router
+from handlers import router, ban_middleware, flood_middleware
 import admin
+import trainer
 from webapp_api import setup_webapp
 import chessdaily
 import ui
@@ -59,7 +60,12 @@ def create_bot_and_dispatcher():
     dp = Dispatcher(storage=PgStorage())
     # двойное нажатие на кнопку: Telegram отвечает «message is not modified» — это не ошибка
     dp.errors.register(ignore_not_modified, ExceptionMessageFilter(r".*message is not modified"))
+    # антифлуд, бан, серия и username — на весь диспетчер (раньше висели на handlers.router)
+    for observer in (dp.message, dp.callback_query):
+        observer.outer_middleware(flood_middleware)
+        observer.outer_middleware(ban_middleware)
     dp.include_router(admin.router)  # первым: /admin и /u_… не должны уйти в общие хендлеры
+    dp.include_router(trainer.router)  # тренажёр «Шах и чат» (ТЗ 16.11)
     dp.include_router(router)
 
     return bot, dp
@@ -92,11 +98,14 @@ async def setup_menu_button(bot):
     """16.11: Mini App знакомств убрана из кнопки меню — там теперь команды игры."""
     try:
         await bot.set_my_commands([
-            BotCommand(command="chess", description="Задача «Шах и чат»"),
-            BotCommand(command="top", description="Топ игроков"),
-            BotCommand(command="fact", description="Факт дня"),
+            BotCommand(command="play", description="Партия"),
+            BotCommand(command="daily", description="Задача дня"),
+            BotCommand(command="razbor", description="Разбор моей переписки"),
+            BotCommand(command="baza", description="База ходов"),
             BotCommand(command="me", description="Мой рейтинг"),
-            BotCommand(command="start", description="Главное меню"),
+            BotCommand(command="top", description="Таблица лидеров"),
+            BotCommand(command="ask", description="Вопрос автору"),
+            BotCommand(command="help", description="Что это и правила"),
         ])
         await bot.set_chat_menu_button(menu_button=MenuButtonCommands())
     except Exception:

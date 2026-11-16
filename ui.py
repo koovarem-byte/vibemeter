@@ -98,6 +98,11 @@ MENU_STATS = "Статистика"
 MENU_SETTINGS = "Настройки"
 MENU_INVITE = "Позвать подругу"
 MENU_CHESS = "Шах и чат"
+MENU_PLAY = "Играть"
+MENU_DAILY = "Задача дня"
+MENU_RAZBOR = "Разбор переписки"
+MENU_BAZA = "База ходов"
+MENU_ASK = "Вопрос автору"
 MENU_TOP = "Топ игроков"
 MENU_FACT = "Факт дня"
 MENU_ME = "Мой рейтинг"
@@ -112,6 +117,11 @@ MENU_ICONS = {
     MENU_SETTINGS: "gear",
     MENU_INVITE: "diamond",
     MENU_CHESS: "crown",
+    MENU_PLAY: "crown",
+    MENU_DAILY: "fire",
+    MENU_RAZBOR: "chat",
+    MENU_BAZA: "spark",
+    MENU_ASK: "eye",
     MENU_TOP: "trophy",
     MENU_FACT: "spark",
     MENU_ME: "star",
@@ -130,6 +140,11 @@ MENU_ALIASES = {
     MENU_SETTINGS: {"⚙️ Настройки"},
     MENU_INVITE: {"💌 Позвать подругу"},
     MENU_CHESS: {"♟ Шах и чат"},
+    MENU_PLAY: {"Шах и чат", "♟ Шах и чат"},
+    MENU_DAILY: set(),
+    MENU_RAZBOR: set(),
+    MENU_BAZA: set(),
+    MENU_ASK: set(),
     MENU_TOP: set(),
     MENU_FACT: set(),
     MENU_ME: set(),
@@ -221,10 +236,10 @@ REPORT_REASONS = {
 # =========================================================
 
 CONSENT = (
-    f"{title('crown', 'Привет, это Вайбометр · Шах и чат')}\n\n"
-    "Игра про переписку: я показываю ситуацию, ты выбираешь ход, а я оцениваю его как в шахматах — "
-    "!! бриллиант, ! хорошо, ?! сомнительно, ?? зевок. Объяснения — из настоящих исследований о том, "
-    "как люди общаются и почему расстаются\n\n"
+    "Привет. Тут тренируют переписку\n\n"
+    "Я играю за неё, ты отвечаешь как умеешь. Каждому ходу ставлю оценку, как в шахматах: "
+    "?? зевок, ? слабый, ! хороший, !! блестящий, # мат\n\n"
+    "🤖 Это тренажёр с ИИ, а не живая девушка\n"
     "🔞 Только 18+\n"
     "🗑 Данные можно удалить в любой момент\n\n"
     "Согласен с /privacy и тебе есть 18? Поехали"
@@ -257,7 +272,7 @@ PRIVACY = (
 # =========================================================
 
 def welcome_back(streak: int) -> str:
-    text = f"{title('star', 'С возвращением')}\n\nЗадача дня уже ждёт — жми «Шах и чат»"
+    text = "С возвращением\n\nЗадача дня уже ждёт –> /daily\nСыграть партию –> /play"
     if streak >= 2:
         text += f"\n{e('fire')} Серия {days(streak)}"
     return text
@@ -1125,15 +1140,17 @@ def broadcast_text(person: dict, total: int) -> str:
 # =========================================================
 
 # «О боте» в профиле и в ссылках, до 120 символов
-BOT_SHORT_DESCRIPTION = "Шах и чат: оцени свой ход в переписке как в шахматах. Задача дня, рейтинг, факты о людях. 18+"
+BOT_SHORT_DESCRIPTION = "Тренажёр переписки «Шах и чат»: ИИ играет за неё, каждый твой ход — оценка как в шахматах"
 
 # экран пустого чата до «Старт», до 512 символов
 BOT_DESCRIPTION = (
-    "Вайбометр · Шах и чат — игра про переписку\n\n"
-    "♟ Ситуация из чата — твой ход — оценка как в шахматах: !! бриллиант, ?? зевок\n"
-    "🧠 Объяснения из исследований: как люди общаются и почему расстаются\n"
-    "🏆 Рейтинг, топ игроков, задача дня\n\n"
-    "Только 18+. Новости: @vibemeter_news\n\n"
+    "Шах и чат — тренажёр переписки\n\n"
+    "♟ ИИ играет за неё, ты отвечаешь как умеешь\n"
+    "?? зевок · ? слабый · ! хороший · !! блестящий · # мат\n"
+    "🔥 Задача дня, рейтинг от Пешки до Гроссмейстера\n"
+    "📋 Разбор твоей переписки и база готовых ходов\n\n"
+    "Это ИИ, а не живая девушка. Только 18+\n"
+    "Канал: t.me/shahichat\n\n"
     "Жми «Старт» 👇"
 )
 
@@ -1264,3 +1281,168 @@ def my_rating(rating: int, rank: str, solved: int, total: int, brilliant: int, p
 
 def fact_of_day(rendered: str) -> str:
     return rendered.replace("🧠 <b>Факт</b>", "🧠 <b>Факт дня</b>", 1)
+
+
+# =========================================================
+# ТРЕНАЖЁР ПЕРЕПИСКИ (ТЗ 16.11) — стиль: на «ты», коротко, стрелки «–>»
+# =========================================================
+
+SHAH_CHANNEL_URL = "https://t.me/shahichat"
+BTN_SHAH_CHANNEL = "Канал"
+BTN_PLAY_AGAIN = "Ещё партию"
+BTN_DAILY = "Задача дня"
+BTN_RANDOM = "Случайная"
+BTN_ASK_FORWARD = "Передать автору"
+BTN_PLAY = "Играть"
+
+TRAINER_WELCOME = (
+    "Привет. Тут тренируют переписку\n\n"
+    "Я играю за неё, ты отвечаешь как умеешь. Каждому ходу ставлю оценку, как в шахматах\n\n"
+    "Старт с рейтинга 1200. До гроссмейстера 2200\n\n"
+    "Погнали? –> /play"
+)
+
+PLAY_CHOOSE = "Выбирай партию. В скобках — рейтинг соперницы\n\nЧем выше, тем сложнее"
+PLAY_LIMIT = "На сегодня бесплатные партии всё (5 в день). Завтра продолжим\n\nА пока –> /daily или /baza"
+LLM_SOON = "Партии с ИИ включатся совсем скоро. Пока держи быструю задачу 👇"
+LLM_BUSY = "Модель не ответила. Попробуй ещё раз через минуту"
+YOUR_MOVE = "Твой ход –> пиши ответ сюда"
+YOU_FIRST = "Ты пишешь первым –> пиши сюда"
+GAME_NONE = "Партии сейчас нет. Начать –> /play"
+TEXT_ONLY = "Отвечай текстом, как в переписке"
+TOO_LONG = "Слишком длинно для переписки. Сократи до пары строк"
+
+STAMPS = {
+    "mate": "♚ МАТ: тебя проверили",
+    "stalemate": "⏸ ПАТ: разговор умер",
+    "win": "🏆 ПОБЕДА",
+}
+
+RANK_EMOJI = {"Пешка": "♟", "Конь": "♞", "Слон": "♝", "Ладья": "♜", "Ферзь": "♛", "Гроссмейстер": "♚"}
+
+
+def game_intro(sit: dict) -> str:
+    lines = [f"♟ <b>{esc(sit.get('title') or sit['key'])}</b> · соперница {sit['difficulty']}", "",
+             f"<i>{esc(sit['context'])}</i>", ""]
+    if sit.get("opening"):
+        lines += [f"она: {esc(sit['opening'])}", "", YOUR_MOVE]
+    else:
+        lines.append(YOU_FIRST)
+    return "\n".join(lines)
+
+
+def move_verdict(v: dict) -> str:
+    return f"<b>{esc(v['badge'])} {v['eval']:+.1f}</b>  «{esc(v['coach'])}»"
+
+
+def her_line(text: str) -> str:
+    return f"она: {esc(text)}"
+
+
+def game_result(result: str, before: int, after: int, rank: str, best: str | None, avg: float) -> str:
+    diff = after - before
+    lines = [
+        f"<b>{STAMPS.get(result, STAMPS['stalemate'])}</b>",
+        "",
+        f"Средняя оценка ходов: {avg:+.1f}",
+        f"Рейтинг: {before} –> <b>{after}</b> ({'+' if diff >= 0 else ''}{diff}) · {RANK_EMOJI.get(rank, '')} {rank}",
+    ]
+    if best:
+        lines += ["", f"Лучший ход: «{esc(best)}»"]
+    return "\n".join(lines)
+
+
+DAILY_ASK = "🔥 <b>Задача дня</b>\n\n<i>{context}</i>\n\nона: {opening}\n\nТвой ход –> один ответ, пиши сюда"
+
+
+def daily_result(v: dict, better: int, total: int, already: bool = False) -> str:
+    head = "Ты уже сыграл задачу дня" if already else "Задача дня сыграна"
+    lines = [f"🔥 <b>{head}</b>", "", move_verdict(v)]
+    if total > 1:
+        lines += ["", f"Ты ответил лучше {better}% игроков (сегодня ответили {total})"]
+    else:
+        lines += ["", "Ты первый сегодня — посмотрим, кто ответит лучше"]
+    if v.get("best_move") and v["badge"] not in ("!!", "#"):
+        lines += ["", f"Лучший ход: «{esc(v['best_move'])}»"]
+    lines += ["", "Новая задача — завтра. Сыграть партию –> /play"]
+    return "\n".join(lines)
+
+
+RAZBOR_ASK = (
+    "📋 <b>Разбор переписки</b>\n\n"
+    "Пришли скрин или текст переписки и одной строкой — чего хочешь (например: «позвать гулять»)\n\n"
+    "Имена заменю на «она»/«он», картинку после разбора не храню"
+)
+RAZBOR_LIMIT = "Бесплатный разбор — один в день. Завтра пришлёшь ещё"
+RAZBOR_WAIT = "Разбираю партию… ⏳"
+RAZBOR_SOON = "Разбор с ИИ включится совсем скоро. А пока посмотри /baza — там готовые ходы"
+
+BAZA_CHOOSE = "📚 <b>База ходов</b>\n\nВыбирай ситуацию — покажу ходы со значками"
+
+
+def baza_card(item: dict) -> str:
+    lines = [f"📚 <b>{esc(item['title'])}</b>", "", f"она: {esc(item['her'])}", ""]
+    for text, badge, why in item["moves"]:
+        lines.append(f"<b>{esc(badge)}</b> {esc(text)}\n    <i>{esc(why)}</i>")
+    return "\n".join(lines)
+
+
+ASK_PROMPT = "✍️ <b>Вопрос автору</b>\n\nНапиши вопрос одним сообщением. Отвечу сразу, а если надо — передашь автору"
+ASK_SENT = "Передал автору 👌 Ответ придёт сюда, когда он прочитает"
+ASK_ALREADY = "Этот вопрос уже у автора"
+ASK_FORWARDED_NO_LLM = "Передал вопрос автору 👌 Ответ придёт сюда"
+
+REFUSE_MANIPULATION = "такое не разбираю. могу помочь с тем, что написать ей самому"
+
+CRISIS_TEXT = (
+    "Слушай, игру на паузу. Похоже, тебе сейчас реально тяжело\n\n"
+    "Ты не один. Напиши или позвони тому, кому доверяешь — другу, родным\n\n"
+    "Бесплатно и круглосуточно: телефон доверия <b>8-800-2000-122</b>\n"
+    "Если опасность прямо сейчас — <b>112</b>\n\n"
+    "Я бот и не заменю живого человека, но рядом есть люди, которые помогут"
+)
+
+HELP_TEXT = (
+    "<b>Что это</b>\n"
+    "Тренажёр переписки «Шах и чат». За неё играет ИИ, а не живая девушка\n\n"
+    "<b>Значки</b>\n?? зевок · ? слабый ход · ! хороший · !! блестящий · # мат\n\n"
+    "<b>Режимы</b>\n"
+    "/play — партия 3–5 ходов\n/daily — задача дня, один ответ\n"
+    "/razbor — разбор твоей переписки\n/baza — база готовых ходов\n"
+    "/me — рейтинг · /top — лидеры · /ask — вопрос автору\n\n"
+    "<b>Бесплатно</b>: 5 партий и 1 разбор в день\n\n"
+    "<b>Правила</b>\n"
+    "Не учим давить, манипулировать и следить. Пошлость и грубость — сразу ?? «так не играем»\n"
+    "Автор — не психолог. Ничего не обещаем: это тренировка, а не гарантия\n\n"
+    "Канал –> t.me/shahichat"
+)
+
+
+def trainer_me(rating: int, rank: str, streak: int, games: int, wins: int, best: str | None,
+               place: int, total: int, nxt: tuple | None) -> str:
+    lines = [
+        f"{RANK_EMOJI.get(rank, '♟')} <b>{rank}</b> · рейтинг <b>{rating}</b>",
+        "",
+        f"🔥 Серия: {days(streak)}",
+        f"♟ Партий: {games} · побед: {wins}",
+    ]
+    if best:
+        lines.append(f"🏆 Лучшая партия: {esc(best)}")
+    if place:
+        lines.append(f"📊 Место: {place} из {total}")
+    if nxt:
+        lines.append(f"\nДо звания «{nxt[1]}»: {nxt[0] - rating}")
+    return "\n".join(lines)
+
+
+def trainer_top(rows, place: int, total: int, rating: int) -> str:
+    lines = ["🏆 <b>Топ-20</b>", ""]
+    medals = ["🥇", "🥈", "🥉"]
+    for i, r in enumerate(rows):
+        mark = medals[i] if i < 3 else f"{i + 1}."
+        lines.append(f"{mark} {esc(r['full_name'] or 'Игрок')} — <b>{r['chess_rating']}</b>")
+    if not rows:
+        lines.append("Пока пусто — будь первым –> /play")
+    if place:
+        lines += ["", f"Ты: {place} место из {total} · {rating}"]
+    return "\n".join(lines)

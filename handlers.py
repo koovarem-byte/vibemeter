@@ -178,10 +178,8 @@ async def flood_middleware(handler, event, data):
     return await handler(event, data)
 
 
-router.message.outer_middleware(flood_middleware)
-router.callback_query.outer_middleware(flood_middleware)
-router.message.outer_middleware(ban_middleware)
-router.callback_query.outer_middleware(ban_middleware)
+# flood_middleware и ban_middleware подключаются в bot.py на весь диспетчер
+# (их видят и тренажёр, и старый роутер, и админка)
 
 
 # =========================================================
@@ -216,59 +214,6 @@ async def _menu(message: Message, state: FSMContext):
         await message.answer(ui.NEED_START)
         return False
     return True
-
-
-@router.message(F.text.in_(ui.menu_texts(ui.MENU_CHESS)))
-async def menu_chess(message: Message, state: FSMContext):
-    if await _menu(message, state):
-        await show_puzzle(message, message.from_user.id)
-
-
-@router.message(F.text.in_(ui.menu_texts(ui.MENU_TOP)))
-@router.message(Command("top"))
-async def menu_top(message: Message, state: FSMContext):
-    if not await _menu(message, state):
-        return
-    user = await get_user(message.from_user.id)
-    place, total = await chess_place(message.from_user.id)
-    await message.answer(
-        ui.chess_top(await chess_top(10), place, total, user["chess_rating"]),
-        reply_markup=puzzle_after_keyboard(),
-    )
-
-
-@router.message(F.text.in_(ui.menu_texts(ui.MENU_FACT)))
-@router.message(Command("fact"))
-async def menu_fact(message: Message, state: FSMContext):
-    if await _menu(message, state):
-        await message.answer(ui.fact_of_day(facts.render(facts.fact_of_day())), reply_markup=fact_keyboard())
-
-
-@router.message(F.text.in_(ui.menu_texts(ui.MENU_ME)))
-@router.message(Command("me"))
-async def menu_me(message: Message, state: FSMContext):
-    if not await _menu(message, state):
-        return
-    user = await get_user(message.from_user.id)
-    me = await chess_me(message.from_user.id)
-    place, total = await chess_place(message.from_user.id)
-    rating = user["chess_rating"]
-    await message.answer(
-        ui.my_rating(rating, puzzles.rank(rating), me["solved"], len(puzzles.PUZZLES), me["brilliant"], place, total),
-        reply_markup=puzzle_after_keyboard(),
-    )
-
-
-@router.message(F.text.in_(ui.menu_texts(ui.MENU_FRIEND)))
-async def menu_friend(message: Message, state: FSMContext):
-    if not await _menu(message, state):
-        return
-    link = f"https://t.me/{(await message.bot.me()).username}?start=pz_{puzzles.today_index()}"
-    await message.answer(
-        ui.friend_invite(link),
-        reply_markup=friend_keyboard(link),
-        link_preview_options=LinkPreviewOptions(is_disabled=True),
-    )
 
 
 @router.message(F.text.in_(DATING_TEXTS))
@@ -581,9 +526,14 @@ async def consent_accept_callback(
     await callback.message.edit_reply_markup(reply_markup=None)
 
     await state.clear()
-    # анкеты больше нет: сразу в игру (по ссылке друга — его задача)
-    await callback.message.answer(ui.PZ_FRIEND if pz is not None else ui.WELCOME_NEW, reply_markup=main_menu())
-    await show_puzzle(callback.message, callback.from_user.id, pz)
+    # анкеты больше нет: сразу тренажёр (по ссылке друга — его задача)
+    from database import log_event
+    await log_event(callback.from_user.id, "start", "pz" if pz is not None else None)
+    if pz is not None:
+        await callback.message.answer(ui.PZ_FRIEND, reply_markup=main_menu())
+        await show_puzzle(callback.message, callback.from_user.id, pz)
+        return
+    await callback.message.answer(ui.TRAINER_WELCOME, reply_markup=main_menu())
 
 
 # =========================================================
@@ -1156,7 +1106,7 @@ async def show_puzzle(message: Message, user_id: int, first: int | None = None):
         await message.answer(facts.render(facts.random_fact()), reply_markup=puzzle_after_keyboard())
         return
     pid = left[0]
-    rating = user.get("chess_rating") or 0
+    rating = user.get("chess_rating") or 1200
     await message.answer(
         ui.puzzle_text(puzzles.PUZZLES[pid], len(done) + 1, rating, puzzles.rank(rating)),
         reply_markup=puzzle_keyboard(pid, puzzles.PUZZLES[pid]["moves"]),
@@ -1183,8 +1133,8 @@ async def puzzle_move(callback: CallbackQuery):
     except (ValueError, IndexError):
         await callback.answer()
         return
-    delta = puzzles.DELTA[mark]
-    before = ((await get_user(callback.from_user.id)) or {}).get("chess_rating") or 0
+    before = ((await get_user(callback.from_user.id)) or {}).get("chess_rating") or 1200
+    delta = puzzles.elo(before, puzzles.PUZZLE_OPPONENT, puzzles.PUZZLE_SCORE[mark], puzzles.PUZZLE_K) - before
     rating = await solve_puzzle(callback.from_user.id, int(pid), mark, delta)
     if rating is None:
         await callback.answer("Эта задача уже решена", show_alert=True)
@@ -1207,7 +1157,7 @@ async def puzzle_top(callback: CallbackQuery):
     user = await get_user(callback.from_user.id)
     place, total = await chess_place(callback.from_user.id)
     await callback.message.answer(
-        ui.chess_top(await chess_top(10), place, total, (user or {}).get("chess_rating") or 0),
+        ui.chess_top(await chess_top(10), place, total, (user or {}).get("chess_rating") or 1200),
         reply_markup=puzzle_after_keyboard(),
     )
 

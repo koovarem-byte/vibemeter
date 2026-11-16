@@ -11,6 +11,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY *.py ./
 COPY webapp ./webapp
+COPY situations.json ./
 COPY assets ./assets
 
 EXPOSE 8080

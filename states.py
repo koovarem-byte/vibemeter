@@ -17,3 +17,10 @@ class QuestionState(StatesGroup):
 
 class AdminState(StatesGroup):
     find = State()  # ждём ID или @username
+
+
+class TrainState(StatesGroup):
+    playing = State()
+    daily = State()
+    razbor = State()
+    ask = State()
