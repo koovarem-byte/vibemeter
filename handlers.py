@@ -31,6 +31,7 @@ import facts
 import puzzles
 from aiogram.exceptions import TelegramForbiddenError
 from database import (
+    set_chess_notify,
     chess_place,
     chess_top,
     solve_puzzle,
@@ -1097,6 +1098,18 @@ async def puzzle_top(callback: CallbackQuery):
         ui.chess_top(await chess_top(10), place, total, (user or {}).get("chess_rating") or 1200),
         reply_markup=puzzle_after_keyboard(),
     )
+
+
+@router.callback_query(F.data == "pz_off")
+async def puzzle_notify_off(callback: CallbackQuery):
+    await set_chess_notify(callback.from_user.id, False)
+    await callback.answer(ui.PZ_OFF, show_alert=True)
+
+
+@router.message(Command("chess_on"))
+async def puzzle_notify_on(message: Message):
+    await set_chess_notify(message.from_user.id, True)
+    await message.answer(ui.PZ_ON)
 
 
 @router.callback_query(F.data == "fact")

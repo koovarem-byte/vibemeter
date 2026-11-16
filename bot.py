@@ -19,6 +19,7 @@ import admin
 from webapp_api import setup_webapp
 import vibehour
 import referral
+import chessdaily
 import ui
 import alerts
 from fsm_storage import PgStorage
@@ -134,6 +135,7 @@ async def run_webhook():
     await setup_profile(bot)
     vibe_hour_task = asyncio.create_task(vibehour.loop(bot))
     referral_task = asyncio.create_task(referral.loop(bot))
+    chess_task = asyncio.create_task(chessdaily.loop(bot))
     alerts_task = alerts.install(bot, ADMIN_ID)
 
     app = create_app(bot, dp, webhook=True)
@@ -155,6 +157,7 @@ async def run_webhook():
     finally:
         vibe_hour_task.cancel()
         referral_task.cancel()
+        chess_task.cancel()
         alerts_task.cancel()
         await runner.cleanup()
         await bot.session.close()
@@ -180,6 +183,7 @@ async def run_polling():
     await setup_profile(bot)
     vibe_hour_task = asyncio.create_task(vibehour.loop(bot))
     referral_task = asyncio.create_task(referral.loop(bot))
+    chess_task = asyncio.create_task(chessdaily.loop(bot))
     alerts_task = alerts.install(bot, ADMIN_ID)
 
     # webhook здесь специально не снимаем: если бот уже работает
@@ -193,6 +197,7 @@ async def run_polling():
     finally:
         vibe_hour_task.cancel()
         referral_task.cancel()
+        chess_task.cancel()
         alerts_task.cancel()
         await runner.cleanup()
         await bot.session.close()

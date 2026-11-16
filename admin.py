@@ -52,7 +52,7 @@ from database import (
     warn_photo,
     source_stats,
 )
-from keyboards import liked_you_keyboard, match_keyboard, vibe_hour_keyboard
+from keyboards import chess_reminder_keyboard, liked_you_keyboard, match_keyboard, vibe_hour_keyboard
 from states import AdminState
 import ui
 
@@ -662,6 +662,7 @@ AUTO = [
     ("👀 Кому отправили вайб", "«Тебе отправили вайб» без имени"),
     ("⚡ В 20:50 МСК", "напоминание о вайб-часе (анкета есть, заходил недавно, не отключал)"),
     ("🔥 Первый заход за день, серия от 2 дней", "«Серия N дней подряд»"),
+    ("♟ В 13:00 МСК", "«Задача дня ждёт» — кто играл в «Шах и чат», заходил за 7 дней и сегодня не решал"),
 ]
 
 
@@ -762,7 +763,10 @@ async def cb_cmp_auto(callback: CallbackQuery):
     await head(5)
     await callback.message.answer(ui.vibe_hour_soon(10), reply_markup=vibe_hour_keyboard())
     await head(6)
-    await callback.message.answer(ui.streak_notice(3), reply_markup=_kb([HUB]))
+    await callback.message.answer(ui.streak_notice(3))
+    await head(7)
+    await callback.message.answer(ui.chess_reminder(1215, "Разрядник"), reply_markup=chess_reminder_keyboard())
+    await callback.message.answer("Это все автосообщения", reply_markup=_kb([HUB]))
 
 
 @router.callback_query(F.data == "adm:cmp:new")

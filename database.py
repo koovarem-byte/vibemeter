@@ -366,7 +366,8 @@ async def init_db():
         """)
         await conn.execute("""
             ALTER TABLE users
-            ADD COLUMN IF NOT EXISTS chess_rating INTEGER NOT NULL DEFAULT 1200
+            ADD COLUMN IF NOT EXISTS chess_rating INTEGER NOT NULL DEFAULT 1200,
+            ADD COLUMN IF NOT EXISTS chess_notify BOOLEAN NOT NULL DEFAULT TRUE
         """)
 
         await conn.execute("""
@@ -2025,3 +2026,27 @@ async def chess_stats() -> dict:
               (SELECT COUNT(*) FROM puzzle_answers WHERE mark = '!!') AS brilliant
         """)
     return dict(row)
+
+
+async def chess_reminder_recipients(days: int, total_puzzles: int) -> list[dict]:
+    """Кому напомнить о задаче дня: играл, заходил недавно, сегодня не решал,
+    не отключал, не в бане и ещё есть нерешённые задачи."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT u.telegram_id, u.chess_rating FROM users u
+            WHERE u.chess_notify AND NOT u.is_banned
+              AND u.last_active >= (now() AT TIME ZONE 'Europe/Moscow')::date - $1::int
+              AND EXISTS (SELECT 1 FROM puzzle_answers p WHERE p.user_id = u.telegram_id)
+              AND NOT EXISTS (SELECT 1 FROM puzzle_answers p WHERE p.user_id = u.telegram_id
+                              AND (p.created_at AT TIME ZONE 'Europe/Moscow')::date
+                                  = (now() AT TIME ZONE 'Europe/Moscow')::date)
+              AND (SELECT COUNT(*) FROM puzzle_answers p WHERE p.user_id = u.telegram_id) < $2
+        """, days, total_puzzles)
+    return [dict(r) for r in rows]
+
+
+async def set_chess_notify(telegram_id: int, value: bool):
+    db = await get_pool()
+    async with db.acquire() as conn:
+        await conn.execute("UPDATE users SET chess_notify = $2 WHERE telegram_id = $1", telegram_id, value)

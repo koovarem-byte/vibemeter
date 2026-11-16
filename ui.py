@@ -1223,3 +1223,16 @@ def chess_top(rows, place: int, total: int, me_rating: int) -> str:
     else:
         lines.append("Реши первую задачу — и ты в рейтинге")
     return "\n".join(lines)
+
+BTN_PZ_SOLVE = "Решить задачу"
+BTN_PZ_OFF = "Не напоминать"
+PZ_OFF = "Ок, про задачу дня больше не напоминаю. Вернуть: /chess_on"
+PZ_ON = "Снова буду напоминать о задаче дня в 13:00"
+
+
+def chess_reminder(rating: int, rank: str) -> str:
+    return (
+        f"{title('crown', 'Задача дня ждёт')}\n\n"
+        "Новая переписка — твой ход. Минута, и рейтинг подрастёт\n\n"
+        f"{e('fire')} Сейчас: <b>{rating}</b> · {rank}"
+    )

@@ -458,3 +458,10 @@ def puzzle_after_keyboard(puzzle_id: int | None = None, bot_username: str | None
         )])
     keyboard.append([btn(ui.BTN_PZ_TOP, "pz_top", neon="trophy"), btn(ui.BTN_FACT, "fact", neon="spark")])
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def chess_reminder_keyboard():
+    return rows(
+        [btn(ui.BTN_PZ_SOLVE, "pz_next", neon="crown")],
+        [btn(ui.BTN_PZ_OFF, "pz_off")],
+    )
