@@ -1975,3 +1975,53 @@ async def solved_puzzles(user_id: int) -> set[int]:
     async with db.acquire() as conn:
         rows = await conn.fetch("SELECT puzzle_id FROM puzzle_answers WHERE user_id = $1", user_id)
     return {r["puzzle_id"] for r in rows}
+
+
+async def chess_top(limit: int = 10) -> list[dict]:
+    """Топ «Шах и чат»: кто решил хотя бы одну задачу, по рейтингу."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT u.telegram_id, u.full_name, u.chess_rating,
+                   (SELECT COUNT(*) FROM puzzle_answers p WHERE p.user_id = u.telegram_id) AS solved
+            FROM users u
+            WHERE NOT u.is_banned
+              AND EXISTS (SELECT 1 FROM puzzle_answers p WHERE p.user_id = u.telegram_id)
+            ORDER BY u.chess_rating DESC, solved DESC
+            LIMIT $1
+        """, limit)
+    return [dict(r) for r in rows]
+
+
+async def chess_place(user_id: int) -> tuple[int, int]:
+    """(место, всего игроков); место 0 — ещё не играл."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        row = await conn.fetchrow("""
+            WITH players AS (
+                SELECT u.telegram_id, u.chess_rating FROM users u
+                WHERE NOT u.is_banned
+                  AND EXISTS (SELECT 1 FROM puzzle_answers p WHERE p.user_id = u.telegram_id)
+            )
+            SELECT
+              (SELECT COUNT(*) FROM players) AS total,
+              (SELECT COUNT(*) + 1 FROM players
+                 WHERE chess_rating > (SELECT chess_rating FROM players WHERE telegram_id = $1)) AS place,
+              EXISTS (SELECT 1 FROM players WHERE telegram_id = $1) AS plays
+        """, user_id)
+    return (row["place"] if row["plays"] else 0), row["total"]
+
+
+async def chess_stats() -> dict:
+    db = await get_pool()
+    async with db.acquire() as conn:
+        row = await conn.fetchrow("""
+            SELECT
+              (SELECT COUNT(DISTINCT user_id) FROM puzzle_answers) AS players,
+              (SELECT COUNT(*) FROM puzzle_answers) AS moves,
+              (SELECT COUNT(DISTINCT user_id) FROM puzzle_answers
+                 WHERE (created_at AT TIME ZONE 'Europe/Moscow')::date
+                       = (now() AT TIME ZONE 'Europe/Moscow')::date) AS today,
+              (SELECT COUNT(*) FROM puzzle_answers WHERE mark = '!!') AS brilliant
+        """)
+    return dict(row)

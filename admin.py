@@ -38,6 +38,7 @@ from database import (
     find_user_by_username,
     get_admin_stats,
     get_app_state,
+    chess_stats,
     raffle_participants,
     set_app_state,
     get_stats,
@@ -84,6 +85,7 @@ HUB = _b("← Рассылки", "adm:cmp")
 async def home_text() -> str:
     s = await get_admin_stats()
     c = await admin_counts()
+    ch = await chess_stats()
     return (
         "🛠 <b>Вайбометр · админка</b>\n\n"
         f"👥 Пользователей: <b>{s['total_users']}</b> (+{s['today']} сегодня)\n"
@@ -92,6 +94,7 @@ async def home_text() -> str:
         f"💜 Вайбов: {s['likes']} · взаимных: <b>{s['mutual']}</b>\n"
         f"🎮 Игр: {s['games']} · ❓ вопросов: {s['questions']}\n\n"
         f"🚩 Открытых жалоб: <b>{c['open_reports']}</b> · 🚫 в бане: {c['banned']}\n\n"
+        f"♟ Шах и чат: игроков <b>{ch['players']}</b> (сегодня {ch['today']}) · ходов {ch['moves']} · бриллиантов {ch['brilliant']}\n"
         f"💌 Приглашений: <b>{c['invites']}</b> · засчитано подруг: <b>{c['qualified']}</b>\n"
         f"💎 Активных VIP: <b>{c['vip_active']}</b> (за подруг: {c['vip_by_friends']})\n\n"
         f"{growth_text(await growth_metrics())}\n\n"

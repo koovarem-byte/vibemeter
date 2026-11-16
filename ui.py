@@ -1182,15 +1182,18 @@ def puzzle_text(puzzle, number: int, rating: int, rank: str) -> str:
 
 
 def puzzle_result(move: str, mark: str, name: str, why: str, best: str, delta: int, rating: int, rank: str) -> str:
+    def q(text):
+        return esc(text) if text.startswith(("«", "(")) else f"«{esc(text)}»"
+
     sign = f"+{delta}" if delta > 0 else str(delta)
     lines = [
         f"<b>{mark} {name}</b>",
         "",
-        f"Твой ход: «{esc(move)}»",
+        f"Твой ход: {q(move)}",
         f"💡 {esc(why)}",
     ]
     if mark != "!!":
-        lines += ["", f"Лучший ход: «{esc(best)}»"]
+        lines += ["", f"Лучший ход: {q(best)}"]
     lines += ["", f"{e('fire')} Рейтинг: <b>{rating}</b> ({sign}) · {rank}"]
     return "\n".join(lines)
 
@@ -1199,3 +1202,24 @@ PUZZLES_DONE = (
     f"{title('trophy', 'Все задачи решены')}\n\n"
     "Новые задачи появляются регулярно. А пока — факт об общении 👇"
 )
+
+BTN_PZ_TOP = "Топ игроков"
+BTN_PZ_SHARE = "Скинуть задачу другу"
+PZ_SHARE_TEXT = "Как бы ты ответил? Проверь себя в «Шах и чат» — оценю твой ход как в шахматах ♟"
+PZ_FRIEND = "Тебе скинули задачу из «Шах и чат». Твой ход 👇"
+
+
+def chess_top(rows, place: int, total: int, me_rating: int) -> str:
+    lines = [title("trophy", "Топ «Шах и чат»"), ""]
+    medals = ["🥇", "🥈", "🥉"]
+    for i, r in enumerate(rows):
+        mark = medals[i] if i < 3 else f"{i + 1}."
+        lines.append(f"{mark} {esc(r['full_name'] or 'Игрок')} — <b>{r['chess_rating']}</b> · задач {r['solved']}")
+    if not rows:
+        lines.append("Пока никто не играл — будь первым")
+    lines.append("")
+    if place:
+        lines.append(f"{e('fire')} Ты на <b>{place}</b> месте из {total} · рейтинг {me_rating}")
+    else:
+        lines.append("Реши первую задачу — и ты в рейтинге")
+    return "\n".join(lines)

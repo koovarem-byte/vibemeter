@@ -442,12 +442,19 @@ def sorry_keyboard(person: dict, bot_username: str):
 
 
 def puzzle_keyboard(puzzle_id: int, moves):
-    """Ходы задачи «Шах и чат»: по кнопке на ответ."""
-    return rows(*[[btn(text[:60], f"pz:{puzzle_id}:{i}")] for i, (text, _, _) in enumerate(moves)])
+    """Ходы задачи «Шах и чат»: по кнопке на ответ, порядок свой у каждой задачи."""
+    from puzzles import move_order
+    return rows(*[[btn(moves[i][0][:60], f"pz:{puzzle_id}:{i}")] for i in move_order(puzzle_id)])
 
 
-def puzzle_after_keyboard():
-    return rows(
-        [btn(ui.BTN_PZ_NEXT, "pz_next", neon="crown")],
-        [btn(ui.BTN_FACT, "fact", neon="spark")],
-    )
+def puzzle_after_keyboard(puzzle_id: int | None = None, bot_username: str | None = None):
+    keyboard = [[btn(ui.BTN_PZ_NEXT, "pz_next", neon="crown")]]
+    if puzzle_id is not None and bot_username:
+        link = f"https://t.me/{bot_username}?start=pz_{puzzle_id}"
+        keyboard.append([btn(
+            ui.BTN_PZ_SHARE,
+            url=f"https://t.me/share/url?url={quote(link)}&text={quote(ui.PZ_SHARE_TEXT)}",
+            neon="hands",
+        )])
+    keyboard.append([btn(ui.BTN_PZ_TOP, "pz_top", neon="trophy"), btn(ui.BTN_FACT, "fact", neon="spark")])
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)

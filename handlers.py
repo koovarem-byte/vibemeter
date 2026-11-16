@@ -31,6 +31,8 @@ import facts
 import puzzles
 from aiogram.exceptions import TelegramForbiddenError
 from database import (
+    chess_place,
+    chess_top,
     solve_puzzle,
     solved_puzzles,
     is_blocked,
@@ -449,6 +451,7 @@ async def consent_accept_callback(
 ):
     # Запись создаётся только после согласия
     ref = (await state.get_data()).get("ref")
+    pz = (await state.get_data()).get("pz")
     if not await get_user(callback.from_user.id):
         await create_user(
             telegram_id=callback.from_user.id,
@@ -462,6 +465,11 @@ async def consent_accept_callback(
     await callback.message.edit_reply_markup(reply_markup=None)
 
     await state.clear()
+    if pz is not None:
+        # пришёл по задаче от друга: сначала игра, анкета — потом через /start
+        await callback.message.answer(ui.PZ_FRIEND, reply_markup=main_menu())
+        await show_puzzle(callback.message, callback.from_user.id, pz)
+        return
     await callback.message.answer(ui.PROFILE_START)
     await state.set_state(ProfileState.name)
 
@@ -513,7 +521,7 @@ def is_source_tag(arg: str) -> bool:
         return False
     if arg.lower() in START_ACTIONS:
         return False
-    return not arg.startswith(("vt_", "vtp_", "ref_"))
+    return not arg.startswith(("vt_", "vtp_", "ref_", "pz_"))
 
 
 @router.message(CommandStart())
@@ -535,6 +543,19 @@ async def start_handler(
         await add_start_source(arg.lower(), message.from_user.id)
     if arg == "vt" or arg.startswith("vt_"):
         await send_vibe_test(message, arg[3:])
+        return
+
+    # задача «Шах и чат» от друга: t.me/бот?start=pz_<номер>
+    if re.fullmatch(r"pz_\d{1,4}", arg):
+        if user:
+            await state.clear()
+            await message.answer(ui.PZ_FRIEND, reply_markup=main_menu())
+            await show_puzzle(message, message.from_user.id, int(arg[3:]))
+            return
+        # новичок: сначала согласие, задачу покажем сразу после него
+        await state.clear()
+        await state.update_data(pz=int(arg[3:]))
+        await message.answer(ui.CONSENT, reply_markup=consent_keyboard())
         return
 
     if not user:
@@ -1001,15 +1022,17 @@ async def show_incoming_likes(message, user_id):
 # «ШАХ И ЧАТ»: задачи по переписке с оценкой ходов
 # =========================================================
 
-async def show_puzzle(message: Message, user_id: int):
+async def show_puzzle(message: Message, user_id: int, first: int | None = None):
+    """Следующая нерешённая задача; first — начать с этой (ссылка от друга)."""
     user = await get_user(user_id)
     if not user:
         await message.answer(ui.NEED_START)
         return
     done = await solved_puzzles(user_id)
     total = len(puzzles.PUZZLES)
-    # сначала задача дня, потом остальные по кругу
-    order = [(puzzles.today_index() + i) % total for i in range(total)]
+    # сначала задача от друга или задача дня, потом остальные по кругу
+    start = first if first is not None and 0 <= first < total else puzzles.today_index()
+    order = [(start + i) % total for i in range(total)]
     left = [i for i in order if i not in done]
     if not left:
         await message.answer(ui.PUZZLES_DONE)
@@ -1061,6 +1084,17 @@ async def puzzle_move(callback: CallbackQuery):
     best = max(puzzle["moves"], key=lambda m: puzzles.DELTA[m[1]])[0]
     await callback.message.answer(
         ui.puzzle_result(move, mark, puzzles.NAMES[mark], why, best, delta, rating, puzzles.rank(rating)),
+        reply_markup=puzzle_after_keyboard(int(pid), (await callback.bot.me()).username),
+    )
+
+
+@router.callback_query(F.data == "pz_top")
+async def puzzle_top(callback: CallbackQuery):
+    await callback.answer()
+    user = await get_user(callback.from_user.id)
+    place, total = await chess_place(callback.from_user.id)
+    await callback.message.answer(
+        ui.chess_top(await chess_top(10), place, total, (user or {}).get("chess_rating") or 1200),
         reply_markup=puzzle_after_keyboard(),
     )
 
