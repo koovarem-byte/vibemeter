@@ -9,7 +9,7 @@ from aiohttp import web
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.filters import ExceptionMessageFilter
-from aiogram.types import BotCommand, MenuButtonCommands
+from aiogram.types import BotCommand, MenuButtonCommands, MenuButtonWebApp, WebAppInfo
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler
 
 from config import ADMIN_ID, BOT_TOKEN
@@ -18,6 +18,7 @@ from handlers import router, ban_middleware, flood_middleware
 import admin
 import trainer
 from webapp_api import setup_webapp
+from chess_api import setup_play
 import chessdaily
 import ui
 import alerts
@@ -95,7 +96,7 @@ async def setup_profile(bot):
 
 
 async def setup_menu_button(bot):
-    """16.11: Mini App знакомств убрана из кнопки меню — там теперь команды игры."""
+    """Команды игры; кнопка меню — Mini App «Шах и чат» (/play/), без WEBAPP_URL — список команд."""
     try:
         await bot.set_my_commands([
             BotCommand(command="play", description="Партия"),
@@ -107,7 +108,11 @@ async def setup_menu_button(bot):
             BotCommand(command="ask", description="Вопрос автору"),
             BotCommand(command="help", description="Что это и правила"),
         ])
-        await bot.set_chat_menu_button(menu_button=MenuButtonCommands())
+        if WEBAPP_URL:
+            await bot.set_chat_menu_button(menu_button=MenuButtonWebApp(
+                text="Играть", web_app=WebAppInfo(url=f"{WEBAPP_URL}/play/")))
+        else:
+            await bot.set_chat_menu_button(menu_button=MenuButtonCommands())
     except Exception:
         logging.exception("Не удалось поставить команды и кнопку меню")
 
@@ -120,6 +125,8 @@ def create_app(bot, dp, webhook=True):
 
     # Mini App: страница /app/ и API /app/api/*
     setup_webapp(app, bot)
+    # Mini App «Шах и чат»: /play/ и /play/api/*
+    setup_play(app)
 
     if webhook:
         SimpleRequestHandler(

@@ -2382,3 +2382,77 @@ async def trainer_stats() -> dict:
               (SELECT COUNT(DISTINCT user_id) FROM chat_games) AS players
         """)
     return dict(row)
+
+
+# =========================================================
+# MINI APP «ШАХ И ЧАТ»
+# =========================================================
+
+# очки по событиям: задачи (по значку) + партии (разница рейтинга)
+_POINTS_EVENTS = """
+    SELECT user_id, created_at AS at,
+           CASE mark WHEN '!!' THEN 15 WHEN '!' THEN 8 WHEN '?!' THEN 0 ELSE -5 END AS pts
+    FROM puzzle_answers
+    UNION ALL
+    SELECT user_id, finished_at AS at, COALESCE(rating_after - rating_before, 0) AS pts
+    FROM chat_games WHERE status = 'finished'
+"""
+
+
+async def chess_period_top(days: int | None, limit: int = 50) -> list[dict]:
+    """Топ за период: days=None — всё время (по рейтингу), иначе очки за последние N дней по Москве."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        if days is None:
+            rows = await conn.fetch("""
+                SELECT u.telegram_id, u.full_name, u.chess_rating AS points, u.chess_rating FROM users u
+                WHERE NOT u.is_banned AND (
+                    EXISTS (SELECT 1 FROM chat_games g WHERE g.user_id = u.telegram_id AND g.status = 'finished')
+                    OR EXISTS (SELECT 1 FROM puzzle_answers p WHERE p.user_id = u.telegram_id))
+                ORDER BY u.chess_rating DESC, u.telegram_id LIMIT $1
+            """, limit)
+        else:
+            rows = await conn.fetch(f"""
+                WITH ev AS ({_POINTS_EVENTS})
+                SELECT u.telegram_id, u.full_name, SUM(ev.pts)::int AS points, u.chess_rating
+                FROM ev JOIN users u ON u.telegram_id = ev.user_id
+                WHERE NOT u.is_banned
+                  AND (ev.at AT TIME ZONE 'Europe/Moscow')::date > {TODAY_MSK} - $2::int
+                GROUP BY u.telegram_id, u.full_name, u.chess_rating
+                HAVING SUM(ev.pts) > 0
+                ORDER BY points DESC, u.chess_rating DESC, u.telegram_id LIMIT $1
+            """, limit, days)
+    return [dict(r) for r in rows]
+
+
+async def chess_profile(user_id: int) -> dict:
+    """Профиль Mini App: значки ходов, очки по дням за 14 дней, партии."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        marks = await conn.fetch("""
+            SELECT mark, COUNT(*)::int AS n FROM (
+                SELECT mark FROM puzzle_answers WHERE user_id = $1
+                UNION ALL
+                SELECT m->>'badge' FROM chat_games g, jsonb_array_elements(g.history) m
+                WHERE g.user_id = $1 AND g.status = 'finished' AND m->>'who' = 'me'
+            ) t GROUP BY mark
+        """, user_id)
+        days = await conn.fetch(f"""
+            WITH ev AS ({_POINTS_EVENTS})
+            SELECT (at AT TIME ZONE 'Europe/Moscow')::date AS day, SUM(pts)::int AS pts
+            FROM ev WHERE user_id = $1 AND (at AT TIME ZONE 'Europe/Moscow')::date > {TODAY_MSK} - 14
+            GROUP BY day ORDER BY day
+        """, user_id)
+        games = await conn.fetchrow("""
+            SELECT COUNT(*)::int AS games, COUNT(*) FILTER (WHERE result = 'win')::int AS wins
+            FROM chat_games WHERE user_id = $1 AND status = 'finished'
+        """, user_id)
+        solved_today = await conn.fetchval(f"""
+            SELECT COUNT(*)::int FROM puzzle_answers
+            WHERE user_id = $1 AND (created_at AT TIME ZONE 'Europe/Moscow')::date = {TODAY_MSK}
+        """, user_id)
+    return {
+        "marks": {r["mark"]: r["n"] for r in marks},
+        "days": [{"day": r["day"].isoformat(), "pts": r["pts"]} for r in days],
+        "games": games["games"], "wins": games["wins"], "solved_today": solved_today,
+    }

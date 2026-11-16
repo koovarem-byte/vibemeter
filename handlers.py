@@ -575,7 +575,7 @@ async def crush_command(message: Message):
 
 
 # start-параметры, у которых своя работа (не метки источников)
-START_ACTIONS = {"vt", "sc", "game"}
+START_ACTIONS = {"vt", "sc", "game", "play"}
 
 
 def is_source_tag(arg: str) -> bool:
@@ -635,6 +635,11 @@ async def start_handler(
 
     # 16.11: знакомства убраны — всем, кто уже согласился, сразу меню игры
     await state.clear()
+    # из Mini App: t.me/бот?start=play — сразу выбор партии
+    if arg == "play":
+        import trainer
+        await trainer.open_play_menu(message, message.from_user.id, state)
+        return
     await message.answer(ui.welcome_back(user["streak_days"]), reply_markup=main_menu())
     return
 
