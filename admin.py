@@ -935,6 +935,40 @@ async def add_situation_cmd(message: Message):
     await message.answer(f"✅ Ситуация «{html.escape(title)}» добавлена — уже есть в /play")
 
 
+@router.message(Command("move"))
+async def move_cmd(message: Message):
+    """Переезд: разовая рассылка «мы переехали» всем из СТАРОГО бота (нужен OLD_BOT_TOKEN)."""
+    if message.from_user.id != ADMIN_ID:
+        return
+    import relay
+    if not relay.old_bot:
+        await message.answer("Старый бот не подключён: добавь OLD_BOT_TOKEN в переменные Bothost и пересобери")
+        return
+    old = (await relay.old_bot.me()).username
+    await message.answer(
+        f"🚚 Рассылка о переезде: всем, кто писал @{old}, придёт сообщение от @{old} "
+        f"с кнопкой в @{relay.new_username}. Каждому один раз\n\nПример — ниже",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="✅ Отправить всем", callback_data="move_go", style="success"),
+        ]]),
+    )
+    await broadcast.send_campaign(relay.old_bot, message.chat.id, "moved1", old)
+
+
+@router.callback_query(F.data == "move_go")
+async def move_go(callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        return
+    import relay
+    if not relay.old_bot:
+        await callback.answer("Старый бот не подключён", show_alert=True)
+        return
+    ok = broadcast.start_campaign(relay.old_bot, ADMIN_ID, "moved1", "all")
+    await callback.answer("Пошла" if ok else "Уже идёт другая рассылка", show_alert=True)
+    if ok:
+        await callback.message.edit_reply_markup(reply_markup=None)
+
+
 @router.message(Command("broadcast"))
 async def broadcast_cmd(message: Message):
     await message.answer(await hub_text(), reply_markup=hub_keyboard())

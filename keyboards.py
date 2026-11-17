@@ -225,6 +225,9 @@ def campaign_keyboard(button: str | None, bot_username: str):
         return rows([btn(ui.BTN_PZ_SOLVE, "pz_next", neon="crown")], channel)
     if button == "invite":
         return rows([btn(ui.BTN_INVITE, "invite", neon="heart")], channel)
+    if button == "moved":
+        import relay
+        return rows([btn(ui.BTN_MOVED, url=relay.new_link(), neon="knight")])
     if button == "fill":
         return rows([btn(
             ui.BTN_FILL_PROFILE, url=f"https://t.me/{bot_username}?start=bc", neon="star",

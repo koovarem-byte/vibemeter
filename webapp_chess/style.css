@@ -249,3 +249,25 @@ a { color: var(--green); }
 .mk-img { width: 32px; height: 32px; flex: none; }
 .pl-crown { display: block; width: 16px; height: 16px; margin: 0 auto -2px; }
 .me-hero .ava img, .hero img { object-fit: contain; }
+
+/* 17.11: все панели зелёные неоновые (как раньше были синие/фиолетовые): градиентная рамка + свечение */
+:root {
+  --panel: #0b2014;
+  --edge: linear-gradient(135deg, rgba(90, 240, 130, .95), rgba(31, 163, 70, .25) 45%, rgba(47, 207, 92, .7));
+  --edge-soft: linear-gradient(135deg, rgba(90, 240, 130, .55), rgba(31, 163, 70, .12) 50%, rgba(47, 207, 92, .45));
+}
+.card, .tile, .stat, .li, .move, .chat, .fact, .v-card, .rk-step, .chart, .seg button:not(.active), .btn.ghost {
+  border: 1px solid transparent;
+  background: linear-gradient(180deg, #0e2717, var(--panel)) padding-box, var(--edge-soft) border-box;
+  box-shadow: 0 0 14px rgba(47, 207, 92, .10), inset 0 0 14px rgba(47, 207, 92, .05);
+}
+.card:active, .tile:active, .move:active { box-shadow: 0 0 20px rgba(47, 207, 92, .35), inset 0 0 16px rgba(47, 207, 92, .12); }
+.tile, .chat, .fact.day, .rk-step.cur, .li.me, .move.picked {
+  background: linear-gradient(180deg, #113020, var(--panel)) padding-box, var(--edge) border-box;
+  box-shadow: 0 0 18px rgba(47, 207, 92, .22), inset 0 0 16px rgba(47, 207, 92, .08);
+}
+.tile { color: #cfe9d6; }
+.card .ico { background: rgba(47, 207, 92, .12); box-shadow: inset 0 0 0 1px rgba(47, 207, 92, .35); }
+.ach-list .card.locked { box-shadow: none; }
+.tabs { border-top: 1px solid rgba(47, 207, 92, .35); box-shadow: 0 -6px 24px rgba(47, 207, 92, .10); }
+.bubble { background: #173923; box-shadow: inset 0 0 0 1px rgba(47, 207, 92, .25); }

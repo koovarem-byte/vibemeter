@@ -20,6 +20,7 @@ import trainer
 from webapp_api import setup_webapp
 from chess_api import setup_play
 import chessdaily
+import relay
 import ui
 import alerts
 from fsm_storage import PgStorage
@@ -82,6 +83,19 @@ def get_bot_and_dispatcher():
     if _bot_dp is None:
         _bot_dp = create_bot_and_dispatcher()
     return _bot_dp
+
+
+async def load_emoji_pack(bot):
+    """Пак «Шах и Чат»: id эмодзи из Telegram -> ui.NEON (тексты и иконки кнопок)."""
+    try:
+        pack = await bot.get_sticker_set(ui.EMOJI_PACK)
+        n = ui.load_pack(pack.stickers)
+        logging.info("Эмодзи «%s»: %s из %s", ui.EMOJI_PACK, n, len(pack.stickers))
+        if len(pack.stickers) != len(ui.PACK_ORDER):
+            logging.warning("Эмодзи: в паке %s, ожидалось %s — старые иконки не заменены, проверь /emojiset %s",
+                            len(pack.stickers), len(ui.PACK_ORDER), ui.EMOJI_PACK)
+    except Exception:
+        logging.warning("Эмодзи: пак %s не загрузился, остаются старые", ui.EMOJI_PACK)
 
 
 async def setup_profile(bot):
@@ -148,11 +162,13 @@ async def run_webhook():
     bot, dp = get_bot_and_dispatcher()
 
     await init_db()
+    await load_emoji_pack(bot)
     await setup_menu_button(bot)
     await setup_profile(bot)
     # вайб-час и засчитывание подруг — механики знакомств, с 16.11 выключены
     chess_task = asyncio.create_task(chessdaily.loop(bot))
     alerts_task = alerts.install(bot, ADMIN_ID)
+    relay_task = asyncio.create_task(relay.run(bot))
 
     app = create_app(bot, dp, webhook=True)
 
@@ -171,6 +187,7 @@ async def run_webhook():
     try:
         await _stop.wait()
     finally:
+        relay_task.cancel()
         chess_task.cancel()
         alerts_task.cancel()
         await runner.cleanup()
@@ -193,11 +210,14 @@ async def run_polling():
     print(f"HTTP server started on port {PORT}")
 
     await init_db()
+    await load_emoji_pack(bot)
     await setup_menu_button(bot)
     await setup_profile(bot)
     # вайб-час и засчитывание подруг — механики знакомств, с 16.11 выключены
     chess_task = asyncio.create_task(chessdaily.loop(bot))
     alerts_task = alerts.install(bot, ADMIN_ID)
+    # переезд: старый бот пересылает в новый (только при OLD_BOT_TOKEN)
+    relay_task = asyncio.create_task(relay.run(bot))
 
     # webhook здесь специально не снимаем: если бот уже работает
     # на хостинге, локальный polling упадёт с Conflict, а не уведёт бота.
@@ -208,6 +228,7 @@ async def run_polling():
         # сигналы ловит run_forever, иначе после перезапуска SIGTERM терялся бы
         await dp.start_polling(bot, handle_signals=False)
     finally:
+        relay_task.cancel()
         chess_task.cancel()
         alerts_task.cancel()
         await runner.cleanup()

@@ -42,6 +42,41 @@ NEON = {
 }
 
 
+# Пак владельца «Шах и Чат» (t.me/addemoji/shahichat, 17.11): порядок как в
+# assets/emoji/pack_100 (01_m_brilliant … 33_flag). При старте bot.load_emoji_pack
+# берёт id из Telegram и кладёт сюда; до загрузки — запасные из старого набора.
+EMOJI_PACK = "shahichat"
+PACK_ORDER = [
+    ("m_brilliant", "💎"), ("m_good", "✅"), ("m_dubious", "🤔"), ("m_blunder", "❌"), ("m_mate", "🟣"),
+    ("pawn", "♟"), ("knight", "🐴"), ("bishop", "♝"), ("rook", "🏰"), ("queen", "👸"), ("king", "🤴"),
+    ("daily", "📅"), ("fire_g", "🔥"), ("trophy_w", "🏆"), ("star_w", "⭐"), ("rating", "📊"), ("target", "🎯"),
+    ("bolt_g", "⚡"), ("shield", "🛡"), ("gift", "🎁"), ("chat_w", "💬"), ("bell", "🔔"), ("settings", "⚙️"),
+    ("more", "💬"), ("cross", "✖️"), ("check", "✔️"), ("crown_gold", "👑"), ("knight_gold", "🏅"),
+    ("fire_x5", "🔥"), ("timer", "⏱"), ("podium", "🥇"), ("board", "🏁"), ("flag", "🏁"),
+]
+for _name, _fb in PACK_ORDER:
+    NEON.setdefault(_name, (NEON["crown"][0], _fb))
+# старые имена, которые теперь рисуем иконками пака (зелёный стиль)
+PACK_ALIASES = {
+    "fire": "fire_g", "bolt": "bolt_g", "crown": "crown_gold", "star": "star_w", "trophy": "trophy_w",
+    "chat": "chat_w", "gear": "settings", "diamond": "m_brilliant", "hands": "gift", "spark": "knight",
+    "speedo": "timer", "lock": "shield", "eye": "target", "gamepad": "board", "candy": "daily", "heart": "check",
+}
+
+
+def load_pack(stickers) -> int:
+    """id эмодзи пака по порядку загрузки -> NEON. Возвращает, сколько подставлено."""
+    n = 0
+    for (name, fallback), st in zip(PACK_ORDER, stickers):
+        if st.custom_emoji_id:
+            NEON[name] = (st.custom_emoji_id, fallback)
+            n += 1
+    if n == len(PACK_ORDER):
+        for old, new in PACK_ALIASES.items():
+            NEON[old] = (NEON[new][0], NEON[old][1])
+    return n
+
+
 def e(name: str) -> str:
     """Неоновый эмодзи в тексте (HTML)."""
     emoji_id, fallback = NEON[name]
@@ -838,6 +873,19 @@ CAMPAIGNS = {
             "Проверь, какой у тебя уровень переписки👇"
         ),
     },
+    # шлёт СТАРЫЙ бот (relay.old_bot) из /move: кнопка ведёт в новый
+    "moved1": {
+        "title": "🚚 Переезд в новый бот",
+        "audience": "all",
+        "sticker": None,
+        "button": "moved",
+        "text": (
+            "♟ <b>«Шах и Чат» переехал</b>\n\n"
+            "Теперь мы в новом боте — там Mini App с рейтингом, задача дня и партии с ИИ. "
+            "Рейтинг, серия и решённые задачи сохранились\n\n"
+            "Жми кнопку и нажми «Старт» 👇"
+        ),
+    },
 }
 # какую кампанию девушка получает сразу после анкеты (вместе с VIP)
 GIRLS_CAMPAIGN = "vip_girls1"
@@ -1249,6 +1297,17 @@ def streak_reminder(streak: int, rating: int) -> str:
         f"{title('fire', f'Серия {days(streak)} сгорит в полночь')}\n\n"
         "Одна задача — минута, и серия живёт дальше\n\n"
         f"Рейтинг: <b>{rating}</b>"
+    )
+
+
+BTN_MOVED = "Открыть «Шах и Чат»"
+
+
+def moved_text(new_username: str) -> str:
+    return (
+        f"{title('knight', 'Мы переехали')}\n\n"
+        f"Теперь «Шах и Чат» живёт тут: @{new_username}\n\n"
+        "Рейтинг, серия и решённые задачи — всё сохранилось. Жми кнопку и нажми «Старт»"
     )
 
 
