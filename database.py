@@ -2152,7 +2152,23 @@ async def chess_reminder_recipients(days: int, total_puzzles: int) -> list[dict]
                               AND (p.created_at AT TIME ZONE 'Europe/Moscow')::date
                                   = (now() AT TIME ZONE 'Europe/Moscow')::date)
               AND (SELECT COUNT(*) FROM puzzle_answers p WHERE p.user_id = u.telegram_id) < $2
+              -- у кого серия под угрозой, тем пишем вечером (streak_save_recipients), не дважды
+              AND NOT (u.streak_days >= 2 AND u.last_active = (now() AT TIME ZONE 'Europe/Moscow')::date - 1)
         """, days, total_puzzles)
+    return [dict(r) for r in rows]
+
+
+async def streak_save_recipients(total_puzzles: int) -> list[dict]:
+    """Вечером: серия ≥ 2 дней, вчера заходил, сегодня ещё нет — серия сгорит в полночь."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT u.telegram_id, u.streak_days, u.chess_rating FROM users u
+            WHERE u.chess_notify AND NOT u.is_banned AND u.streak_days >= 2
+              AND u.last_active = (now() AT TIME ZONE 'Europe/Moscow')::date - 1
+              AND EXISTS (SELECT 1 FROM puzzle_answers p WHERE p.user_id = u.telegram_id)
+              AND (SELECT COUNT(*) FROM puzzle_answers p WHERE p.user_id = u.telegram_id) < $1
+        """, total_puzzles)
     return [dict(r) for r in rows]
 
 

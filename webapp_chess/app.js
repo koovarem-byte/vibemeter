@@ -23,8 +23,10 @@
     ["Пешка", "♟" + T, 0], ["Конь", "♞" + T, 100], ["Слон", "♝" + T, 300],
     ["Ладья", "♜" + T, 600], ["Ферзь", "♛" + T, 1000], ["Гроссмейстер", "♚" + T, 1500],
   ];
-  const fig = (rank) => (RANKS.find((r) => r[0] === rank) || RANKS[0])[1];
-  const piece = (rank) => `<span class="piece">${fig(rank)}</span>`;
+  const PIECE_IMG = { "Пешка": "pawn", "Конь": "knight", "Слон": "bishop", "Ладья": "rook", "Ферзь": "queen", "Гроссмейстер": "king" };
+  const MARK_IMG = { "!!": "m_brilliant", "!": "m_good", "?!": "m_dubious", "??": "m_blunder", "#": "m_mate" };
+  const icon = (name, cls = "ic") => `<img class="${cls}" src="i/${name}.png" alt="">`;
+  const piece = (rank) => icon(PIECE_IMG[rank] || "pawn", "ic piece-img");
   const LOGO = "logo.png";
 
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -101,8 +103,8 @@
   function renderHome() {
     const { me } = state;
     const daily = state.daily_done
-      ? `<button class="card done" data-go="game"><div class="ico">✓</div><div class="main"><div class="t">Задача дня решена</div><div class="s">Дальше — обычные задачи</div></div><div class="arrow">›</div></button>`
-      : `<button class="card" data-go="game"><div class="ico">${piece("Пешка")}</div><div class="main"><div class="t">Задача дня ждёт</div><div class="s">Одна на всех · серия ${me.streak} 🔥</div></div><div class="arrow">›</div></button>`;
+      ? `<button class="card done" data-go="game"><div class="ico">${icon("check")}</div><div class="main"><div class="t">Задача дня решена</div><div class="s">Дальше — обычные задачи</div></div><div class="arrow">›</div></button>`
+      : `<button class="card" data-go="game"><div class="ico">${icon("daily")}</div><div class="main"><div class="t">Задача дня ждёт</div><div class="s">Одна на всех · серия ${me.streak}</div></div><div class="arrow">›</div></button>`;
     screen.innerHTML = `
       <div class="hero">
         <img src="${LOGO}" alt="">
@@ -111,17 +113,17 @@
       </div>
       <button class="btn big" data-go="game">Начать игру ▶</button>
       <button class="card" data-go="top">
-        <div class="ico"><svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M4 13h4v8H4zm6-6h4v14h-4zm6 3h4v11h-4z"/></svg></div>
+        <div class="ico">${icon("rating")}</div>
         <div class="main"><div class="t">Твой рейтинг: ${me.rating}</div><div class="s">${esc(me.rank)}${me.next ? ` · до «${esc(me.next.rank)}» ${me.next.at - me.rating}` : ""}</div>
           <div class="bar"><i style="width:${progress(me)}%"></i></div></div>
         <div class="arrow">›</div>
       </button>
       ${daily}
       <div class="tiles">
-        <button class="tile" data-go="learn"><span class="ti">📖</span>Обучение</button>
-        <button class="tile" data-go="ach"><span class="ti">⭐</span>Достижения</button>
-        <button class="tile" data-bot="play"><span class="ti">💬</span>Партия с ИИ</button>
-        <button class="tile" data-invite><span class="ti">🤝</span>Позвать друга</button>
+        <button class="tile" data-go="learn">${icon("chat", "ti")}Обучение</button>
+        <button class="tile" data-go="ach">${icon("star", "ti")}Достижения</button>
+        <button class="tile" data-bot="play">${icon("bolt", "ti")}Партия с ИИ</button>
+        <button class="tile" data-invite>${icon("gift", "ti")}Позвать друга</button>
       </div>`;
   }
 
@@ -136,7 +138,7 @@
           <div class="head-sub">${sub}</div>
           <div class="bar"><i style="width:${progress(me)}%"></i></div>
         </div>
-        ${me.streak > 0 ? `<div class="streak">🔥 ${me.streak}</div>` : ""}
+        ${me.streak > 0 ? `<div class="streak">${icon("fire")} ${me.streak}</div>` : ""}
       </div>`;
   }
 
@@ -193,7 +195,7 @@
     const sign = res.delta > 0 ? "plus" : res.delta < 0 ? "minus" : "";
     v.innerHTML = `
       <div class="verdict-in" style="--c:${mk.c}">
-        <div class="badge">${esc(res.mark)}</div>
+        ${MARK_IMG[res.mark] ? icon(MARK_IMG[res.mark], "badge-img") : `<div class="badge">${esc(res.mark)}</div>`}
         <div class="v-name">${esc(res.name)}</div>
         <div class="v-delta ${sign}">${res.delta > 0 ? "+" : ""}${res.delta} · рейтинг ${res.me.rating}</div>
         ${res.rank_up ? `<div class="rankup">${piece(res.me.rank)} Новое звание: ${esc(res.me.rank)}</div>` : ""}
@@ -250,7 +252,7 @@
       : `<div class="av ${it.place === 1 ? "top1" : ""}" style="--h:${hue(it.name)}">${esc((it.name || "?")[0].toUpperCase())}</div>`;
     return `
       <div class="li ${it.me ? "me" : ""}">
-        <div class="pl${cls}">${it.place}</div>${av}
+        <div class="pl${cls}">${it.place <= 3 && !it.me ? icon("crown", "ic pl-crown") : ""}${it.place}</div>${av}
         <div class="nm"><b>${it.me ? "Ты" : esc(it.name)}</b><span>${esc(it.rank)}</span></div>
         <div class="pt">${pts(it.points)}</div>
       </div>`;
@@ -268,7 +270,7 @@
       <div class="fact ${day ? "day" : ""}">
         ${day ? '<span class="pill">ФАКТ ДНЯ</span>' : ""}
         <div class="txt">${esc(f.text)}</div>
-        <div class="tip"><span>💡</span><span>${esc(f.tip)}</span></div>
+        <div class="tip">${icon("target")}<span>${esc(f.tip)}</span></div>
         <div class="src">${f.url ? `<a href="${esc(f.url)}" data-ext>${esc(f.source)}</a>` : esc(f.source)}</div>
       </div>`;
     screen.innerHTML = `<button class="back" data-go="home">‹ Главная</button>
@@ -281,21 +283,21 @@
     const me = p.me;
     const m = p.marks;
     return [
-      ["♟" + T, "Первый ход", "Реши первую задачу", me.solved >= 1],
-      ["💎", "Бриллиант", "Найди ход !!", (m["!!"] || 0) >= 1],
-      ["💍", "Ювелир", "10 ходов !!", (m["!!"] || 0) >= 10],
-      ["🔟", "Десятка", "Реши 10 задач", me.solved >= 10],
-      ["🔥", "Три дня", "Играй 3 дня подряд", me.best_streak >= 3],
-      ["📅", "Неделя", "Играй 7 дней подряд", me.best_streak >= 7],
-      ["💬", "Первая партия", "Сыграй партию с ИИ", p.games >= 1],
-      ["🏆", "Первая победа", "Выиграй партию", p.wins >= 1],
-      ["⚔️", "Стратег", "Выиграй 5 партий", p.wins >= 5],
-      ["♞" + T, "Конь", "Набери 100 очков", me.rating >= 100],
-      ["♜" + T, "Ладья", "Набери 600 очков", me.rating >= 600],
-      ["♚" + T, "Гроссмейстер", "Набери 1500 очков", me.rating >= 1500],
+      ["pawn", "Первый ход", "Реши первую задачу", me.solved >= 1],
+      ["m_brilliant", "Бриллиант", "Найди ход !!", (m["!!"] || 0) >= 1],
+      ["crown", "Ювелир", "10 ходов !!", (m["!!"] || 0) >= 10],
+      ["target", "Десятка", "Реши 10 задач", me.solved >= 10],
+      ["fire", "Три дня", "Играй 3 дня подряд", me.best_streak >= 3],
+      ["fire_x5", "Неделя", "Играй 7 дней подряд", me.best_streak >= 7],
+      ["chat", "Первая партия", "Сыграй партию с ИИ", p.games >= 1],
+      ["trophy", "Первая победа", "Выиграй партию", p.wins >= 1],
+      ["knight_gold", "Стратег", "Выиграй 5 партий", p.wins >= 5],
+      ["knight", "Конь", "Набери 100 очков", me.rating >= 100],
+      ["rook", "Ладья", "Набери 600 очков", me.rating >= 600],
+      ["king", "Гроссмейстер", "Набери 1500 очков", me.rating >= 1500],
     ];
   }
-  const medal = (ico) => (/[♟♞♜♚]/.test(ico) ? `<span class="piece">${ico}</span>` : ico);
+  const medal = (name) => icon(name);
 
   async function loadProfile() {
     if (!profile) profile = await api("profile");
@@ -314,7 +316,7 @@
       <div class="ach-list">${list.map(([ico, name, hint, ok]) => `
         <div class="card ${ok ? "" : "locked"}"><div class="ico">${medal(ico)}</div>
           <div class="main"><div class="t">${esc(name)}</div><div class="s">${esc(hint)}</div></div>
-          ${ok ? '<div class="check">✓</div>' : '<div class="lock">🔒</div>'}
+          ${ok ? icon("check", "ic check-img") : ""}
         </div>`).join("")}</div>`;
   }
 
@@ -330,7 +332,7 @@
     const maxN = Math.max(1, ...Object.values(p.marks));
     const marks = order.filter((k) => p.marks[k]).map((k) => `
       <div class="mk" style="--c:${MARKS[k].c}">
-        <div class="b">${esc(k)}</div>
+        ${MARK_IMG[k] ? icon(MARK_IMG[k], "ic mk-img") : `<div class="b">${esc(k)}</div>`}
         <div class="tr"><i style="width:${Math.round((p.marks[k] / maxN) * 100)}%"></i></div>
         <div class="n">${p.marks[k]}</div>
       </div>`).join("");
@@ -349,7 +351,7 @@
 
     const curIdx = RANKS.findIndex((r) => r[0] === me.rank);
     const ranks = RANKS.map((r, i) => `
-      <div class="rk-step ${i <= curIdx ? "on" : ""} ${i === curIdx ? "cur" : ""}"><span class="piece">${r[1]}</span><div class="l">${r[2]}</div></div>`).join("");
+      <div class="rk-step ${i <= curIdx ? "on" : ""} ${i === curIdx ? "cur" : ""}">${piece(r[0])}<div class="l">${r[2]}</div></div>`).join("");
 
     const ach = achievements(p);
     const achDone = ach.filter((a) => a[3]).length;
@@ -367,7 +369,7 @@
         </div>
       </div>
       <div class="stats">
-        <div class="stat"><b>🔥 ${me.streak}</b><span>серия</span></div>
+        <div class="stat"><b>${icon("fire")} ${me.streak}</b><span>серия</span></div>
         <div class="stat"><b>${me.solved}/${me.total}</b><span>задач</span></div>
         <div class="stat"><b>${p.place || "—"}</b><span>место${p.players ? " из " + p.players : ""}</span></div>
       </div>

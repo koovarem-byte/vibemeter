@@ -22,6 +22,7 @@ from database import (
     get_user,
     log_event,
     mark_seen,
+    touch_user,
     solve_puzzle,
     solved_puzzles,
 )
@@ -53,8 +54,13 @@ async def play_auth(request, handler):
         return error("no_user", 404)
     if user["is_banned"]:
         return error("banned", 403)
+    # задача и состояние считаются заходом: серия дней и last_active, как в боте
+    if request.path in ("/play/api/state", "/play/api/move"):
+        await touch_user(user["telegram_id"])
+        user = await get_user(user["telegram_id"]) or user
+    else:
+        await mark_seen(user["telegram_id"])
     request["user"] = user
-    await mark_seen(user["telegram_id"])
     return await handler(request)
 
 
