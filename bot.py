@@ -87,6 +87,8 @@ def get_bot_and_dispatcher():
 async def setup_profile(bot):
     """Описание бота из ui.py: меняем, только если отличается."""
     try:
+        if (await bot.get_my_name()).name != ui.BOT_NAME:
+            await bot.set_my_name(name=ui.BOT_NAME)
         if (await bot.get_my_description()).description != ui.BOT_DESCRIPTION:
             await bot.set_my_description(description=ui.BOT_DESCRIPTION)
         if (await bot.get_my_short_description()).short_description != ui.BOT_SHORT_DESCRIPTION:

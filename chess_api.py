@@ -73,6 +73,7 @@ def me_json(user, solved: int) -> dict:
         "rank_from": prev,
         "next": {"at": nxt[0], "rank": nxt[1]} if nxt else None,
         "streak": user["streak_days"] or 0,
+        "best_streak": max(user.get("best_streak") or 0, user["streak_days"] or 0),
         "solved": solved,
         "total": len(puzzles.PUZZLES),
     }

@@ -204,7 +204,7 @@ BTN_START_GAME = "Начать"
 BTN_PLAY_AGAIN = "Сыграть ещё"
 BTN_STORY = "Картинка для сторис"
 BTN_PLAY_TOGETHER = "Сыграть вместе"
-BTN_OPEN_APP = "Открыть Вайбометр"
+BTN_OPEN_APP = "Открыть «Шах и Чат»"
 BTN_ACHIEVEMENTS = "Зал славы"
 BTN_EDIT = "Изменить анкету"
 BTN_SEARCH = "Кого искать"
@@ -284,7 +284,7 @@ NEED_START = "Напиши /start, и начнём"
 UNKNOWN = "Не понял 🙂 Выбери что-нибудь в меню"
 CANCELLED = "Окей, отменили"
 PHOTO_UPDATED = "📸 Новое фото анкеты из Вайбометра"
-BANNED = "🚫 Аккаунт заблокирован за нарушение правил Вайбометра"
+BANNED = "🚫 Аккаунт заблокирован за нарушение правил «Шах и Чат»"
 
 
 def streak_notice(streak: int) -> str:
@@ -346,7 +346,7 @@ def err_age_max(max_age: int) -> str:
 
 
 UNDER_18 = (
-    "Извини, Вайбометр только для тех, кому есть 18. "
+    "Извини, «Шах и Чат» только для тех, кому есть 18. "
     "Данные мы не сохранили\n\n"
     f"Возвращайся, когда подрастёшь {e('heart')}"
 )
@@ -971,7 +971,7 @@ def admin_stats(s) -> str:
 
 def admin_sources(rows) -> str:
     hint = (
-        "Метка в био или посте: t.me/vibemeter_bot?start=<i>метка</i> "
+        "Метка в био или посте: t.me/&lt;бот&gt;?start=<i>метка</i> "
         "(латиница, цифры, _), например start=shahichat. "
         "Для партнёров с тестом сразу: start=vtp_<i>метка</i>"
     )
@@ -1067,7 +1067,7 @@ def strike_warning(reason: str, n: int, limit: int) -> str:
 
 
 def strike_banned(reason: str) -> str:
-    return f"{BANNED_PREFIX}: {reason}. Это третье нарушение правил Вайбометра"
+    return f"{BANNED_PREFIX}: {reason}. Это третье нарушение правил «Шах и Чат»"
 PHOTO_NEEDED = (
     f"{title('star', 'Не хватает фото')}\n\n"
     "Пришли сюда своё фото, где видно лицо, и анкета появится в поиске\n\n"
@@ -1141,6 +1141,7 @@ def broadcast_text(person: dict, total: int) -> str:
 # =========================================================
 
 # «О боте» в профиле и в ссылках, до 120 символов
+BOT_NAME = "Шах и Чат"
 BOT_SHORT_DESCRIPTION = "Тренажёр переписки «Шах и чат»: ИИ играет за неё, каждый твой ход — оценка как в шахматах"
 
 # экран пустого чата до «Старт», до 512 символов

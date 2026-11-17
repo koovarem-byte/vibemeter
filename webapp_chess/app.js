@@ -1,4 +1,4 @@
-/* Mini App «Шах и чат»: Игра · Топ · Факты · Профиль. Без сборки.
+/* Mini App «Шах и Чат»: Главная · Задачи · Рейтинг · Профиль (+ Обучение и Достижения). Без сборки.
    Без Telegram (открыли в браузере) — демо-режим на моках. */
 (() => {
   "use strict";
@@ -17,22 +17,27 @@
     "??": { c: "var(--m-blunder)", name: "Зевок" },
     "#": { c: "var(--m-mate)", name: "Мат" },
   };
+  // залитые фигуры + U+FE0E: текстовый глиф, не эмодзи (белые 2D-силуэты как конь на логотипе)
+  const T = "︎";
   const RANKS = [
-    ["Пешка", "♟", 0], ["Конь", "♞", 100], ["Слон", "♝", 300],
-    ["Ладья", "♜", 600], ["Ферзь", "♛", 1000], ["Гроссмейстер", "♚", 1500],
+    ["Пешка", "♟" + T, 0], ["Конь", "♞" + T, 100], ["Слон", "♝" + T, 300],
+    ["Ладья", "♜" + T, 600], ["Ферзь", "♛" + T, 1000], ["Гроссмейстер", "♚" + T, 1500],
   ];
   const fig = (rank) => (RANKS.find((r) => r[0] === rank) || RANKS[0])[1];
+  const piece = (rank) => `<span class="piece">${fig(rank)}</span>`;
+  const LOGO = "logo.png";
 
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
   let state = null; // ответ /state
-  let tab = "game";
+  let profile = null; // ответ /profile (кешируем для достижений)
+  let tab = "home";
   let topPeriod = "all";
 
   if (tg) {
     tg.ready();
     tg.expand();
-    try { tg.setHeaderColor("#0b0f0c"); tg.setBackgroundColor("#0b0f0c"); } catch (e) { /* старый клиент */ }
+    try { tg.setHeaderColor("#06120a"); tg.setBackgroundColor("#06120a"); } catch (e) { /* старый клиент */ }
   }
 
   const haptic = (kind) => {
@@ -63,7 +68,24 @@
     return data;
   }
 
-  // ---------- переписка ----------
+  function openTg(url) {
+    if (tg && tg.openTelegramLink) tg.openTelegramLink(url); else window.open(url, "_blank");
+  }
+  function openBot(cmd) {
+    openTg(`https://t.me/${state.bot}?start=${cmd}`);
+    if (tg) setTimeout(() => tg.close(), 300);
+  }
+  function shareLink(start, text) {
+    const link = `https://t.me/${state.bot}?start=${start}`;
+    openTg(`https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(text)}`);
+  }
+
+  // ---------- общие куски ----------
+  function progress(me) {
+    if (!me.next) return 100;
+    return Math.max(3, Math.round(((me.rating - me.rank_from) / (me.next.at - me.rank_from)) * 100));
+  }
+
   function chatHtml(text) {
     const m = /^([^:«]{1,24}):\s*«(.+)»\s*(.*)$/.exec(text);
     if (m) {
@@ -73,41 +95,65 @@
     return `<div class="situation">${esc(text)}</div>`;
   }
 
-  function progress(me) {
-    if (!me.next) return 100;
-    return Math.max(3, Math.round(((me.rating - me.rank_from) / (me.next.at - me.rank_from)) * 100));
+  const hue = (s) => [...s].reduce((a, c) => (a * 31 + c.charCodeAt(0)) % 360, 7);
+
+  // ---------- Главная ----------
+  function renderHome() {
+    const { me } = state;
+    const daily = state.daily_done
+      ? `<button class="card done" data-go="game"><div class="ico">✓</div><div class="main"><div class="t">Задача дня решена</div><div class="s">Дальше — обычные задачи</div></div><div class="arrow">›</div></button>`
+      : `<button class="card" data-go="game"><div class="ico">${piece("Пешка")}</div><div class="main"><div class="t">Задача дня ждёт</div><div class="s">Одна на всех · серия ${me.streak} 🔥</div></div><div class="arrow">›</div></button>`;
+    screen.innerHTML = `
+      <div class="hero">
+        <img src="${LOGO}" alt="">
+        <div class="brand">Шах и <span>Чат</span></div>
+        <div class="tagline">Общайся. Учись. Побеждай.</div>
+      </div>
+      <button class="btn big" data-go="game">Начать игру ▶</button>
+      <button class="card" data-go="top">
+        <div class="ico"><svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M4 13h4v8H4zm6-6h4v14h-4zm6 3h4v11h-4z"/></svg></div>
+        <div class="main"><div class="t">Твой рейтинг: ${me.rating}</div><div class="s">${esc(me.rank)}${me.next ? ` · до «${esc(me.next.rank)}» ${me.next.at - me.rating}` : ""}</div>
+          <div class="bar"><i style="width:${progress(me)}%"></i></div></div>
+        <div class="arrow">›</div>
+      </button>
+      ${daily}
+      <div class="tiles">
+        <button class="tile" data-go="learn"><span class="ti">📖</span>Обучение</button>
+        <button class="tile" data-go="ach"><span class="ti">⭐</span>Достижения</button>
+        <button class="tile" data-bot="play"><span class="ti">💬</span>Партия с ИИ</button>
+        <button class="tile" data-invite><span class="ti">🤝</span>Позвать друга</button>
+      </div>`;
   }
 
+  // ---------- Задачи ----------
   function headHtml(me) {
     const sub = me.next ? `${me.rating} · до «${me.next.rank}» ${me.next.at - me.rating}` : `${me.rating} · высшее звание`;
     return `
       <div class="head">
-        <div class="rank-ico">${fig(me.rank)}</div>
+        <div class="rank-ico">${piece(me.rank)}</div>
         <div class="head-main">
           <div class="head-title">${esc(me.rank)}</div>
-          <div class="head-sub" id="head-sub">${sub}</div>
-          <div class="bar"><i id="bar" style="width:${progress(me)}%"></i></div>
+          <div class="head-sub">${sub}</div>
+          <div class="bar"><i style="width:${progress(me)}%"></i></div>
         </div>
         ${me.streak > 0 ? `<div class="streak">🔥 ${me.streak}</div>` : ""}
       </div>`;
   }
 
-  // ---------- Игра ----------
   function renderGame() {
     const { me, puzzle } = state;
     if (!puzzle) {
       screen.innerHTML = headHtml(me) + `
-        <div class="empty"><div class="big">♚</div>
-          <div class="h1">Все задачи решены</div>
+        <div class="empty"><img src="${LOGO}" alt="">
+          <div class="title">Все задачи решены</div>
           <p class="muted">Новые появляются каждую неделю. А пока — партия с ИИ в боте</p>
-          <button class="btn" id="to-bot">Сыграть партию</button>
+          <button class="btn" data-bot="play">Сыграть партию</button>
         </div>`;
-      $("#to-bot").onclick = () => openBot("play");
       return;
     }
     screen.innerHTML = headHtml(me) + `
       <div class="task-label">
-        <span class="pill">${puzzle.daily ? "♟ ЗАДАЧА ДНЯ" : "♟ ЗАДАЧА " + puzzle.number}</span>
+        <span class="pill">${puzzle.daily ? "ЗАДАЧА ДНЯ" : "ЗАДАЧА " + puzzle.number}</span>
         <span class="muted">${me.solved} из ${me.total}</span>
       </div>
       <div class="chat">${chatHtml(puzzle.chat)}</div>
@@ -136,10 +182,12 @@
       return;
     }
     haptic(res.delta > 0 ? "success" : res.delta < 0 ? "error" : "warning");
-    showVerdict(puzzle, el.textContent, res);
+    profile = null;
+    if (puzzle.daily) state.daily_done = true;
+    showVerdict(puzzle, res);
   }
 
-  function showVerdict(puzzle, moveText, res) {
+  function showVerdict(puzzle, res) {
     const mk = MARKS[res.mark] || MARKS["?!"];
     const v = $("#verdict");
     const sign = res.delta > 0 ? "plus" : res.delta < 0 ? "minus" : "";
@@ -148,13 +196,13 @@
         <div class="badge">${esc(res.mark)}</div>
         <div class="v-name">${esc(res.name)}</div>
         <div class="v-delta ${sign}">${res.delta > 0 ? "+" : ""}${res.delta} · рейтинг ${res.me.rating}</div>
-        ${res.rank_up ? `<div class="rankup">${fig(res.me.rank)} Новое звание: ${esc(res.me.rank)}</div>` : ""}
+        ${res.rank_up ? `<div class="rankup">${piece(res.me.rank)} Новое звание: ${esc(res.me.rank)}</div>` : ""}
         <div class="v-card"><div class="lbl">Почему</div>${esc(res.why)}</div>
         ${res.best ? `<div class="v-card"><div class="lbl">Лучший ход</div>«${esc(res.best)}»</div>` : ""}
         <button class="btn" id="v-next">${res.puzzle ? "Следующая задача" : "Готово"}</button>
         <div class="row">
           <button class="btn ghost" id="v-share">Скинуть другу</button>
-          <button class="btn ghost" id="v-bot">Партия с ИИ</button>
+          <button class="btn ghost" data-bot="play">Партия с ИИ</button>
         </div>
       </div>`;
     v.classList.remove("hidden");
@@ -164,27 +212,14 @@
       state.puzzle = res.puzzle;
       renderGame();
     };
-    $("#v-share").onclick = () => share(puzzle, res);
-    $("#v-bot").onclick = () => openBot("play");
+    $("#v-share").onclick = () => shareLink(`pz_${puzzle.id}`, res.mark === "!!"
+      ? "Я нашёл бриллиантовый ход !! в «Шах и Чат». А ты найдёшь?"
+      : "Задача по переписке: какой ход лучший? Проверь себя");
   }
 
-  function share(puzzle, res) {
-    const link = `https://t.me/${state.bot}?start=pz_${puzzle.id}`;
-    const text = res.mark === "!!"
-      ? `Я нашёл бриллиантовый ход ${res.mark} в «Шах и чат». А ты найдёшь?`
-      : "Задача по переписке: какой ход лучший? Проверь себя";
-    const url = `https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(text)}`;
-    if (tg && tg.openTelegramLink) tg.openTelegramLink(url); else window.open(url, "_blank");
-  }
-
-  function openBot(cmd) {
-    const url = `https://t.me/${state.bot}?start=${cmd}`;
-    if (tg && tg.openTelegramLink) { tg.openTelegramLink(url); tg.close(); } else window.open(url, "_blank");
-  }
-
-  // ---------- Топ ----------
+  // ---------- Рейтинг ----------
   async function renderTop() {
-    screen.innerHTML = `<div class="h1">Топ игроков</div>
+    screen.innerHTML = `<div class="title">Рейтинг</div><p class="subtitle">Кто лучше всех ведёт переписку</p>
       <div class="seg" id="seg">
         <button data-p="day">Сегодня</button><button data-p="week">Неделя</button><button data-p="all">Всё время</button>
       </div><div id="top-body">${'<div class="skel"></div>'.repeat(4)}</div>`;
@@ -196,59 +231,98 @@
     let data;
     try { data = await api("top?period=" + topPeriod); } catch (e) { $("#top-body").innerHTML = errorHtml(); return; }
     if (tab !== "top") return;
-    const items = data.items;
-    if (!items.length) {
-      $("#top-body").innerHTML = `<div class="empty"><div class="big">♛</div><p class="muted">${topPeriod === "all" ? "Пока никто не играл" : "За этот период ещё никто не набрал очков"}. Стань первым</p></div>`;
+    const pts = (n) => (topPeriod === "all" ? n : (n > 0 ? "+" : "") + n);
+    if (!data.items.length) {
+      $("#top-body").innerHTML = `<div class="empty"><img src="${LOGO}" alt=""><p class="muted">${topPeriod === "all" ? "Пока никто не играл" : "За этот период ещё никто не набрал очков"}. Стань первым</p></div>`;
       return;
     }
-    const pts = (n) => (topPeriod === "all" ? n : (n > 0 ? "+" : "") + n);
-    const pod = (it, cls) => it ? `
-      <div class="pod ${cls}">
-        ${cls === "p1" ? '<div class="crown">👑</div>' : ""}
-        <div class="av">${esc(it.name[0] || "?")}</div>
-        <div class="nm">${esc(it.name)}${it.me ? " (ты)" : ""}</div>
-        <div class="pt">${pts(it.points)}</div>
-        <div class="step">${it.place}</div>
-      </div>` : "<div></div>";
-    const rest = items.slice(3).map((it) => liHtml(it, pts)).join("");
-    const mineVisible = items.some((it) => it.me);
+    const mineVisible = data.items.some((it) => it.me);
     $("#top-body").innerHTML = `
-      <div class="podium">${pod(items[1], "p2")}${pod(items[0], "p1")}${pod(items[2], "p3")}</div>
-      <div class="list">${rest}</div>
+      <div class="list">${data.items.map((it) => liHtml(it, pts)).join("")}</div>
       ${!mineVisible && data.me ? `<div class="me-pin">${liHtml({ ...data.me, name: "Ты", me: true, rank: state.me.rank }, pts)}</div>` : ""}
-      ${!data.me ? `<p class="muted" style="text-align:center;margin-top:16px">Реши задачу — и ты в топе</p>` : ""}`;
+      ${!data.me ? `<p class="muted" style="text-align:center;margin-top:16px">Реши задачу — и ты в рейтинге</p>` : ""}`;
   }
 
-  const liHtml = (it, pts) => `
-    <div class="li ${it.me ? "me" : ""}">
-      <div class="pl">${it.place}</div>
-      <div class="nm">${esc(it.name)}${it.me && it.name !== "Ты" ? " (ты)" : ""}</div>
-      <div class="rk">${fig(it.rank)}</div>
-      <div class="pt">${pts(it.points)}</div>
-    </div>`;
+  function liHtml(it, pts) {
+    const cls = it.place <= 3 ? ` m${it.place}` : "";
+    const av = it.me
+      ? `<div class="av knight"><img src="${LOGO}" alt=""></div>`
+      : `<div class="av ${it.place === 1 ? "top1" : ""}" style="--h:${hue(it.name)}">${esc((it.name || "?")[0].toUpperCase())}</div>`;
+    return `
+      <div class="li ${it.me ? "me" : ""}">
+        <div class="pl${cls}">${it.place}</div>${av}
+        <div class="nm"><b>${it.me ? "Ты" : esc(it.name)}</b><span>${esc(it.rank)}</span></div>
+        <div class="pt">${pts(it.points)}</div>
+      </div>`;
+  }
 
-  // ---------- Факты ----------
-  async function renderFacts() {
-    screen.innerHTML = `<div class="h1">Факты об общении</div>${'<div class="skel"></div>'.repeat(3)}`;
+  // ---------- Обучение (факты) ----------
+  async function renderLearn() {
+    screen.innerHTML = `<button class="back" data-go="home">‹ Главная</button>
+      <div class="title">Обучение</div><p class="subtitle">Факты об общении из исследований — на них построены оценки ходов</p>
+      ${'<div class="skel"></div>'.repeat(3)}`;
     let data;
     try { data = await api("facts"); } catch (e) { screen.innerHTML = errorHtml(); return; }
-    if (tab !== "facts") return;
+    if (tab !== "learn") return;
     const card = (f, day) => `
       <div class="fact ${day ? "day" : ""}">
-        ${day ? '<span class="pill">✦ ФАКТ ДНЯ</span>' : ""}
+        ${day ? '<span class="pill">ФАКТ ДНЯ</span>' : ""}
         <div class="txt">${esc(f.text)}</div>
         <div class="tip"><span>💡</span><span>${esc(f.tip)}</span></div>
         <div class="src">${f.url ? `<a href="${esc(f.url)}" data-ext>${esc(f.source)}</a>` : esc(f.source)}</div>
       </div>`;
-    screen.innerHTML = `<div class="h1">Факты об общении</div>${card(data.day, true)}
-      <div class="h2">Ещё из исследований</div>${data.items.map((f) => card(f)).join("")}`;
+    screen.innerHTML = `<button class="back" data-go="home">‹ Главная</button>
+      <div class="title">Обучение</div><p class="subtitle">Факты об общении из исследований — на них построены оценки ходов</p>
+      ${card(data.day, true)}<div class="h2">Ещё ${data.items.length}</div>${data.items.map((f) => card(f)).join("")}`;
+  }
+
+  // ---------- Достижения ----------
+  function achievements(p) {
+    const me = p.me;
+    const m = p.marks;
+    return [
+      ["♟" + T, "Первый ход", "Реши первую задачу", me.solved >= 1],
+      ["💎", "Бриллиант", "Найди ход !!", (m["!!"] || 0) >= 1],
+      ["💍", "Ювелир", "10 ходов !!", (m["!!"] || 0) >= 10],
+      ["🔟", "Десятка", "Реши 10 задач", me.solved >= 10],
+      ["🔥", "Три дня", "Играй 3 дня подряд", me.best_streak >= 3],
+      ["📅", "Неделя", "Играй 7 дней подряд", me.best_streak >= 7],
+      ["💬", "Первая партия", "Сыграй партию с ИИ", p.games >= 1],
+      ["🏆", "Первая победа", "Выиграй партию", p.wins >= 1],
+      ["⚔️", "Стратег", "Выиграй 5 партий", p.wins >= 5],
+      ["♞" + T, "Конь", "Набери 100 очков", me.rating >= 100],
+      ["♜" + T, "Ладья", "Набери 600 очков", me.rating >= 600],
+      ["♚" + T, "Гроссмейстер", "Набери 1500 очков", me.rating >= 1500],
+    ];
+  }
+  const medal = (ico) => (/[♟♞♜♚]/.test(ico) ? `<span class="piece">${ico}</span>` : ico);
+
+  async function loadProfile() {
+    if (!profile) profile = await api("profile");
+    return profile;
+  }
+
+  async function renderAch() {
+    screen.innerHTML = `<button class="back" data-go="home">‹ Главная</button><div class="title">Достижения</div>${'<div class="skel"></div>'.repeat(4)}`;
+    let p;
+    try { p = await loadProfile(); } catch (e) { screen.innerHTML = errorHtml(); return; }
+    if (tab !== "ach") return;
+    const list = achievements(p);
+    const done = list.filter((a) => a[3]).length;
+    screen.innerHTML = `<button class="back" data-go="home">‹ Главная</button>
+      <div class="title">Достижения</div><p class="subtitle">Открыто ${done} из ${list.length}</p>
+      <div class="ach-list">${list.map(([ico, name, hint, ok]) => `
+        <div class="card ${ok ? "" : "locked"}"><div class="ico">${medal(ico)}</div>
+          <div class="main"><div class="t">${esc(name)}</div><div class="s">${esc(hint)}</div></div>
+          ${ok ? '<div class="check">✓</div>' : '<div class="lock">🔒</div>'}
+        </div>`).join("")}</div>`;
   }
 
   // ---------- Профиль ----------
   async function renderProfile() {
-    screen.innerHTML = `${'<div class="skel"></div>'.repeat(4)}`;
+    screen.innerHTML = '<div class="skel"></div>'.repeat(4);
     let p;
-    try { p = await api("profile"); } catch (e) { screen.innerHTML = errorHtml(); return; }
+    try { p = await loadProfile(); } catch (e) { screen.innerHTML = errorHtml(); return; }
     if (tab !== "profile") return;
     const me = p.me;
     const order = ["!!", "!", "?!", "?", "??", "#"];
@@ -261,59 +335,61 @@
         <div class="n">${p.marks[k]}</div>
       </div>`).join("");
 
-    // очки по дням за 14 дней
+    // очки по дням за 14 дней (Москва)
     const byDay = Object.fromEntries(p.days.map((d) => [d.day, d.pts]));
+    const now = Date.now() + 3 * 3600e3;
     const days = [];
-    const now = new Date(Date.now() + 3 * 3600e3); // Москва
     for (let i = 13; i >= 0; i--) {
       const d = new Date(now - i * 86400e3).toISOString().slice(0, 10);
       days.push([d, byDay[d] || 0]);
     }
     const maxAbs = Math.max(1, ...days.map((d) => Math.abs(d[1])));
     const chart = days.map(([d, v]) => `
-      <div class="col" title="${d}: ${v}">
-        <i class="${v < 0 ? "neg" : ""}" style="height:${Math.round((Math.abs(v) / maxAbs) * 78)}%"></i>
-        <span>${+d.slice(8)}</span>
-      </div>`).join("");
+      <div class="col"><i class="${v < 0 ? "neg" : ""}" style="height:${Math.round((Math.abs(v) / maxAbs) * 78)}%"></i><span>${+d.slice(8)}</span></div>`).join("");
 
     const curIdx = RANKS.findIndex((r) => r[0] === me.rank);
     const ranks = RANKS.map((r, i) => `
-      <div class="rk-step ${i <= curIdx ? "on" : ""} ${i === curIdx ? "cur" : ""}">
-        <div class="f">${r[1]}</div><div class="l">${r[2]}</div>
-      </div>`).join("");
+      <div class="rk-step ${i <= curIdx ? "on" : ""} ${i === curIdx ? "cur" : ""}"><span class="piece">${r[1]}</span><div class="l">${r[2]}</div></div>`).join("");
+
+    const ach = achievements(p);
+    const achDone = ach.filter((a) => a[3]).length;
+    const achGrid = ach.slice(0, 8).map(([ico, name, , ok]) => `
+      <div class="ach ${ok ? "on" : ""}"><div class="medal">${medal(ico)}</div><div class="l">${esc(name)}</div></div>`).join("");
 
     screen.innerHTML = `
-      <div class="hero">
-        <div class="rank-ico">${fig(me.rank)}</div>
-        <div class="rt">${me.rating}</div>
-        <div class="rn">${esc(me.rank)}</div>
-        ${me.next ? `<div class="bar" style="max-width:240px;margin:10px auto 0"><i style="width:${progress(me)}%"></i></div>
-          <div class="muted" style="font-size:13px;margin-top:6px">до «${esc(me.next.rank)}» ${me.next.at - me.rating}</div>` : ""}
+      <div class="me-hero">
+        <div class="ava"><img src="${LOGO}" alt=""></div>
+        <div class="nm">${esc(me.name)}</div>
+        <div class="rt">${esc(me.rank)} · рейтинг <b>${me.rating}</b></div>
+        <div class="xp">
+          <div class="bar"><i style="width:${progress(me)}%"></i></div>
+          <div class="cap"><span>${me.rating} / ${me.next ? me.next.at : me.rating}</span><span>${me.next ? esc(me.next.rank) : "максимум"}</span></div>
+        </div>
       </div>
       <div class="stats">
         <div class="stat"><b>🔥 ${me.streak}</b><span>серия</span></div>
         <div class="stat"><b>${me.solved}/${me.total}</b><span>задач</span></div>
         <div class="stat"><b>${p.place || "—"}</b><span>место${p.players ? " из " + p.players : ""}</span></div>
       </div>
+      <div class="h2">Достижения <small>${achDone} / ${ach.length}</small></div>
+      <div class="ach-grid" data-go="ach">${achGrid}</div>
       <div class="h2">Звания</div><div class="ranks">${ranks}</div>
       <div class="h2">Очки за 2 недели</div><div class="chart">${chart}</div>
-      <div class="h2">Мои ходы${total ? " · " + total : ""}</div>
+      <div class="h2">Мои ходы <small>${total || ""}</small></div>
       ${total ? `<div class="marks">${marks}</div>` : '<p class="muted">Реши первую задачу — тут появится, как ты ходишь</p>'}
-      ${p.games ? `<div class="h2">Партии с ИИ</div><p>${p.games} сыграно · ${p.wins} побед</p>` : ""}`;
+      ${p.games ? `<div class="h2">Партии с ИИ</div><p>${p.games} сыграно · побед: ${p.wins}</p>` : ""}`;
   }
 
-  const errorHtml = () => `<div class="empty"><div class="big">♟</div><p class="muted">Не загрузилось. Проверь интернет</p>
+  const errorHtml = () => `<div class="empty"><img src="${LOGO}" alt=""><p class="muted">Не загрузилось. Проверь интернет</p>
     <button class="btn ghost" onclick="location.reload()">Обновить</button></div>`;
 
   // ---------- навигация ----------
+  const TAB_OF = { home: "home", game: "game", top: "top", profile: "profile", learn: "home", ach: "profile" };
   function go(name) {
     tab = name;
-    [...$("#tabs").children].forEach((b) => b.classList.toggle("active", b.dataset.tab === name));
+    [...$("#tabs").children].forEach((b) => b.classList.toggle("active", b.dataset.tab === TAB_OF[name]));
     window.scrollTo(0, 0);
-    if (name === "game") renderGame();
-    else if (name === "top") renderTop();
-    else if (name === "facts") renderFacts();
-    else renderProfile();
+    ({ home: renderHome, game: renderGame, top: renderTop, learn: renderLearn, ach: renderAch, profile: renderProfile })[name]();
   }
 
   $("#tabs").onclick = (e) => {
@@ -321,6 +397,14 @@
     if (b && b.dataset.tab !== tab) { haptic("tap"); go(b.dataset.tab); }
   };
   document.addEventListener("click", (e) => {
+    const g = e.target.closest("[data-go]");
+    if (g) { haptic("tap"); $("#verdict").classList.add("hidden"); go(g.dataset.go); return; }
+    const b = e.target.closest("[data-bot]");
+    if (b) { openBot(b.dataset.bot); return; }
+    if (e.target.closest("[data-invite]")) {
+      shareLink("drug", "Тренажёр переписки «Шах и Чат»: ситуация из чата — твой ход — оценка как в шахматах. Залетай");
+      return;
+    }
     const a = e.target.closest("a[data-ext]");
     if (a && tg && tg.openLink) { e.preventDefault(); tg.openLink(a.href); }
   });
@@ -330,37 +414,33 @@
     try {
       state = await api("state");
     } catch (e) {
-      if (e.code === "no_user") {
-        screen.innerHTML = `<div class="empty"><div class="big">♞</div><div class="h1">Сначала зайди в бота</div>
-          <p class="muted">Нажми «Старт» в чате с ботом — и возвращайся сюда</p></div>`;
-      } else if (e.code === "banned") {
-        screen.innerHTML = `<div class="empty"><div class="big">♟</div><p class="muted">Доступ закрыт</p></div>`;
-      } else {
-        screen.innerHTML = errorHtml();
-      }
+      const msg = e.code === "no_user"
+        ? `<div class="title">Сначала зайди в бота</div><p class="muted">Нажми «Старт» в чате с ботом — и возвращайся сюда</p>`
+        : e.code === "banned" ? `<p class="muted">Доступ закрыт</p>` : "";
+      screen.innerHTML = msg ? `<div class="empty"><img src="${LOGO}" alt="">${msg}</div>` : errorHtml();
       return;
     }
     const start = (location.hash || "").slice(1);
-    go(["top", "facts", "profile"].includes(start) ? start : "game");
+    go(TAB_OF[start] ? start : "home");
   }
 
   // ---------- демо без Telegram ----------
   const DEMO_P = [
-    { id: 0, chat: "Она: «Меня повысили!!»", moves: [["Норм", "?!", "Сухо: человек делится радостью, а ты её гасишь"], ["Поздравляю!! Как это было? Отмечаем?", "!!", "Активная поддержка хороших новостей укрепляет отношения (Gable, 2004)"], ["Теперь будешь пропадать на работе", "??", "Обесценил радость — зевок"]] },
-    { id: 1, chat: "Мэтч. Пустой чат. Твой первый ход", moves: [["Привет", "?!", "«Привет» получает ответ реже, чем сообщение по анкете"], ["Вижу, ты любишь горы — где было самое красивое место?", "!!", "Зацепка за анкету + открытый вопрос"], ["Ты очень красивая", "??", "Комплимент внешности первым сообщением работает хуже всего"]] },
+    { chat: "Она: «Меня повысили!!»", moves: [["Норм", "?!", "Сухо: человек делится радостью, а ты её гасишь"], ["Поздравляю!! Как это было? Отмечаем?", "!!", "Активная поддержка хороших новостей укрепляет отношения (Gable, 2004)"], ["Теперь будешь пропадать на работе", "??", "Обесценил радость — зевок"]] },
+    { chat: "Мэтч. Пустой чат. Твой первый ход", moves: [["Привет", "?!", "«Привет» получает ответ реже, чем сообщение по анкете"], ["Вижу, ты любишь горы — где было самое красивое место?", "!!", "Зацепка за анкету + открытый вопрос"], ["Ты очень красивая", "??", "Комплимент внешности первым сообщением работает хуже всего"]] },
   ];
   const D = { rating: 87, solved: 5, streak: 3 };
   const demoRank = (r) => [...RANKS].reverse().find((x) => r >= x[2]);
   function demoMe() {
     const rk = demoRank(D.rating);
     const nx = RANKS.find((x) => x[2] > D.rating);
-    return { name: "Демо", rating: D.rating, rank: rk[0], rank_from: rk[2], next: nx ? { at: nx[2], rank: nx[0] } : null, streak: D.streak, solved: D.solved, total: 36 };
+    return { name: "Артемий", rating: D.rating, rank: rk[0], rank_from: rk[2], next: nx ? { at: nx[2], rank: nx[0] } : null, streak: D.streak, best_streak: 4, solved: D.solved, total: 36 };
   }
-  const demoPuzzle = (i) => i < DEMO_P.length ? { id: i, number: D.solved + 1, daily: i === 0, chat: DEMO_P[i].chat, moves: DEMO_P[i].moves.map((m, idx) => ({ idx, text: m[0] })) } : null;
+  const demoPuzzle = (i) => (i < DEMO_P.length ? { id: i, number: D.solved + 1, daily: i === 0, chat: DEMO_P[i].chat, moves: DEMO_P[i].moves.map((m, idx) => ({ idx, text: m[0] })) } : null);
   let demoI = 0;
   async function demo(path, body) {
-    await new Promise((r) => setTimeout(r, 250));
-    if (path === "state") return { me: demoMe(), puzzle: demoPuzzle(demoI), daily_done: false, bot: "vibemeter_bot" };
+    await new Promise((r) => setTimeout(r, 200));
+    if (path === "state") return { me: demoMe(), puzzle: demoPuzzle(demoI), daily_done: false, bot: "shahichat_bot" };
     if (path === "move") {
       const p = DEMO_P[body.id];
       const [, mark, why] = p.moves[body.idx];
@@ -371,7 +451,7 @@
       return { mark, name: MARKS[mark].name, why, best: best[1] !== mark ? best[0] : null, delta, rank_up: demoMe().rank !== before, me: demoMe(), puzzle: demoPuzzle(demoI) };
     }
     if (path.startsWith("top")) {
-      const names = ["Артём", "Лиза", "Макс", "Даня", "Соня", "Егор", "Вика"];
+      const names = ["Дима", "Алина", "Кирилл", "Даня", "Соня", "Егор", "Вика"];
       const items = names.map((n, i) => ({ place: i + 1, name: n, points: 420 - i * 47, rank: demoRank(420 - i * 47)[0], me: false }));
       return { items, me: { place: 14, points: D.rating, total: 120 } };
     }
@@ -381,7 +461,7 @@
         items: [f("После разговора люди недооценивают, насколько понравились собеседнику", "Скорее всего, ты понравился больше, чем думаешь", "Boothby и др., 2018")] };
     }
     if (path === "profile") {
-      const today = new Date(Date.now() + 3 * 3600e3);
+      const today = Date.now() + 3 * 3600e3;
       const days = [0, 1, 3, 4, 7].map((i, k) => ({ day: new Date(today - i * 86400e3).toISOString().slice(0, 10), pts: [23, 15, -5, 30, 8][k] }));
       return { me: demoMe(), marks: { "!!": 3, "!": 4, "?!": 2, "??": 1 }, days, games: 2, wins: 1, solved_today: 1, place: 14, players: 120 };
     }
