@@ -219,7 +219,10 @@ async def end_game(message: Message, state: FSMContext, game, sit, history, last
         result = "win" if avg >= 3 else ("mate" if avg <= -3 else "stalemate")
     user = await get_user(message.chat.id)
     before = user["chess_rating"]
-    after = max(0, before + puzzles.game_points([m.get("badge") for m in my_moves], result, game["difficulty"]))
+    import rating
+    from database import rated_count
+    after = rating.update(before, max(0, game["difficulty"] - 1000),
+                          rating.game_score([m.get("badge") for m in my_moves]), await rated_count(message.chat.id))
     # лучший ход — подсказка судьи к самому слабому ходу партии
     worst = min(my_moves, key=lambda m: m["eval"])
     best = worst.get("best") if worst["badge"] not in ("!!", "#") else None

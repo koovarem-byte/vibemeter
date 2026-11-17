@@ -873,19 +873,6 @@ CAMPAIGNS = {
             "Проверь, какой у тебя уровень переписки👇"
         ),
     },
-    # шлёт СТАРЫЙ бот (relay.old_bot) из /move: кнопка ведёт в новый
-    "moved1": {
-        "title": "🚚 Переезд в новый бот",
-        "audience": "all",
-        "sticker": None,
-        "button": "moved",
-        "text": (
-            "♟ <b>«Шах и Чат» переехал</b>\n\n"
-            "Теперь мы в новом боте — там Mini App с рейтингом, задача дня и партии с ИИ. "
-            "Рейтинг, серия и решённые задачи сохранились\n\n"
-            "Жми кнопку и нажми «Старт» 👇"
-        ),
-    },
 }
 # какую кампанию девушка получает сразу после анкеты (вместе с VIP)
 GIRLS_CAMPAIGN = "vip_girls1"
@@ -1235,7 +1222,8 @@ def puzzle_text(puzzle, number: int, rating: int, rank: str) -> str:
     )
 
 
-def puzzle_result(move: str, mark: str, name: str, why: str, best: str, delta: int, rating: int, rank: str) -> str:
+def puzzle_result(move: str, mark: str, name: str, why: str, best: str, delta: int, rating: int, rank: str,
+                  others: list | None = None) -> str:
     def q(text):
         return esc(text) if text.startswith(("«", "(")) else f"«{esc(text)}»"
 
@@ -1248,6 +1236,10 @@ def puzzle_result(move: str, mark: str, name: str, why: str, best: str, delta: i
     ]
     if mark != "!!":
         lines += ["", f"Лучший ход: {q(best)}"]
+    if others:
+        lines += ["", "<b>Разбор остальных ходов</b>"]
+        for text, m, w in others:
+            lines.append(f"{m} {q(text)} — {esc(w)}")
     lines += ["", f"{e('fire')} Рейтинг: <b>{rating}</b> ({sign}) · {rank}"]
     return "\n".join(lines)
 
@@ -1300,15 +1292,46 @@ def streak_reminder(streak: int, rating: int) -> str:
     )
 
 
-BTN_MOVED = "Открыть «Шах и Чат»"
+# ---------- закрытый бета-тест (17.11) ----------
+BTN_BETA_OPEN = "Открыть игру"
+BETA_OPEN = "♟ Тест закончился — игра открыта для всех. Жми 👇"
 
 
-def moved_text(new_username: str) -> str:
+def beta_in(num: int, slots: int) -> str:
     return (
-        f"{title('knight', 'Мы переехали')}\n\n"
-        f"Теперь «Шах и Чат» живёт тут: @{new_username}\n\n"
-        "Рейтинг, серия и решённые задачи — всё сохранилось. Жми кнопку и нажми «Старт»"
+        f"{title('knight', f'Ты в бета-тесте: место {num} из {slots}')}\n\n"
+        "Это тестовая версия «Шах и Чат»: партии по переписке как в шахматах, рейтинг Эло, задачи. "
+        "Где-то может быть сыро — так и задумано, чиним по вашим отзывам\n\n"
+        "Одно условие: после пары партий напиши своё мнение прямо в игре. Это и есть твоя роль тестера 🙏"
     )
+
+
+def beta_full(pos: int, slots: int) -> str:
+    return (
+        f"{title('timer', 'Все места в тесте заняты')}\n\n"
+        f"{slots} самых быстрых уже играют. Ты в очереди: {pos}-й. "
+        "Напишем, как только откроем игру для всех — уже скоро"
+    )
+
+
+def beta_admin(st: dict, slots: int) -> str:
+    lines = [
+        "🧪 <b>Бета-тест</b>",
+        "",
+        f"Тестеров: <b>{st['testers']}</b> из {slots}",
+        f"В очереди: {st['waiting']}",
+        f"Отзывов: {st['reviewed']} · средняя оценка: {st['stars'] or '—'}",
+        f"Партий доиграно: {st['games']}",
+        "",
+        "Ссылка для теста: t.me/&lt;бот&gt;?start=beta",
+        "Релиз: BETA_SLOTS=0 в переменных Bothost",
+    ]
+    if st["last"]:
+        lines += ["", "<b>Последние отзывы</b>"]
+        for f in st["last"]:
+            who = f"@{f['username']}" if f.get("username") else esc(f.get("full_name") or str(f["user_id"]))
+            lines.append(f"{'⭐' * (f['stars'] or 0)} {who}: {esc(f['text'][:300])}")
+    return "\n".join(lines)
 
 
 # =========================================================

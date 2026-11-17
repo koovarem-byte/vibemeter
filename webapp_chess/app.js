@@ -13,6 +13,7 @@
     "!!": { c: "var(--m-brill)", name: "Бриллиант" },
     "!": { c: "var(--m-good)", name: "Хороший ход" },
     "?!": { c: "var(--m-dub)", name: "Сомнительно" },
+    "!?": { c: "#8fd14f", name: "Интересный ход" },
     "?": { c: "var(--m-mistake)", name: "Ошибка" },
     "??": { c: "var(--m-blunder)", name: "Зевок" },
     "#": { c: "var(--m-mate)", name: "Мат" },
@@ -20,8 +21,8 @@
   // залитые фигуры + U+FE0E: текстовый глиф, не эмодзи (белые 2D-силуэты как конь на логотипе)
   const T = "︎";
   const RANKS = [
-    ["Пешка", "♟" + T, 0], ["Конь", "♞" + T, 100], ["Слон", "♝" + T, 300],
-    ["Ладья", "♜" + T, 600], ["Ферзь", "♛" + T, 1000], ["Гроссмейстер", "♚" + T, 1500],
+    ["Пешка", "♟" + T, 0], ["Конь", "♞" + T, 200], ["Слон", "♝" + T, 400],
+    ["Ладья", "♜" + T, 700], ["Ферзь", "♛" + T, 1000], ["Гроссмейстер", "♚" + T, 1400],
   ];
   const PIECE_IMG = { "Пешка": "pawn", "Конь": "knight", "Слон": "bishop", "Ладья": "rook", "Ферзь": "queen", "Гроссмейстер": "king" };
   const MARK_IMG = { "!!": "m_brilliant", "!": "m_good", "?!": "m_dubious", "??": "m_blunder", "#": "m_mate" };
@@ -111,7 +112,7 @@
         <div class="brand">Шах и <span>Чат</span></div>
         <div class="tagline">Общайся. Учись. Побеждай.</div>
       </div>
-      <button class="btn big" data-go="game">Начать игру ▶</button>
+      <button class="btn big" data-go="partii">Начать партию ▶</button>
       <button class="card" data-go="top">
         <div class="ico">${icon("rating")}</div>
         <div class="main"><div class="t">Твой рейтинг: ${me.rating}</div><div class="s">${esc(me.rank)}${me.next ? ` · до «${esc(me.next.rank)}» ${me.next.at - me.rating}` : ""}</div>
@@ -122,7 +123,7 @@
       <div class="tiles">
         <button class="tile" data-go="learn">${icon("chat", "ti")}Обучение</button>
         <button class="tile" data-go="ach">${icon("star", "ti")}Достижения</button>
-        <button class="tile" data-bot="play">${icon("bolt", "ti")}Партия с ИИ</button>
+        <button class="tile" data-feedback>${icon("bell", "ti")}Отзыв</button>
         <button class="tile" data-invite>${icon("gift", "ti")}Позвать друга</button>
       </div>`;
   }
@@ -201,10 +202,11 @@
         ${res.rank_up ? `<div class="rankup">${piece(res.me.rank)} Новое звание: ${esc(res.me.rank)}</div>` : ""}
         <div class="v-card"><div class="lbl">Почему</div>${esc(res.why)}</div>
         ${res.best ? `<div class="v-card"><div class="lbl">Лучший ход</div>«${esc(res.best)}»</div>` : ""}
+        ${othersHtml(res.others)}
         <button class="btn" id="v-next">${res.puzzle ? "Следующая задача" : "Готово"}</button>
         <div class="row">
           <button class="btn ghost" id="v-share">Скинуть другу</button>
-          <button class="btn ghost" data-bot="play">Партия с ИИ</button>
+          <button class="btn ghost" data-go="partii">К партиям</button>
         </div>
       </div>`;
     v.classList.remove("hidden");
@@ -289,12 +291,12 @@
       ["target", "Десятка", "Реши 10 задач", me.solved >= 10],
       ["fire", "Три дня", "Играй 3 дня подряд", me.best_streak >= 3],
       ["fire_x5", "Неделя", "Играй 7 дней подряд", me.best_streak >= 7],
-      ["chat", "Первая партия", "Сыграй партию с ИИ", p.games >= 1],
+      ["chat", "Первая партия", "Доиграй партию", p.games >= 1],
       ["trophy", "Первая победа", "Выиграй партию", p.wins >= 1],
       ["knight_gold", "Стратег", "Выиграй 5 партий", p.wins >= 5],
-      ["knight", "Конь", "Набери 100 очков", me.rating >= 100],
-      ["rook", "Ладья", "Набери 600 очков", me.rating >= 600],
-      ["king", "Гроссмейстер", "Набери 1500 очков", me.rating >= 1500],
+      ["knight", "Конь", "Рейтинг 200", me.rating >= 200],
+      ["rook", "Ладья", "Рейтинг 700", me.rating >= 700],
+      ["king", "Гроссмейстер", "Рейтинг 1400", me.rating >= 1400],
     ];
   }
   const medal = (name) => icon(name);
@@ -385,13 +387,235 @@
   const errorHtml = () => `<div class="empty"><img src="${LOGO}" alt=""><p class="muted">Не загрузилось. Проверь интернет</p>
     <button class="btn ghost" onclick="location.reload()">Обновить</button></div>`;
 
+  // ---------- разбор остальных ходов ----------
+  function othersHtml(list) {
+    if (!list || !list.length) return "";
+    return `<div class="v-card"><div class="lbl">Разбор других ходов</div>${list.map((o) => `
+      <div class="other">${markIcon(o.mark, "ic other-ic")}<div><b>«${esc(o.text)}»</b><br><span class="muted">${esc(o.why)}</span></div></div>`).join("")}</div>`;
+  }
+  function markIcon(mark, cls = "ic") {
+    return MARK_IMG[mark] ? icon(MARK_IMG[mark], cls)
+      : `<span class="mk-txt" style="--c:${(MARKS[mark] || MARKS["?!"]).c}">${esc(mark)}</span>`;
+  }
+
+  // ---------- бета-тест ----------
+  function betaBar() {
+    const b = $("#beta-bar");
+    if (!state.beta || !state.beta.on) return;
+    b.innerHTML = `<span>🧪 Бета-тест · что-то может быть сырым</span><button data-feedback>Отзыв</button>`;
+    b.classList.remove("hidden");
+    document.body.classList.add("with-beta");
+  }
+
+  function renderClosed(res) {
+    $("#tabs").classList.add("hidden");
+    const b = state.beta;
+    const queue = res && !res.ok
+      ? `<div class="v-card">${icon("timer")} Мест нет — ты в очереди: <b>${res.num}-й</b>. Позовём на релиз, уже скоро</div>`
+      : `<button class="btn big" id="join">Занять место в тесте</button>`;
+    screen.innerHTML = `
+      <div class="hero"><img src="${LOGO}" alt="">
+        <div class="brand">Шах и <span>Чат</span></div>
+        <div class="tagline">Закрытый бета-тест · ${b.slots} мест</div>
+      </div>
+      <div class="v-card">Первые ${b.slots} самых быстрых играют в новую версию: партии по переписке как в шахматах, рейтинг Эло, разбор каждого хода. Условие одно — после пары партий оставить отзыв</div>
+      ${queue}`;
+    const j = $("#join");
+    if (j) j.onclick = async () => {
+      j.disabled = true;
+      try {
+        const r = await api("beta/join", {});
+        if (r.ok) { haptic("success"); toast(r.num ? `Ты в тесте! Место ${r.num} из ${r.slots}` : "Ты в тесте!"); $("#tabs").classList.remove("hidden"); return load(); }
+        haptic("warning"); renderClosed(r);
+      } catch (e) { j.disabled = false; toast("Не получилось, попробуй ещё раз"); }
+    };
+  }
+
+  function openFeedback(required) {
+    const m = $("#modal");
+    let stars = 0;
+    m.innerHTML = `<div class="verdict-in fb">
+      <div class="title">${required ? "Твоё мнение — и играем дальше" : "Отзыв о тесте"}</div>
+      <p class="muted">${required ? "Ты сыграл пару партий — это и есть твоя роль тестера. Минута:" : "Всё читаю сам и чиню по вашим отзывам"}</p>
+      <div class="stars" id="stars">${[1, 2, 3, 4, 5].map((n) => `<button data-s="${n}">★</button>`).join("")}</div>
+      <textarea id="fb-text" rows="5" maxlength="2000" placeholder="Что понравилось? Что сырое или непонятно? Какую ситуацию добавить?"></textarea>
+      <button class="btn" id="fb-send">Отправить</button>
+      ${required ? "" : '<button class="btn ghost" id="fb-close" style="margin-top:10px">Позже</button>'}
+    </div>`;
+    m.classList.remove("hidden");
+    $("#stars").onclick = (e) => {
+      const b = e.target.closest("button"); if (!b) return;
+      stars = +b.dataset.s; haptic("tap");
+      [...$("#stars").children].forEach((x) => x.classList.toggle("on", +x.dataset.s <= stars));
+    };
+    if (!required) $("#fb-close").onclick = () => m.classList.add("hidden");
+    $("#fb-send").onclick = async () => {
+      const text = $("#fb-text").value.trim();
+      if (text.length < 5) { toast("Напиши пару слов — это очень поможет"); return; }
+      try {
+        await api("feedback", { stars: stars || null, text });
+        haptic("success"); m.classList.add("hidden"); toast("Спасибо! Отзыв ушёл автору");
+        if (state.beta) { state.beta.feedback = true; state.beta.need_feedback = false; }
+      } catch (e) { toast("Не отправилось, попробуй ещё раз"); }
+    };
+  }
+
+  // ---------- партии ----------
+  const RESULT = { win: ["ПОБЕДА", "Она в игре — ты провёл партию", "var(--green)"], stalemate: ["ПАТ", "Разговор угас: никто не выиграл", "var(--m-dub)"], mate: ["МАТ", "Партия проиграна — разбираем ошибки", "var(--m-blunder)"] };
+  const stars = (r) => "★".repeat(Math.max(1, Math.min(5, Math.floor(r / 250) + 1)));
+  let battle = null; // текущая партия
+
+  async function renderPartii() {
+    screen.innerHTML = `<div class="title">Партии</div><p class="subtitle">Живые переписки. Каждый ход — оценка, как в шахматах</p>${'<div class="skel"></div>'.repeat(4)}`;
+    let data;
+    try { data = await api("partii"); } catch (e) { screen.innerHTML = errorHtml(); return; }
+    if (tab !== "partii") return;
+    if (data.beta) state.beta = data.beta;
+    screen.innerHTML = `<div class="title">Партии</div><p class="subtitle">Живые переписки. Каждый ход — оценка, как в шахматах. Рейтинг соперницы — по Эло</p>
+      ${data.items.map((p) => {
+        const r = p.result && RESULT[p.result];
+        return `<button class="card partiya" data-partiya="${esc(p.id)}">
+          <div class="ico">${icon(p.rating >= 900 ? "queen" : p.rating >= 500 ? "rook" : "pawn")}</div>
+          <div class="main"><div class="t">${esc(p.title)}</div>
+            <div class="s">Эло ${p.rating} · <span class="gold">${stars(p.rating)}</span> · ${p.moves} хода</div>
+            ${r ? `<div class="s" style="color:${r[2]}">${r[0]} · точность ${p.accuracy}%</div>` : `<div class="s">${esc(p.intro)}</div>`}
+          </div><div class="arrow">${r ? "↻" : "›"}</div></button>`;
+      }).join("")}`;
+  }
+
+  async function startPartiya(id) {
+    if (state.beta && state.beta.need_feedback) return openFeedback(true);
+    let g;
+    try { g = await api("partiya/start", { id }); } catch (e) {
+      if (e.code === "need_feedback") return openFeedback(true);
+      toast("Не получилось начать"); return;
+    }
+    battle = { ...g, log: [], marks: [], busy: false };
+    battle.log.push({ who: "sys", text: g.partiya.intro });
+    go("battle");
+    await herSays(g.step.her);
+    battle.options = g.step.options;
+    battle.n = g.step.n; battle.total = g.step.total;
+    drawBattle();
+  }
+
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  async function herSays(lines) {
+    for (const t of lines) {
+      battle.typing = true; drawBattle(); await sleep(DEMO ? 350 : 650 + Math.min(900, t.length * 18));
+      battle.typing = false; battle.log.push({ who: "her", text: t }); drawBattle();
+    }
+  }
+
+  function evalPct() {
+    if (!battle.marks.length) return 50;
+    const S = { "!!": 1, "#": 1, "!": .8, "!?": .6, "?!": .35, "?": .15, "??": 0 };
+    const avg = battle.marks.reduce((a, m) => a + (S[m] ?? .35), 0) / battle.marks.length;
+    return Math.round(8 + avg * 84);
+  }
+
+  function renderBattle() { if (!battle) return go("partii"); drawBattle(); }
+
+  function drawBattle() {
+    if (tab !== "battle" || !battle) return;
+    const p = battle.partiya, me = state.me;
+    const notation = battle.marks.map((m, i) => `<span class="nt" style="--c:${(MARKS[m] || MARKS["?!"]).c}">${i + 1}. ${esc(m)}</span>`).join("");
+    const chat = battle.log.map((m) => m.who === "sys" ? `<div class="sys">${esc(m.text)}</div>`
+      : m.who === "her" ? `<div class="msg her"><div class="bubble">${esc(m.text)}</div></div>`
+      : `<div class="msg me"><div class="bubble mine">${esc(m.text)}</div>${m.mark ? markIcon(m.mark, "ic msg-mark") : ""}</div>`).join("")
+      + (battle.typing ? `<div class="msg her"><div class="bubble typing"><i></i><i></i><i></i></div></div>` : "");
+    const opts = !battle.final && !battle.typing && battle.options && !battle.pending
+      ? `<div class="your-move">Твой ход · ${battle.n} из ${battle.total}</div>
+         <div class="moves" id="bmoves">${battle.options.map((o) => `<button class="move" data-idx="${o.idx}">${esc(o.text)}</button>`).join("")}</div>` : "";
+    screen.innerHTML = `
+      <div class="board-top">
+        <button class="back" data-go="partii">‹</button>
+        <div class="player"><div class="av her-av">${icon("queen")}</div><div><b>${esc(p.title)}</b><span>Эло ${p.rating}</span></div></div>
+        <div class="clock">${battle.n || 1}/${battle.total || p.moves}</div>
+      </div>
+      <div class="notation">${notation || '<span class="muted">Нотация партии появится здесь</span>'}${battle.rated ? "" : ' <span class="muted">· без рейтинга</span>'}</div>
+      <div class="board">
+        <div class="evalbar"><i style="height:${evalPct()}%"></i></div>
+        <div class="board-chat" id="bchat">${chat}</div>
+      </div>
+      <div class="board-bottom"><div class="player"><div class="av knight"><img src="${LOGO}" alt=""></div><div><b>Ты</b><span>Эло ${me.rating}</span></div></div></div>
+      ${opts}`;
+    const c = $("#bchat"); if (c) c.scrollTop = c.scrollHeight;
+    const bm = $("#bmoves");
+    if (bm) bm.onclick = (e) => { const b = e.target.closest(".move"); if (b) playMove(b); };
+  }
+
+  async function playMove(el) {
+    if (battle.busy) return;
+    battle.busy = true; haptic("tap");
+    const text = el.textContent;
+    let res;
+    try { res = await api("partiya/move", { game_id: battle.game_id, idx: +el.dataset.idx }); }
+    catch (e) { battle.busy = false; toast("Не получилось, попробуй ещё раз"); return; }
+    battle.marks.push(res.mark);
+    battle.log.push({ who: "me", text, mark: res.mark });
+    battle.pending = true; drawBattle();
+    haptic(["!!", "!", "#"].includes(res.mark) ? "success" : res.mark === "??" ? "error" : "warning");
+    showMoveVerdict(res);
+  }
+
+  function showMoveVerdict(res) {
+    const mk = MARKS[res.mark] || MARKS["?!"];
+    const v = $("#verdict");
+    v.innerHTML = `<div class="verdict-in" style="--c:${mk.c}">
+      ${MARK_IMG[res.mark] ? icon(MARK_IMG[res.mark], "badge-img sm") : `<div class="badge">${esc(res.mark)}</div>`}
+      <div class="v-name">${esc(res.name)}</div>
+      <div class="v-card"><div class="lbl">Почему</div>${esc(res.why)}</div>
+      ${res.best ? `<div class="v-card"><div class="lbl">Лучший ход</div>«${esc(res.best)}»</div>` : ""}
+      ${othersHtml(res.others)}
+      <button class="btn" id="v-go">${res.final ? "Итог партии" : "Смотреть её ответ"}</button>
+    </div>`;
+    v.classList.remove("hidden");
+    $("#v-go").onclick = async () => {
+      v.classList.add("hidden");
+      await herSays([res.reply]);
+      if (res.final) { battle.final = res.final; return showFinal(res.final); }
+      await herSays(res.next.her);
+      battle.options = res.next.options; battle.n = res.next.n;
+      battle.pending = false; battle.busy = false; drawBattle();
+    };
+  }
+
+  function showFinal(f) {
+    state.me = f.me;
+    const r = RESULT[f.result] || RESULT.stalemate;
+    const sign = f.delta > 0 ? "+" : "";
+    const v = $("#verdict");
+    v.innerHTML = `<div class="verdict-in final">
+      <div class="result" style="color:${r[2]}">${r[0]}</div>
+      <div class="muted center">${r[1]}</div>
+      <div class="final-stats">
+        <div><b>${f.accuracy}%</b><span>точность</span></div>
+        <div><b>${f.rated ? `${f.before} → ${f.after}` : f.after}</b><span>${f.rated ? `Эло ${sign}${f.delta}` : "без рейтинга (переигровка)"}</span></div>
+        <div><b>${f.expected}%</b><span>шанс по Эло</span></div>
+      </div>
+      ${f.rank_up ? `<div class="rankup">${piece(f.me.rank)} Новое звание: ${esc(f.me.rank)}</div>` : ""}
+      <div class="v-card"><div class="lbl">Ходы партии</div><div class="notation big">${f.marks.map((m, i) => `<span class="nt" style="--c:${(MARKS[m] || MARKS["?!"]).c}">${i + 1}. ${esc(m)}</span>`).join("")}</div></div>
+      <button class="btn" id="f-next">К партиям</button>
+      <div class="row"><button class="btn ghost" id="f-again">Переиграть</button><button class="btn ghost" data-feedback>Отзыв</button></div>
+    </div>`;
+    v.classList.remove("hidden");
+    haptic(f.result === "win" ? "success" : f.result === "mate" ? "error" : "warning");
+    const id = battle.partiya.id;
+    $("#f-next").onclick = () => { v.classList.add("hidden"); battle = null; go("partii"); if (f.need_feedback) { state.beta.need_feedback = true; openFeedback(true); } };
+    $("#f-again").onclick = () => { v.classList.add("hidden"); if (f.need_feedback) { state.beta.need_feedback = true; return openFeedback(true); } startPartiya(id); };
+    profile = null;
+  }
+
   // ---------- навигация ----------
-  const TAB_OF = { home: "home", game: "game", top: "top", profile: "profile", learn: "home", ach: "profile" };
+  const TAB_OF = { home: "home", partii: "partii", battle: "partii", game: "game", top: "top", profile: "profile", learn: "home", ach: "profile" };
   function go(name) {
     tab = name;
+    document.body.classList.toggle("in-battle", name === "battle");
     [...$("#tabs").children].forEach((b) => b.classList.toggle("active", b.dataset.tab === TAB_OF[name]));
     window.scrollTo(0, 0);
-    ({ home: renderHome, game: renderGame, top: renderTop, learn: renderLearn, ach: renderAch, profile: renderProfile })[name]();
+    ({ home: renderHome, partii: renderPartii, battle: renderBattle, game: renderGame, top: renderTop, learn: renderLearn, ach: renderAch, profile: renderProfile })[name]();
   }
 
   $("#tabs").onclick = (e) => {
@@ -403,6 +627,9 @@
     if (g) { haptic("tap"); $("#verdict").classList.add("hidden"); go(g.dataset.go); return; }
     const b = e.target.closest("[data-bot]");
     if (b) { openBot(b.dataset.bot); return; }
+    if (e.target.closest("[data-feedback]")) { openFeedback(false); return; }
+    const pl = e.target.closest("[data-partiya]");
+    if (pl) { haptic("tap"); startPartiya(pl.dataset.partiya); return; }
     if (e.target.closest("[data-invite]")) {
       shareLink("drug", "Тренажёр переписки «Шах и Чат»: ситуация из чата — твой ход — оценка как в шахматах. Залетай");
       return;
@@ -422,8 +649,11 @@
       screen.innerHTML = msg ? `<div class="empty"><img src="${LOGO}" alt="">${msg}</div>` : errorHtml();
       return;
     }
+    if (state.beta && state.beta.on && !state.beta.tester) return renderClosed();
+    betaBar();
+    if (state.beta && state.beta.need_feedback) openFeedback(true);
     const start = (location.hash || "").slice(1);
-    go(TAB_OF[start] ? start : "home");
+    go(TAB_OF[start] && start !== "battle" ? start : "home");
   }
 
   // ---------- демо без Telegram ----------
@@ -440,9 +670,34 @@
   }
   const demoPuzzle = (i) => (i < DEMO_P.length ? { id: i, number: D.solved + 1, daily: i === 0, chat: DEMO_P[i].chat, moves: DEMO_P[i].moves.map((m, idx) => ({ idx, text: m[0] })) } : null);
   let demoI = 0;
+  const DG = { step: 0, steps: [
+    { her: ["🎤 «Ну он вроде милый, но пишет как робот, через точки»", "БЛИН", "ЭТО БЫЛО НЕ ТЕБЕ 🙈🙈🙈"], options: [
+      ["Ахах, расслабься 😄 зато теперь знаю, что пора перестать писать как робот. Отвечаю без точек: нравишься", "!!", "Снял её стыд юмором и честно ответил на её же вопрос", "Боже 🙈 я сейчас сгорю. Но… приятно)"],
+      ["Ничего страшного.", "?", "Та самая точка — читается холодно (Klin, 2016)", "Ну всё, ты обиделся"],
+      ["Интересно, что ты ещё обо мне рассказываешь", "??", "Подозрение вместо лёгкости", "Да ничего такого…"]] },
+    { her: ["Только подруге не говори, что ты слышал 😅"], options: [
+      ["Могила. Но с тебя ответ: а я тебе нравлюсь? 😏", "!!", "Открытость за открытость", "Ну… ты сам понимаешь 😊"],
+      ["Ок", "?!", "Она тянется, а ты односложно", "Ты точно не обиделся?"],
+      ["А что мне за молчание будет?", "!?", "Флирт с подмигиванием — рискованно, но тепло", "Кофе с меня 😄"]] },
+  ] };
   async function demo(path, body) {
     await new Promise((r) => setTimeout(r, 200));
-    if (path === "state") return { me: demoMe(), puzzle: demoPuzzle(demoI), daily_done: false, bot: "shahichat_bot" };
+    if (path === "state") return { me: demoMe(), puzzle: demoPuzzle(demoI), daily_done: false, bot: "vibemeter_bot", beta: { on: true, tester: !/closed/.test(location.search), slots: 30, feedback: false, games: 0, need_feedback: false } };
+    if (path === "beta/join") return { ok: false, num: 12, total: 30, slots: 30 };
+    if (path === "feedback") return { ok: true };
+    if (path === "partii") return { items: [
+      { id: "povyshenie", title: "Её повысили", rating: 200, intro: "Вы общаетесь две недели. Вечер, она пишет первой", moves: 4, result: "win", accuracy: 88 },
+      { id: "golosovoe", title: "Голосовое не тебе", rating: 600, intro: "Она отправила тебе голосовое — явно для подруги", moves: 4, result: null },
+      { id: "byvshaya", title: "Бывшая в 3 ночи", rating: 1000, intro: "Вы расстались полгода назад. 03:07, приходит", moves: 4, result: "mate", accuracy: 35 },
+    ] };
+    if (path === "partiya/start") { DG.step = 0; return { game_id: 1, rated: true, partiya: { id: "golosovoe", title: "Голосовое не тебе", rating: 600, intro: "Вы переписываетесь неделю. Она отправила тебе голосовое — явно для подруги", moves: 2 }, step: { n: 1, total: 2, her: DG.steps[0].her, options: DG.steps[0].options.map((o, idx) => ({ idx, text: o[0] })) } }; }
+    if (path === "partiya/move") {
+      const st = DG.steps[DG.step]; const o = st.options[body.idx]; DG.step++;
+      const res = { mark: o[1], name: MARKS[o[1]].name, why: o[2], reply: o[3], best: o[1] === "!!" ? null : st.options.find((x) => x[1] === "!!")[0], others: st.options.filter((x) => x !== o).map((x) => ({ text: x[0], mark: x[1], why: x[2] })) };
+      if (DG.step < DG.steps.length) res.next = { n: DG.step + 1, total: 2, her: DG.steps[DG.step].her, options: DG.steps[DG.step].options.map((x, idx) => ({ idx, text: x[0] })) };
+      else res.final = { result: "win", rated: true, before: D.rating, after: D.rating + 31, delta: 31, accuracy: 90, marks: ["!!", "!"], expected: 23, rank_up: false, me: demoMe(), need_feedback: false };
+      return res;
+    }
     if (path === "move") {
       const p = DEMO_P[body.id];
       const [, mark, why] = p.moves[body.idx];

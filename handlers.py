@@ -31,6 +31,7 @@ import facts
 import puzzles
 from aiogram.exceptions import TelegramForbiddenError
 from database import (
+    rated_count,
     chess_me,
     set_chess_notify,
     chess_place,
@@ -513,6 +514,7 @@ async def consent_accept_callback(
     # Запись создаётся только после согласия
     ref = (await state.get_data()).get("ref")
     pz = (await state.get_data()).get("pz")
+    beta = (await state.get_data()).get("beta")
     if not await get_user(callback.from_user.id):
         await create_user(
             telegram_id=callback.from_user.id,
@@ -528,7 +530,11 @@ async def consent_accept_callback(
     await state.clear()
     # анкеты больше нет: сразу тренажёр (по ссылке друга — его задача)
     from database import log_event
-    await log_event(callback.from_user.id, "start", "pz" if pz is not None else None)
+    await log_event(callback.from_user.id, "start", "beta" if beta else ("pz" if pz is not None else None))
+    if beta:
+        await callback.message.answer(ui.TRAINER_WELCOME, reply_markup=main_menu())
+        await join_beta(callback.message, callback.from_user.id)
+        return
     if pz is not None:
         await callback.message.answer(ui.PZ_FRIEND, reply_markup=main_menu())
         await show_puzzle(callback.message, callback.from_user.id, pz)
@@ -575,7 +581,7 @@ async def crush_command(message: Message):
 
 
 # start-параметры, у которых своя работа (не метки источников)
-START_ACTIONS = {"vt", "sc", "game", "play"}
+START_ACTIONS = {"vt", "sc", "game", "play", "beta"}
 
 
 def is_source_tag(arg: str) -> bool:
@@ -584,6 +590,22 @@ def is_source_tag(arg: str) -> bool:
     if arg.lower() in START_ACTIONS:
         return False
     return not arg.startswith(("vt_", "vtp_", "ref_", "pz_"))
+
+
+async def join_beta(message: Message, user_id: int):
+    """Место в бета-тесте: кто первый — тот в тесте, остальные в очереди на релиз."""
+    import chess_api
+    from database import beta_join, log_event
+    from keyboards import beta_keyboard
+    if chess_api.BETA_SLOTS <= 0:
+        await message.answer(ui.BETA_OPEN, reply_markup=beta_keyboard())
+        return
+    ok, num, total = await beta_join(user_id, chess_api.BETA_SLOTS)
+    await log_event(user_id, "beta_join" if ok else "beta_wait", str(num))
+    if ok:
+        await message.answer(ui.beta_in(num, chess_api.BETA_SLOTS), reply_markup=beta_keyboard())
+    else:
+        await message.answer(ui.beta_full(num, chess_api.BETA_SLOTS))
 
 
 @router.message(CommandStart())
@@ -605,6 +627,17 @@ async def start_handler(
         await add_start_source(arg.lower(), message.from_user.id)
     if arg == "vt" or arg.startswith("vt_"):
         await send_vibe_test(message, arg[3:])
+        return
+
+    # закрытый бета-тест Mini App: t.me/бот?start=beta — первые BETA_SLOTS человек
+    if arg == "beta":
+        await state.clear()
+        if user:
+            await message.answer(ui.welcome_back(user["streak_days"]), reply_markup=main_menu())
+            await join_beta(message, message.from_user.id)
+            return
+        await state.update_data(beta=True)
+        await message.answer(ui.CONSENT, reply_markup=consent_keyboard())
         return
 
     # задача «Шах и чат» от друга: t.me/бот?start=pz_<номер>
@@ -1139,7 +1172,9 @@ async def puzzle_move(callback: CallbackQuery):
         await callback.answer()
         return
     before = ((await get_user(callback.from_user.id)) or {}).get("chess_rating") or 0
-    delta = puzzles.DELTA[mark]
+    import rating
+    delta = rating.update(before, puzzle.get("rating", rating.PUZZLE_RATING), rating.SCORE[mark],
+                          await rated_count(callback.from_user.id), blitz=True) - before
     rating = await solve_puzzle(callback.from_user.id, int(pid), mark, delta)
     if rating is None:
         await callback.answer("Эта задача уже решена", show_alert=True)
@@ -1151,7 +1186,8 @@ async def puzzle_move(callback: CallbackQuery):
         pass
     best = max(puzzle["moves"], key=lambda m: puzzles.DELTA[m[1]])[0]
     await callback.message.answer(
-        ui.puzzle_result(move, mark, puzzles.NAMES[mark], why, best, rating - before, rating, puzzles.rank(rating)),
+        ui.puzzle_result(move, mark, puzzles.NAMES[mark], why, best, rating - before, rating, puzzles.rank(rating),
+                         others=[m for m in puzzle["moves"] if m[0] != move]),
         reply_markup=puzzle_after_keyboard(int(pid), (await callback.bot.me()).username),
     )
 

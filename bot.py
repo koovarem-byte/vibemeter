@@ -20,7 +20,6 @@ import trainer
 from webapp_api import setup_webapp
 from chess_api import setup_play
 import chessdaily
-import relay
 import ui
 import alerts
 from fsm_storage import PgStorage
@@ -168,7 +167,6 @@ async def run_webhook():
     # вайб-час и засчитывание подруг — механики знакомств, с 16.11 выключены
     chess_task = asyncio.create_task(chessdaily.loop(bot))
     alerts_task = alerts.install(bot, ADMIN_ID)
-    relay_task = asyncio.create_task(relay.run(bot))
 
     app = create_app(bot, dp, webhook=True)
 
@@ -187,7 +185,6 @@ async def run_webhook():
     try:
         await _stop.wait()
     finally:
-        relay_task.cancel()
         chess_task.cancel()
         alerts_task.cancel()
         await runner.cleanup()
@@ -216,8 +213,6 @@ async def run_polling():
     # вайб-час и засчитывание подруг — механики знакомств, с 16.11 выключены
     chess_task = asyncio.create_task(chessdaily.loop(bot))
     alerts_task = alerts.install(bot, ADMIN_ID)
-    # переезд: старый бот пересылает в новый (только при OLD_BOT_TOKEN)
-    relay_task = asyncio.create_task(relay.run(bot))
 
     # webhook здесь специально не снимаем: если бот уже работает
     # на хостинге, локальный polling упадёт с Conflict, а не уведёт бота.
@@ -228,7 +223,6 @@ async def run_polling():
         # сигналы ловит run_forever, иначе после перезапуска SIGTERM терялся бы
         await dp.start_polling(bot, handle_signals=False)
     finally:
-        relay_task.cancel()
         chess_task.cancel()
         alerts_task.cancel()
         await runner.cleanup()

@@ -225,9 +225,6 @@ def campaign_keyboard(button: str | None, bot_username: str):
         return rows([btn(ui.BTN_PZ_SOLVE, "pz_next", neon="crown")], channel)
     if button == "invite":
         return rows([btn(ui.BTN_INVITE, "invite", neon="heart")], channel)
-    if button == "moved":
-        import relay
-        return rows([btn(ui.BTN_MOVED, url=relay.new_link(), neon="knight")])
     if button == "fill":
         return rows([btn(
             ui.BTN_FILL_PROFILE, url=f"https://t.me/{bot_username}?start=bc", neon="star",
@@ -513,3 +510,14 @@ def baza_back_keyboard():
 
 def ask_keyboard(qid: int):
     return rows([btn(ui.BTN_ASK_FORWARD, f"ask_fwd:{qid}", neon="eye")])
+
+
+def beta_keyboard():
+    """Открыть Mini App «Шах и Чат» (бета). Без WEBAPP_URL — команда /play."""
+    base = (os.getenv("WEBAPP_URL") or "").rstrip("/")
+    if not base:
+        return rows([btn(ui.BTN_BETA_OPEN, "play_menu", neon="knight")])
+    return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(
+        text=ui.BTN_BETA_OPEN, web_app=WebAppInfo(url=f"{base}/play/"),
+        icon_custom_emoji_id=ui.icon("knight"), style=PRIMARY,
+    )]])

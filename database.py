@@ -60,6 +60,38 @@ async def close_db():
         _pool = None
 
 
+async def _recount_elo(conn):
+    """Эло с нуля: проигрываем все задачи и партии каждого по времени."""
+    import puzzles
+    import rating
+    events = []
+    for r in await conn.fetch("SELECT user_id, puzzle_id, mark, created_at FROM puzzle_answers"):
+        opp = puzzles.PUZZLES[r["puzzle_id"]].get("rating", rating.PUZZLE_RATING) \
+            if 0 <= r["puzzle_id"] < len(puzzles.PUZZLES) else rating.PUZZLE_RATING
+        events.append((r["created_at"], r["user_id"], opp, rating.SCORE.get(r["mark"], 0), True, None))
+    for g in await conn.fetch("""
+        SELECT id, user_id, history, difficulty, finished_at FROM chat_games
+        WHERE status = 'finished' AND finished_at IS NOT NULL
+    """):
+        hist = g["history"] if isinstance(g["history"], list) else json.loads(g["history"] or "[]")
+        marks = [m.get("badge") for m in hist if m.get("who") == "me"]
+        events.append((g["finished_at"], g["user_id"], max(0, g["difficulty"] - 1000),
+                       rating.game_score(marks), False, g["id"]))
+    events.sort(key=lambda e: e[0])
+    ratings: dict[int, int] = {}
+    counts: dict[int, int] = {}
+    for _, uid, opp, score, blitz, game_id in events:
+        before = ratings.get(uid, 0)
+        after = rating.update(before, opp, score, counts.get(uid, 0), blitz)
+        ratings[uid], counts[uid] = after, counts.get(uid, 0) + 1
+        if game_id:
+            await conn.execute("UPDATE chat_games SET rating_before = $2, rating_after = $3 WHERE id = $1",
+                               game_id, before, after)
+    await conn.execute("UPDATE users SET chess_rating = 0")
+    for uid, r in ratings.items():
+        await conn.execute("UPDATE users SET chess_rating = $2 WHERE telegram_id = $1", uid, r)
+
+
 async def init_db():
     db = await get_pool()
 
@@ -430,6 +462,52 @@ async def init_db():
             await conn.execute("UPDATE users SET chess_rating = 0")
             for uid, pts in totals.items():
                 await conn.execute("UPDATE users SET chess_rating = $2 WHERE telegram_id = $1", uid, max(0, pts))
+        # 17.11: партии без ИИ (partii.py) в Mini App
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS app_games (
+                id BIGSERIAL PRIMARY KEY,
+                user_id BIGINT NOT NULL,
+                partiya TEXT NOT NULL,
+                step INTEGER NOT NULL DEFAULT 0,
+                moves JSONB NOT NULL DEFAULT '[]',
+                status TEXT NOT NULL DEFAULT 'active',
+                result TEXT,
+                rated BOOLEAN NOT NULL DEFAULT TRUE,
+                rating_before INTEGER,
+                rating_after INTEGER,
+                created_at TIMESTAMPTZ DEFAULT now(),
+                finished_at TIMESTAMPTZ
+            )
+        """)
+        await conn.execute("CREATE INDEX IF NOT EXISTS app_games_user ON app_games (user_id, partiya)")
+        # закрытый бета-тест: места, очередь, отзывы
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS beta_testers (
+                user_id BIGINT PRIMARY KEY,
+                joined_at TIMESTAMPTZ DEFAULT now()
+            )
+        """)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS beta_waitlist (
+                user_id BIGINT PRIMARY KEY,
+                created_at TIMESTAMPTZ DEFAULT now()
+            )
+        """)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS beta_feedback (
+                id BIGSERIAL PRIMARY KEY,
+                user_id BIGINT NOT NULL,
+                stars INTEGER,
+                text TEXT NOT NULL,
+                created_at TIMESTAMPTZ DEFAULT now()
+            )
+        """)
+        # 17.11 (владелец): рейтинг — Эло с 0 (rating.py). Один раз пересчитываем всем по истории
+        if await conn.fetchval("""
+            INSERT INTO app_state (key, value) VALUES ('chess_rating_elo0', '1')
+            ON CONFLICT (key) DO NOTHING RETURNING key
+        """):
+            await _recount_elo(conn)
         # задача дня со свободным ответом: один ответ в день
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS chat_daily (
@@ -2412,6 +2490,9 @@ _POINTS_EVENTS = """
     UNION ALL
     SELECT user_id, finished_at AS at, COALESCE(rating_after - rating_before, 0) AS pts
     FROM chat_games WHERE status = 'finished'
+    UNION ALL
+    SELECT user_id, finished_at AS at, COALESCE(rating_after - rating_before, 0) AS pts
+    FROM app_games WHERE status = 'finished' AND rated
 """
 
 
@@ -2472,3 +2553,165 @@ async def chess_profile(user_id: int) -> dict:
         "days": [{"day": r["day"].isoformat(), "pts": r["pts"]} for r in days],
         "games": games["games"], "wins": games["wins"], "solved_today": solved_today,
     }
+
+
+# =========================================================
+# ПАРТИИ БЕЗ ИИ, ЭЛО, БЕТА-ТЕСТ (17.11)
+# =========================================================
+
+async def rated_count(user_id: int) -> int:
+    """Сколько рейтинговых игр сыграно (для K-фактора Эло)."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        return await conn.fetchval("""
+            SELECT (SELECT COUNT(*) FROM puzzle_answers WHERE user_id = $1)
+                 + (SELECT COUNT(*) FROM chat_games WHERE user_id = $1 AND status = 'finished')
+                 + (SELECT COUNT(*) FROM app_games WHERE user_id = $1 AND status = 'finished' AND rated)
+        """, user_id)
+
+
+async def set_chess_rating(user_id: int, value: int):
+    db = await get_pool()
+    async with db.acquire() as conn:
+        await conn.execute("UPDATE users SET chess_rating = $2 WHERE telegram_id = $1", user_id, max(0, value))
+
+
+async def app_game_get(game_id: int, user_id: int):
+    db = await get_pool()
+    async with db.acquire() as conn:
+        row = await conn.fetchrow("SELECT * FROM app_games WHERE id = $1 AND user_id = $2", game_id, user_id)
+    if not row:
+        return None
+    g = dict(row)
+    g["moves"] = g["moves"] if isinstance(g["moves"], list) else json.loads(g["moves"] or "[]")
+    return g
+
+
+async def app_game_start(user_id: int, partiya: str) -> dict:
+    """Новая партия (старая незаконченная этой же — сбрасывается). Рейтинговая только первая."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute("""
+                UPDATE app_games SET status = 'abandoned'
+                WHERE user_id = $1 AND partiya = $2 AND status = 'active'
+            """, user_id, partiya)
+            played = await conn.fetchval("""
+                SELECT EXISTS (SELECT 1 FROM app_games WHERE user_id = $1 AND partiya = $2 AND status = 'finished')
+            """, user_id, partiya)
+            row = await conn.fetchrow("""
+                INSERT INTO app_games (user_id, partiya, rated) VALUES ($1, $2, $3) RETURNING *
+            """, user_id, partiya, not played)
+    g = dict(row)
+    g["moves"] = []
+    return g
+
+
+async def app_game_move(game_id: int, moves: list, step: int):
+    db = await get_pool()
+    async with db.acquire() as conn:
+        await conn.execute("UPDATE app_games SET moves = $2::jsonb, step = $3 WHERE id = $1",
+                           game_id, json.dumps(moves, ensure_ascii=False), step)
+
+
+async def app_game_finish(game_id: int, user_id: int, moves: list, result: str,
+                          before: int, after: int, rated: bool):
+    db = await get_pool()
+    async with db.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute("""
+                UPDATE app_games SET moves = $2::jsonb, status = 'finished', result = $3,
+                    rating_before = $4, rating_after = $5, finished_at = now()
+                WHERE id = $1
+            """, game_id, json.dumps(moves, ensure_ascii=False), result, before, after)
+            if rated:
+                await conn.execute("UPDATE users SET chess_rating = $2 WHERE telegram_id = $1", user_id, after)
+
+
+async def app_games_summary(user_id: int) -> dict:
+    """По каждой партии: сыграна ли, лучший результат, точность."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT partiya, result, moves FROM app_games
+            WHERE user_id = $1 AND status = 'finished' ORDER BY finished_at
+        """, user_id)
+    out: dict[str, dict] = {}
+    order = {"mate": 0, "stalemate": 1, "win": 2}
+    for r in rows:
+        moves = r["moves"] if isinstance(r["moves"], list) else json.loads(r["moves"] or "[]")
+        prev = out.get(r["partiya"])
+        if not prev or order.get(r["result"], 0) >= order.get(prev["result"], 0):
+            out[r["partiya"]] = {"result": r["result"], "marks": [m["mark"] for m in moves]}
+    return out
+
+
+async def app_games_finished(user_id: int) -> int:
+    db = await get_pool()
+    async with db.acquire() as conn:
+        return await conn.fetchval(
+            "SELECT COUNT(*) FROM app_games WHERE user_id = $1 AND status = 'finished'", user_id)
+
+
+async def beta_is_tester(user_id: int) -> bool:
+    db = await get_pool()
+    async with db.acquire() as conn:
+        return bool(await conn.fetchval("SELECT 1 FROM beta_testers WHERE user_id = $1", user_id))
+
+
+async def beta_join(user_id: int, slots: int) -> tuple[bool, int, int]:
+    """Занять место в тесте. (взял ли место, номер или место в очереди, всего тестеров).
+    Кто первый — тот и в тесте; мест не больше slots (блокировка на время подсчёта)."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute("SELECT pg_advisory_xact_lock(424242)")
+            if await conn.fetchval("SELECT 1 FROM beta_testers WHERE user_id = $1", user_id):
+                num = await conn.fetchval("""
+                    SELECT COUNT(*) FROM beta_testers
+                    WHERE joined_at <= (SELECT joined_at FROM beta_testers WHERE user_id = $1)
+                """, user_id)
+                return True, num, await conn.fetchval("SELECT COUNT(*) FROM beta_testers")
+            total = await conn.fetchval("SELECT COUNT(*) FROM beta_testers")
+            if total < slots:
+                await conn.execute("INSERT INTO beta_testers (user_id) VALUES ($1)", user_id)
+                await conn.execute("DELETE FROM beta_waitlist WHERE user_id = $1", user_id)
+                return True, total + 1, total + 1
+            await conn.execute("INSERT INTO beta_waitlist (user_id) VALUES ($1) ON CONFLICT DO NOTHING", user_id)
+            pos = await conn.fetchval("""
+                SELECT COUNT(*) FROM beta_waitlist
+                WHERE created_at <= (SELECT created_at FROM beta_waitlist WHERE user_id = $1)
+            """, user_id)
+            return False, pos, total
+
+
+async def beta_add_feedback(user_id: int, stars: int | None, text: str) -> int:
+    db = await get_pool()
+    async with db.acquire() as conn:
+        return await conn.fetchval(
+            "INSERT INTO beta_feedback (user_id, stars, text) VALUES ($1, $2, $3) RETURNING id",
+            user_id, stars, text)
+
+
+async def beta_has_feedback(user_id: int) -> bool:
+    db = await get_pool()
+    async with db.acquire() as conn:
+        return bool(await conn.fetchval("SELECT 1 FROM beta_feedback WHERE user_id = $1 LIMIT 1", user_id))
+
+
+async def beta_stats() -> dict:
+    db = await get_pool()
+    async with db.acquire() as conn:
+        row = await conn.fetchrow("""
+            SELECT (SELECT COUNT(*) FROM beta_testers) AS testers,
+                   (SELECT COUNT(*) FROM beta_waitlist) AS waiting,
+                   (SELECT COUNT(DISTINCT user_id) FROM beta_feedback) AS reviewed,
+                   (SELECT ROUND(AVG(stars), 1) FROM beta_feedback WHERE stars IS NOT NULL) AS stars,
+                   (SELECT COUNT(*) FROM app_games WHERE status = 'finished') AS games
+        """)
+        last = await conn.fetch("""
+            SELECT f.user_id, f.stars, f.text, f.created_at, u.full_name, u.username
+            FROM beta_feedback f LEFT JOIN users u ON u.telegram_id = f.user_id
+            ORDER BY f.created_at DESC LIMIT 15
+        """)
+    return {**dict(row), "last": [dict(r) for r in last]}

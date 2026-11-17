@@ -20,8 +20,11 @@
     <button data-tab="home" class="active">
       <svg viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></svg>Главная
     </button>
+    <button data-tab="partii">
+      <svg viewBox="0 0 24 24"><path d="M3 3h6v6H3zm6 6h6v6H9zm6-6h6v6h-6zM3 15h6v6H3zm12 0h6v6h-6z"/></svg>Партии
+    </button>
     <button data-tab="game">
-      <svg viewBox="0 0 24 24"><path d="M3 3h6v6H3zm6 6h6v6H9zm6-6h6v6h-6zM3 15h6v6H3zm12 0h6v6h-6z"/></svg>Задачи
+      <svg viewBox="0 0 24 24"><path d="M12 2 4 6v6c0 5 3.4 9.4 8 10 4.6-.6 8-5 8-10V6zm-1 14-4-4 1.4-1.4L11 13.2l4.6-4.6L17 10z"/></svg>Задачи
     </button>
     <button data-tab="top">
       <svg viewBox="0 0 24 24"><path d="M4 13h4v8H4zm6-6h4v14h-4zm6 3h4v11h-4z"/></svg>Рейтинг
@@ -31,7 +34,9 @@
     </button>
   </nav>
 
+  <div id="beta-bar" class="beta-bar hidden"></div>
   <div id="verdict" class="verdict hidden"></div>
+  <div id="modal" class="verdict hidden"></div>
   <div id="toast" class="toast hidden"></div>
 
   <script src="app.js"></script>
