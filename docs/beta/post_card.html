@@ -1,0 +1,32 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+*{margin:0;box-sizing:border-box}
+body{width:1280px;height:720px;background:#0d1a10;font-family:"Inter Display","Inter",sans-serif}
+.card{position:absolute;inset:10px;border-radius:44px;border:6px solid #3fb94f;overflow:hidden;
+ background:linear-gradient(180deg,#1d4a26 0%,#173b20 45%,#2b2350 78%,#3a2a6b 100%)}
+.board{position:absolute;inset:0;opacity:.18;background-image:
+ linear-gradient(45deg,#000 25%,transparent 25%,transparent 75%,#000 75%),
+ linear-gradient(45deg,#000 25%,transparent 25%,transparent 75%,#000 75%);
+ background-size:140px 140px;background-position:0 0,70px 70px}
+.horse{position:absolute;right:-40px;top:120px;font-size:560px;line-height:1;color:rgba(0,0,0,.28);font-family:"DejaVu Sans"}
+.rook{position:absolute;left:-20px;bottom:-70px;font-size:330px;color:rgba(0,0,0,.25);font-family:"DejaVu Sans"}
+.logo{position:absolute;left:52px;top:50px;display:flex;align-items:center;gap:20px;color:#fff;font-weight:900;font-size:38px;letter-spacing:.5px}
+.logo img{width:84px;height:84px;border-radius:50%;border:5px solid #fff;background:#1d4a26;object-fit:cover}
+.pill{position:absolute;right:46px;top:50px;background:#3fb94f;color:#fff;font-weight:900;font-size:34px;padding:16px 30px;border-radius:999px;border:5px solid #fff}
+.h1{position:absolute;left:52px;top:170px;font-weight:900;font-size:112px;line-height:1.02;letter-spacing:-1px;color:#fff;
+ text-shadow:0 7px 0 #0b140d}
+.h1 .g{color:#7df28e}
+.b{position:absolute;padding:22px 34px;border-radius:26px;font-weight:800;font-size:36px;color:#fff;box-shadow:0 10px 30px rgba(0,0,0,.35)}
+.b img{position:absolute;width:74px;height:74px;top:-34px;right:-26px}
+.b1{left:96px;top:478px;background:#3b3b3b;transform:rotate(-3deg)}
+.b2{right:118px;top:560px;background:#3fb94f;transform:rotate(2deg)}
+.spark{position:absolute;color:#f2c94c;font-size:34px}
+</style></head><body><div class="card">
+<div class="board"></div><div class="horse">♞</div><div class="rook">♜</div>
+<div class="logo"><img src="../../webapp_chess/logo.png">ШАХ И ЧАТ</div>
+<div class="pill">БЕТА · ОБНОВА</div>
+<div class="h1">ВЫ НАПИСАЛИ<br><span class="g">МЫ ПЕРЕДЕЛАЛИ</span></div>
+<div class="b b1">бриллиант видно по длине<img src="../../webapp_chess/i/m_blunder.png"></div>
+<div class="b b2">теперь нет)<img src="../../webapp_chess/i/m_brilliant.png"></div>
+<span class="spark" style="left:700px;top:150px">✦</span><span class="spark" style="left:1130px;top:200px">✦</span>
+<span class="spark" style="left:640px;top:600px">✦</span><span class="spark" style="left:120px;top:640px">✦</span>
+</div></body></html>
