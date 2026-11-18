@@ -947,6 +947,23 @@ async def beta_cmd(message: Message):
         await message.answer(text[start:start + 4000])
 
 
+@router.message(Command("beta_slots"))
+async def beta_slots_cmd(message: Message):
+    """/beta_slots 50 — сколько мест в тесте (0 — открыть всем). Без пересборки."""
+    if message.from_user.id != ADMIN_ID:
+        return
+    import chess_api
+    from database import set_app_state
+    arg = (message.text or "").split(maxsplit=1)[1:] or [""]
+    if not arg[0].strip().isdigit():
+        await message.answer(f"Сейчас мест: {chess_api.BETA_SLOTS}. Поменять: /beta_slots 50 (0 — открыть всем)")
+        return
+    n = int(arg[0])
+    await set_app_state("beta_slots", str(n))
+    chess_api.BETA_SLOTS = n
+    await message.answer("✅ Тест открыт для всех" if n == 0 else f"✅ Мест в тесте: {n}")
+
+
 @router.message(Command("broadcast"))
 async def broadcast_cmd(message: Message):
     await message.answer(await hub_text(), reply_markup=hub_keyboard())

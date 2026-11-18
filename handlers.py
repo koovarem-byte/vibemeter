@@ -597,8 +597,10 @@ async def join_beta(message: Message, user_id: int):
     import chess_api
     from database import beta_join, log_event
     from keyboards import beta_keyboard
-    if chess_api.BETA_SLOTS <= 0:
-        await message.answer(ui.BETA_OPEN, reply_markup=beta_keyboard())
+    if chess_api.BETA_SLOTS <= 0 or user_id == ADMIN_ID:
+        # админ проходит без места: 30 мест — тестерам
+        await message.answer(ui.BETA_OPEN if user_id != ADMIN_ID else "♟ Ты админ — заходи без места 👇",
+                             reply_markup=beta_keyboard())
         return
     ok, num, total = await beta_join(user_id, chess_api.BETA_SLOTS)
     await log_event(user_id, "beta_join" if ok else "beta_wait", str(num))

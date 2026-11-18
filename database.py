@@ -7,7 +7,18 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-DATABASE_URL = os.getenv("DATABASE_URL")
+def _clean_dsn(dsn: str | None) -> str | None:
+    """Neon в строке подключения даёт channel_binding=require — asyncpg его не знает
+    и шлёт серверу как настройку («unrecognized configuration parameter»). Убираем."""
+    if not dsn or "?" not in dsn:
+        return dsn
+    from urllib.parse import parse_qsl, urlencode
+    base, _, query = dsn.partition("?")
+    params = [(k, v) for k, v in parse_qsl(query) if k != "channel_binding"]
+    return base + ("?" + urlencode(params) if params else "")
+
+
+DATABASE_URL = _clean_dsn((os.getenv("DATABASE_URL") or "").strip() or None)
 _pool = None
 
 # «навсегда» для VIP девушек

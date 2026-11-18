@@ -50,6 +50,15 @@ PERIODS = {"day": 1, "week": 7, "all": None}
 # Закрытый бета-тест (17.11): Mini App только для первых BETA_SLOTS человек.
 # Релиз: BETA_SLOTS=0 в переменных Bothost — открыто всем.
 BETA_SLOTS = int(os.getenv("BETA_SLOTS", "30"))
+
+
+async def load_slots():
+    """Число мест можно менять без пересборки: /beta_slots N (app_state.beta_slots)."""
+    global BETA_SLOTS
+    from database import get_app_state
+    v = await get_app_state("beta_slots")
+    if v is not None and v.lstrip("-").isdigit():
+        BETA_SLOTS = int(v)
 # после стольких партий без отзыва дальше не пускаем — сначала мнение
 FEEDBACK_AFTER_GAMES = 2
 OPEN_FOR_ALL = ("/play/api/state", "/play/api/beta/join")
