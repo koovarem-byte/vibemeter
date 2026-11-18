@@ -393,5 +393,9 @@ def setup_play(app: web.Application):
     app.router.add_post("/play/api/partiya/move", api_partiya_move)
     app.router.add_get("/play", to_index)
     app.router.add_get("/play/", index)
-    app.router.add_static("/play/", PLAY_DIR)
+    # без папки фронта бот всё равно должен работать (17.11 её не было в Dockerfile — бот падал)
+    if PLAY_DIR.is_dir():
+        app.router.add_static("/play/", PLAY_DIR)
+    else:
+        logging.error("Mini App: нет папки %s — проверь COPY в Dockerfile", PLAY_DIR)
     logging.info("Mini App «Шах и чат»: /play/")
