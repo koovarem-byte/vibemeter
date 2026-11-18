@@ -482,7 +482,7 @@ async def top_cb(callback: CallbackQuery):
 @router.message(Command("help"))
 async def help_cmd(message: Message, state: FSMContext):
     await state.clear()
-    await message.answer(ui.HELP_TEXT, reply_markup=main_menu())
+    await message.answer(ui.help_text(), reply_markup=main_menu())
 
 
 @router.message(F.text.in_(ui.menu_texts(ui.MENU_FACT)))

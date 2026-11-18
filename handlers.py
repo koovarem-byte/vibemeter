@@ -639,7 +639,7 @@ async def start_handler(
             await join_beta(message, message.from_user.id)
             return
         await state.update_data(beta=True)
-        await message.answer(ui.CONSENT, reply_markup=consent_keyboard())
+        await message.answer(ui.consent(), reply_markup=consent_keyboard())
         return
 
     # задача «Шах и чат» от друга: t.me/бот?start=pz_<номер>
@@ -652,7 +652,7 @@ async def start_handler(
         # новичок: сначала согласие, задачу покажем сразу после него
         await state.clear()
         await state.update_data(pz=int(arg[3:]))
-        await message.answer(ui.CONSENT, reply_markup=consent_keyboard())
+        await message.answer(ui.consent(), reply_markup=consent_keyboard())
         return
 
     if not user:
@@ -665,7 +665,7 @@ async def start_handler(
             ref = int(arg[4:])
         if ref:
             await state.update_data(ref=ref)
-        await message.answer(ui.CONSENT, reply_markup=consent_keyboard())
+        await message.answer(ui.consent(), reply_markup=consent_keyboard())
         return
 
     # 16.11: знакомства убраны — всем, кто уже согласился, сразу меню игры

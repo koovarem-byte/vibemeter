@@ -653,8 +653,9 @@
     if (state.beta && state.beta.on && !state.beta.tester) return renderClosed();
     betaBar();
     if (state.beta && state.beta.need_feedback) openFeedback(true);
-    const start = (location.hash || "").slice(1);
+    const start = (location.hash || "").slice(1).split(/[&?]/)[0];
     go(TAB_OF[start] && start !== "battle" ? start : "home");
+    if (start === "feedback" && !(state.beta && state.beta.need_feedback)) openFeedback(false);
   }
 
   // ---------- демо без Telegram ----------

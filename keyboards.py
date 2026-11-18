@@ -460,14 +460,19 @@ def puzzle_after_keyboard(puzzle_id: int | None = None, bot_username: str | None
             neon="hands",
         )])
     keyboard.append([btn(ui.BTN_PZ_TOP, "pz_top", neon="trophy"), btn(ui.BTN_FACT, "fact", neon="spark")])
+    b = app_button()
+    if b:
+        keyboard.append([b])
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 
 def chess_reminder_keyboard():
-    return rows(
-        [btn(ui.BTN_PZ_SOLVE, "pz_next", neon="crown")],
-        [btn(ui.BTN_PZ_OFF, "pz_off")],
-    )
+    keyboard = [[btn(ui.BTN_PZ_SOLVE, "pz_next", neon="crown")]]
+    b = app_button()
+    if b:
+        keyboard.append([b])
+    keyboard.append([btn(ui.BTN_PZ_OFF, "pz_off")])
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 
 def friend_keyboard(link: str):
@@ -479,10 +484,10 @@ def friend_keyboard(link: str):
 
 
 def fact_keyboard():
-    return rows(
+    return with_app([
         [btn(ui.BTN_FACT, "fact", neon="spark")],
         [btn(ui.BTN_PZ_NEXT, "pz_next", neon="crown")],
-    )
+    ])
 
 
 # =========================================================
@@ -501,15 +506,28 @@ def situations_keyboard(items):
 
 
 def after_game_keyboard():
-    return rows(
+    return with_app([
         [btn(ui.BTN_PLAY_AGAIN, "play_menu", neon="crown"), btn(ui.BTN_DAILY, "daily", neon="fire")],
         [btn(ui.BTN_SHAH_CHANNEL, url=ui.SHAH_CHANNEL_URL, neon="star")],
-    )
+    ])
+
+
+def feedback_keyboard():
+    """Напоминание об отзыве: Mini App сразу на форме отзыва."""
+    base = (os.getenv("WEBAPP_URL") or "").rstrip("/")
+    if base.endswith("/app"):
+        base = base[:-4]
+    if not base:
+        return None
+    return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(
+        text=ui.BTN_FEEDBACK, web_app=WebAppInfo(url=f"{base}/play/#feedback"),
+        icon_custom_emoji_id=ui.icon("bell"), style=PRIMARY,
+    )]])
 
 
 def baza_keyboard(items: dict):
     return InlineKeyboardMarkup(inline_keyboard=[
-        [btn(item["title"], f"baza:{key}")] for key, item in items.items()
+        [btn(ui.unquote(item["title"]), f"baza:{key}")] for key, item in items.items()
     ])
 
 
@@ -521,12 +539,26 @@ def ask_keyboard(qid: int):
     return rows([btn(ui.BTN_ASK_FORWARD, f"ask_fwd:{qid}", neon="eye")])
 
 
+def app_button(neon: str = "board"):
+    """Inline-кнопка «Открыть игру» (Mini App /play/). None без WEBAPP_URL."""
+    base = (os.getenv("WEBAPP_URL") or "").rstrip("/")
+    if base.endswith("/app"):
+        base = base[:-4]
+    if not base:
+        return None
+    return InlineKeyboardButton(text=ui.BTN_APP_GAME, web_app=WebAppInfo(url=f"{base}/play/"),
+                                icon_custom_emoji_id=ui.icon(neon), style=PRIMARY)
+
+
+def with_app(keyboard: list) -> InlineKeyboardMarkup:
+    """Добавить первой строкой кнопку Mini App, если адрес задан."""
+    b = app_button()
+    return InlineKeyboardMarkup(inline_keyboard=([[b]] if b else []) + keyboard)
+
+
 def beta_keyboard():
     """Открыть Mini App «Шах и Чат» (бета). Без WEBAPP_URL — команда /play."""
-    base = (os.getenv("WEBAPP_URL") or "").rstrip("/")
-    if not base:
+    b = app_button("knight")
+    if not b:
         return rows([btn(ui.BTN_BETA_OPEN, "play_menu", neon="knight")])
-    return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(
-        text=ui.BTN_BETA_OPEN, web_app=WebAppInfo(url=f"{base}/play/"),
-        icon_custom_emoji_id=ui.icon("knight"), style=PRIMARY,
-    )]])
+    return InlineKeyboardMarkup(inline_keyboard=[[b]])

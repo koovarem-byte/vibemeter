@@ -2746,6 +2746,22 @@ async def beta_add_feedback(user_id: int, stars: int | None, text: str) -> int:
             user_id, stars, text)
 
 
+async def beta_feedback_recipients(hours: int = 20) -> list[int]:
+    """Бета-тестеры без отзыва, в тесте больше hours часов, напоминание ещё не получали (один раз)."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT t.user_id FROM beta_testers t
+            JOIN users u ON u.telegram_id = t.user_id
+            WHERE t.joined_at < now() - make_interval(hours => $1)
+              AND t.user_id <> $2
+              AND COALESCE(u.is_banned, FALSE) = FALSE
+              AND NOT EXISTS (SELECT 1 FROM beta_feedback f WHERE f.user_id = t.user_id)
+              AND NOT EXISTS (SELECT 1 FROM events e WHERE e.user_id = t.user_id AND e.kind = 'beta_fb_remind')
+        """, hours, OWNER_ID)
+    return [r["user_id"] for r in rows]
+
+
 async def beta_has_feedback(user_id: int) -> bool:
     db = await get_pool()
     async with db.acquire() as conn:

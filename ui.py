@@ -56,6 +56,8 @@ PACK_ORDER = [
 ]
 for _name, _fb in PACK_ORDER:
     NEON.setdefault(_name, (NEON["crown"][0], _fb))
+# какие иконки пака уже получили id из Telegram (до загрузки значки ходов — текстом)
+PACK_LOADED: set[str] = set()
 # старые имена, которые теперь рисуем иконками пака (зелёный стиль)
 PACK_ALIASES = {
     "fire": "fire_g", "bolt": "bolt_g", "crown": "crown_gold", "star": "star_w", "trophy": "trophy_w",
@@ -76,6 +78,7 @@ def load_pack(stickers) -> int:
     for (name, fallback), st in zip(PACK_ORDER, stickers):
         if st.custom_emoji_id:
             NEON[name] = (st.custom_emoji_id, fallback)
+            PACK_LOADED.add(name)
             n += 1
     if n == len(PACK_ORDER):
         apply_pack()
@@ -95,6 +98,7 @@ def load_pack_map(mapping: dict) -> int:
     for name, eid in mapping.items():
         if name in fb:
             NEON[name] = (eid, fb[name])
+            PACK_LOADED.add(name)
     if len(mapping) >= len(PACK_ORDER) - 2:
         apply_pack()
     return len(mapping)
@@ -104,6 +108,36 @@ def e(name: str) -> str:
     """Неоновый эмодзи в тексте (HTML)."""
     emoji_id, fallback = NEON[name]
     return f'<tg-emoji emoji-id="{emoji_id}">{fallback}</tg-emoji>'
+
+
+# значки ходов -> иконки пака (01–05: !! ! ?! ?? #); «!?» и «?» рисуем ближайшими
+MARK_ICONS = {"!!": "m_brilliant", "!": "m_good", "!?": "m_good", "?!": "m_dubious",
+              "?": "m_dubious", "??": "m_blunder", "#": "m_mate"}
+MARK_FALLBACK = {"!!": "‼️", "!": "❗", "!?": "⁉️", "?!": "⁉️", "?": "❓", "??": "❓", "#": "#️⃣"}
+
+
+def mark(m: str) -> str:
+    """Значок хода в тексте: иконка из пака «Шах и Чат», пока пака нет — сам знак."""
+    name = MARK_ICONS.get(m)
+    if name and name in PACK_LOADED:
+        return f'<tg-emoji emoji-id="{NEON[name][0]}">{MARK_FALLBACK[m]}</tg-emoji>'
+    return f"<b>{escape(m)}</b>"
+
+
+def marks_legend() -> str:
+    return f"{mark('??')} зевок · {mark('?!')} сомнительно · {mark('!')} хороший · {mark('!!')} бриллиант · {mark('#')} мат"
+
+
+# фигуры званий -> иконки пака
+RANK_ICONS = {"Пешка": "pawn", "Конь": "knight", "Слон": "bishop", "Ладья": "rook", "Ферзь": "queen",
+              "Гроссмейстер": "king"}
+
+
+def rank_icon(rank: str) -> str:
+    name = RANK_ICONS.get(rank)
+    if name and name in PACK_LOADED:
+        return e(name)
+    return RANK_EMOJI.get(rank, "♟")
 
 
 def icon(name: str) -> str:
@@ -295,13 +329,14 @@ REPORT_REASONS = {
 # СОГЛАСИЕ И ПОЛИТИКА
 # =========================================================
 
-CONSENT = (
-    "Привет. Тут тренируют переписку ♟\n\n"
-    "Она пишет — ты ходишь, я ставлю оценку как в шахматах: !! или ?? зевок\n\n"
-    "🤖 Это тренажёр, а не живая девушка\n"
-    "🔞 С 14 лет\n\n"
-    "Согласен с /privacy? Поехали"
-)
+def consent() -> str:
+    return (
+        "Привет. Тут тренируют переписку ♟\n\n"
+        f"Она пишет — ты ходишь, я ставлю оценку как в шахматах: {mark('!!')} или {mark('??')} зевок\n\n"
+        "🤖 Это тренажёр, а не живая девушка\n"
+        "🔞 С 14 лет\n\n"
+        "Согласен с /privacy? Поехали"
+    )
 
 PRIVACY = (
     f"{title('lock', 'Политика конфиденциальности')}\n\n"
@@ -1248,14 +1283,14 @@ def unquote(text: str) -> str:
     return text.replace("«", "").replace("»", "").replace('"', "")
 
 
-def puzzle_result(move: str, mark: str, name: str, why: str, best: str, delta: int, rating: int, rank: str,
+def puzzle_result(move: str, my_mark: str, name: str, why: str, best: str, delta: int, rating: int, rank: str,
                   others: list | None = None) -> str:
     sign = f"+{delta}" if delta > 0 else ("±0" if delta == 0 else str(delta))
-    lines = [f"<b>{mark} {name}</b> · {sign} · {rating}", esc(unquote(why))]
+    lines = [f"{mark(my_mark)} <b>{name}</b> · {sign} · {rating}", esc(unquote(why))]
     if others:
         lines.append("")
         for text, m, w in others:
-            lines.append(f"<b>{m}</b> {esc(unquote(text))} — <i>{esc(unquote(w))}</i>")
+            lines.append(f"{mark(m)} {esc(unquote(text))} — <i>{esc(unquote(w))}</i>")
     return "\n".join(lines)
 
 
@@ -1309,6 +1344,16 @@ def streak_reminder(streak: int, rating: int) -> str:
 
 # ---------- закрытый бета-тест (17.11) ----------
 BTN_BETA_OPEN = "Открыть игру"
+BTN_APP_GAME = "Открыть игру"
+BTN_FEEDBACK = "Оставить отзыв"
+
+
+def beta_feedback_reminder() -> str:
+    return (
+        f"{e('bell')} <b>Ты в бета-тесте «Шах и Чат»</b>\n\n"
+        "Сыграй пару партий в игре и напиши пару слов: что зашло, что сломалось, чего не хватает\n\n"
+        "Читаю каждый отзыв сам — по ним и доделываем игру 🙏"
+    )
 BETA_OPEN = "♟ Тест закончился — игра открыта для всех. Жми 👇"
 
 
@@ -1424,6 +1469,15 @@ STAMPS = {
     "win": "🏆 ПОБЕДА",
 }
 
+def _stamp(result: str) -> str:
+    """Итог партии: иконка пака (если загружен) вместо обычного эмодзи в начале."""
+    text = STAMPS.get(result, STAMPS["stalemate"])
+    name = {"mate": "m_mate", "win": "trophy_w"}.get(result)
+    if name and name in PACK_LOADED:
+        return f"{e(name)} <b>{text.split(' ', 1)[1]}</b>"
+    return f"<b>{text}</b>"
+
+
 RANK_EMOJI = {"Пешка": "♟", "Конь": "♞", "Слон": "♝", "Ладья": "♜", "Ферзь": "♛", "Гроссмейстер": "♚"}
 
 
@@ -1438,7 +1492,7 @@ def game_intro(sit: dict) -> str:
 
 
 def move_verdict(v: dict) -> str:
-    return f"<b>{esc(v['badge'])} {v['eval']:+.1f}</b>  «{esc(v['coach'])}»"
+    return f"{mark(v['badge'])} <b>{v['eval']:+.1f}</b>  {esc(unquote(v['coach']))}"
 
 
 def her_line(text: str) -> str:
@@ -1448,10 +1502,10 @@ def her_line(text: str) -> str:
 def game_result(result: str, before: int, after: int, rank: str, best: str | None, avg: float) -> str:
     diff = after - before
     lines = [
-        f"<b>{STAMPS.get(result, STAMPS['stalemate'])}</b>",
+        _stamp(result),
         "",
         f"Средняя оценка ходов: {avg:+.1f}",
-        f"Рейтинг: {before} –> <b>{after}</b> ({'+' if diff >= 0 else ''}{diff}) · {RANK_EMOJI.get(rank, '')} {rank}",
+        f"Рейтинг: {before} –> <b>{after}</b> ({'+' if diff >= 0 else ''}{diff}) · {rank_icon(rank)} {rank}",
     ]
     if best:
         lines += ["", f"Лучший ход: «{esc(best)}»"]
@@ -1487,9 +1541,9 @@ BAZA_CHOOSE = "📚 <b>База ходов</b>\n\nВыбирай ситуаци�
 
 
 def baza_card(item: dict) -> str:
-    lines = [f"📚 <b>{esc(item['title'])}</b>", "", f"она: {esc(item['her'])}", ""]
+    lines = [f"📚 <b>{esc(unquote(item['title']))}</b>", "", f"она: {esc(item['her'])}", ""]
     for text, badge, why in item["moves"]:
-        lines.append(f"<b>{esc(badge)}</b> {esc(text)}\n    <i>{esc(why)}</i>")
+        lines.append(f"{mark(badge)} {esc(text)}\n    <i>{esc(why)}</i>")
     return "\n".join(lines)
 
 
@@ -1508,26 +1562,27 @@ CRISIS_TEXT = (
     "Я бот и не заменю живого человека, но рядом есть люди, которые помогут"
 )
 
-HELP_TEXT = (
-    "<b>Что это</b>\n"
-    "Тренажёр переписки «Шах и чат». За неё играет ИИ, а не живая девушка\n\n"
-    "<b>Значки</b>\n?? зевок · ? слабый ход · ! хороший · !! блестящий · # мат\n\n"
-    "<b>Режимы</b>\n"
-    "/play — партия 3–5 ходов\n/daily — задача дня, один ответ\n"
-    "/razbor — разбор твоей переписки\n/baza — база готовых ходов\n"
-    "/me — рейтинг · /top — лидеры · /ask — вопрос автору\n\n"
-    "<b>Бесплатно</b>: 5 партий и 1 разбор в день\n\n"
-    "<b>Правила</b>\n"
-    "Не учим давить, манипулировать и следить. Пошлость и грубость — сразу ?? «так не играем»\n"
-    "Автор — не психолог. Ничего не обещаем: это тренировка, а не гарантия\n\n"
-    "Канал –> t.me/shahichat"
-)
+def help_text() -> str:
+    return (
+        "<b>Что это</b>\n"
+        "Тренажёр переписки «Шах и чат». За неё играет ИИ, а не живая девушка\n\n"
+        f"<b>Значки</b>\n{marks_legend()}\n\n"
+        "<b>Режимы</b>\n"
+        "/play — партия 3–5 ходов\n/daily — задача дня, один ответ\n"
+        "/razbor — разбор твоей переписки\n/baza — база готовых ходов\n"
+        "/me — рейтинг · /top — лидеры · /ask — вопрос автору\n\n"
+        "<b>Бесплатно</b>: 5 партий и 1 разбор в день\n\n"
+        "<b>Правила</b>\n"
+        f"Не учим давить, манипулировать и следить. Пошлость и грубость — сразу {mark('??')} так не играем\n"
+        "Автор — не психолог. Ничего не обещаем: это тренировка, а не гарантия\n\n"
+        "Канал –> t.me/shahichat"
+    )
 
 
 def trainer_me(rating: int, rank: str, streak: int, games: int, wins: int, best: str | None,
                place: int, total: int, nxt: tuple | None) -> str:
     lines = [
-        f"{RANK_EMOJI.get(rank, '♟')} <b>{rank}</b> · рейтинг <b>{rating}</b>",
+        f"{rank_icon(rank)} <b>{rank}</b> · рейтинг <b>{rating}</b>",
         "",
         f"🔥 Серия: {days(streak)}",
         f"♟ Партий: {games} · побед: {wins}",
