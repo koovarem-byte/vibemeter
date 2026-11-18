@@ -27,6 +27,16 @@ class TelegramAlertHandler(logging.Handler):
             text = str(record.exc_info[1])
             if "bot was blocked by the user" in text or "user is deactivated" in text:
                 return
+        # 18.11: короткие обрывы сети хостинга до api.telegram.org — aiogram переподключается сам,
+        # письмо админу всё равно не уйдёт (сети нет). Шлём, только если обрыв затянулся (> 10 подряд)
+        msg = record.getMessage() + (str(record.exc_info[1]) if record.exc_info and record.exc_info[1] else "")
+        if "Cannot connect to host api.telegram.org" in msg or "Failed to fetch updates" in msg \
+                or "ServerDisconnectedError" in msg or "Connection reset by peer" in msg:
+            self.net_errors = getattr(self, "net_errors", 0) + 1
+            if self.net_errors % 10:
+                return
+        else:
+            self.net_errors = 0
         try:
             self.queue.put_nowait(record)
         except Exception:

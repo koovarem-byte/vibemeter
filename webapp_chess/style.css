@@ -334,3 +334,7 @@ body.in-battle .screen { padding-bottom: calc(24px + var(--safe-b)); }
 
 .li.owner { margin-bottom: 10px; border-color: var(--gold) !important; background: linear-gradient(90deg, rgba(242, 201, 76, .14), var(--panel)) padding-box, linear-gradient(135deg, #f2c94c, rgba(242, 201, 76, .2)) border-box !important; }
 .li.owner .ic { width: 34px; height: 34px; }
+
+/* обучение: проверка прочитанного (18.11) */
+.pill.no { background: rgba(235, 87, 87, .14); color: #ff8a80; }
+.moves.locked .move:not(.picked) { opacity: .55; }

@@ -261,24 +261,103 @@
       </div>`;
   }
 
-  // ---------- Обучение (факты) ----------
+  // ---------- Обучение: 3 статьи в день, проверка после каждой (18.11) ----------
+  let learnData = null;
+  const LEARN_HEAD = `<button class="back" data-go="home">‹ Главная</button><div class="title">Обучение</div>`;
+  const learnSub = (d) => `<p class="subtitle">${d.per_day} статьи в день · верный ответ на проверке +${d.reward} к рейтингу</p>`;
+
   async function renderLearn() {
-    screen.innerHTML = `<button class="back" data-go="home">‹ Главная</button>
-      <div class="title">Обучение</div><p class="subtitle">Факты об общении из исследований — на них построены оценки ходов</p>
-      ${'<div class="skel"></div>'.repeat(3)}`;
-    let data;
-    try { data = await api("facts"); } catch (e) { screen.innerHTML = errorHtml(); return; }
+    screen.innerHTML = `${LEARN_HEAD}${'<div class="skel"></div>'.repeat(3)}`;
+    try { learnData = await api("learn"); } catch (e) { screen.innerHTML = errorHtml(); return; }
     if (tab !== "learn") return;
-    const card = (f, day) => `
-      <div class="fact ${day ? "day" : ""}">
-        ${day ? '<span class="pill">ФАКТ ДНЯ</span>' : ""}
-        <div class="txt">${esc(f.text)}</div>
-        <div class="tip">${icon("target")}<span>${esc(f.tip)}</span></div>
-        <div class="src">${f.url ? `<a href="${esc(f.url)}" data-ext>${esc(f.source)}</a>` : esc(f.source)}</div>
-      </div>`;
-    screen.innerHTML = `<button class="back" data-go="home">‹ Главная</button>
-      <div class="title">Обучение</div><p class="subtitle">Факты об общении из исследований — на них построены оценки ходов</p>
-      ${card(data.day, true)}<div class="h2">Ещё ${data.items.length}</div>${data.items.map((f) => card(f)).join("")}`;
+    learnList();
+  }
+
+  function learnList() {
+    const d = learnData;
+    const status = (it) => it.answered
+      ? (it.ok ? `<span class="pill">${it.earned ? "+" + d.reward : "верно"}</span>` : `<span class="pill no">мимо</span>`)
+      : `<div class="arrow">›</div>`;
+    const card = (it, i) => `
+      <button class="card ${it.answered ? "done" : ""}" data-art="${esc(it.id)}">
+        <div class="ico">${icon(it.answered ? (it.ok ? "check" : "cross") : "chat")}</div>
+        <div class="main"><div class="t">Статья ${i + 1}</div><div class="s">${esc(it.text.slice(0, 70))}…</div></div>
+        ${status(it)}
+      </button>`;
+    const all = d.done >= d.items.length;
+    screen.innerHTML = `${LEARN_HEAD}${learnSub(d)}
+      <div class="h2">Сегодня <small>${d.done} из ${d.items.length}</small></div>
+      <div id="l-list">${d.items.map(card).join("")}</div>
+      ${all ? `<div class="fact day"><span class="pill">НА СЕГОДНЯ ВСЁ</span><div class="txt">Новые статьи завтра. А пока сыграй партию</div></div>
+               <button class="btn" data-go="partii">К партиям</button>` : ""}
+      <p class="muted" style="margin-top:14px">Прочитано всего: ${d.total_read} из ${d.all}</p>`;
+    $("#l-list").onclick = (e) => {
+      const b = e.target.closest("[data-art]");
+      if (b) { haptic("tap"); learnArticle(b.dataset.art); }
+    };
+  }
+
+  function learnArticle(id) {
+    const it = learnData.items.find((x) => x.id === id);
+    if (!it) return learnList();
+    if (!it.opened) { it.opened = true; api("learn/open", { id }).catch(() => {}); }
+    screen.innerHTML = `<button class="back" id="l-back">‹ Обучение</button>
+      <div class="fact day">
+        <span class="pill">СТАТЬЯ ${learnData.items.indexOf(it) + 1} ИЗ ${learnData.items.length}</span>
+        <div class="txt">${esc(it.text)}</div>
+        <div class="tip">${icon("target")}<span>${esc(it.tip)}</span></div>
+        <div class="src">${it.url ? `<a href="${esc(it.url)}" data-ext>${esc(it.source)}</a>` : esc(it.source)}</div>
+      </div>
+      ${it.answered ? learnResultHtml(it) : `<button class="btn big" id="l-quiz">Прочитал, проверь меня</button>`}`;
+    $("#l-back").onclick = () => learnList();
+    const q = $("#l-quiz");
+    if (q) q.onclick = () => learnQuiz(it);
+    learnNextBtn(it);
+  }
+
+  function learnQuiz(it) {
+    haptic("tap");
+    screen.innerHTML = `<button class="back" id="l-back">‹ К статье</button>
+      <div class="title">Проверка</div>
+      <p class="subtitle">${esc(it.question)}</p>
+      <div class="moves" id="l-opts">${it.options.map((o) => `<button class="move" data-idx="${o.idx}">${esc(o.text)}</button>`).join("")}</div>
+      <p class="muted" style="margin-top:12px">Одна попытка${it.reward ? ` · верно — +${it.reward} к рейтингу` : ""}</p>`;
+    $("#l-back").onclick = () => learnArticle(it.id);
+    $("#l-opts").onclick = async (e) => {
+      const b = e.target.closest("[data-idx]");
+      if (!b || $("#l-opts").classList.contains("locked")) return;
+      $("#l-opts").classList.add("locked");
+      b.classList.add("picked");
+      let r;
+      try { r = await api("learn/quiz", { id: it.id, idx: +b.dataset.idx }); }
+      catch (err) { $("#l-opts").classList.remove("locked"); return toast("Не получилось, попробуй ещё раз"); }
+      haptic(r.ok ? "success" : "error");
+      if (r.me) state.me = r.me;
+      learnData = r.learn;
+      const fresh = learnData.items.find((x) => x.id === it.id) || Object.assign(it, { answered: true, ok: r.ok, correct: r.correct });
+      fresh.delta = r.delta;
+      screen.innerHTML = `<button class="back" id="l-back">‹ Обучение</button>${learnResultHtml(fresh)}`;
+      $("#l-back").onclick = () => learnList();
+      learnNextBtn(fresh);
+    };
+  }
+
+  function learnResultHtml(it) {
+    return `<div class="fact ${it.ok ? "day" : ""}">
+        <span class="pill ${it.ok ? "" : "no"}">${it.ok ? "ВЕРНО" : "МИМО"}</span>
+        <div class="txt">${it.ok ? (it.delta ? `+${it.delta} к рейтингу` : "Так и есть") : "Правильный ответ: " + esc(it.correct || "")}</div>
+        <div class="src">${esc(it.question)}</div>
+      </div><div id="l-next"></div>`;
+  }
+
+  function learnNextBtn(it) {
+    const box = $("#l-next");
+    if (!box) return;
+    const next = learnData.items.find((x) => !x.answered && x.id !== it.id);
+    box.innerHTML = next
+      ? `<button class="btn big" id="l-go">Следующая статья</button>`
+      : `<button class="btn big" id="l-go">Готово на сегодня</button>`;
+    $("#l-go").onclick = () => (next ? learnArticle(next.id) : learnList());
   }
 
   // ---------- Достижения ----------
@@ -664,6 +743,12 @@
     { chat: "Мэтч. Пустой чат. Твой первый ход", moves: [["Привет", "?!", "«Привет» получает ответ реже, чем сообщение по анкете"], ["Вижу, ты любишь горы — где было самое красивое место?", "!!", "Зацепка за анкету + открытый вопрос"], ["Ты очень красивая", "??", "Комплимент внешности первым сообщением работает хуже всего"]] },
   ];
   const D = { rating: 87, solved: 5, streak: 3 };
+  const DEMO_ART = (id, text) => ({ id, text, tip: "После ответа спроси «а почему?»", source: "Huang и др., 2017", url: null, opened: false, answered: false, ok: null, correct: null, reward: 3, earned: false,
+    question: "Кто чаще получал второе свидание?", options: [{ idx: 1, text: "кто больше и подробнее рассказывал о себе" }, { idx: 0, text: "кто задавал больше уточняющих вопросов" }, { idx: 2, text: "кто чаще шутил и делал комплименты" }] });
+  const DEMO_LEARN = { per_day: 3, reward: 3, done: 0, total_read: 4, all: 36, items: [
+    DEMO_ART("a1", "Кто задаёт больше вопросов, особенно уточняющих, тот нравится собеседнику сильнее"),
+    DEMO_ART("a2", "После разговора люди стабильно недооценивают, насколько понравились собеседнику"),
+    DEMO_ART("a3", "Только около 2% разговоров заканчиваются тогда, когда этого хотят оба") ] };
   const demoRank = (r) => [...RANKS].reverse().find((x) => r >= x[2]);
   function demoMe() {
     const rk = demoRank(D.rating);
@@ -713,6 +798,14 @@
       const names = ["Дима", "Алина", "Кирилл", "Даня", "Соня", "Егор", "Вика"];
       const items = names.map((n, i) => ({ place: i + 1, name: n, points: 420 - i * 47, rank: demoRank(420 - i * 47)[0], me: false }));
       return { items, me: { place: 14, points: D.rating, total: 120 } };
+    }
+    if (path === "learn") return DEMO_LEARN;
+    if (path === "learn/open") return { ok: true };
+    if (path === "learn/quiz") {
+      const it = DEMO_LEARN.items.find((x) => x.id === body.id);
+      Object.assign(it, { answered: true, ok: body.idx === 0, correct: "кто задавал больше уточняющих вопросов", earned: body.idx === 0, reward: 0 });
+      DEMO_LEARN.done = DEMO_LEARN.items.filter((x) => x.answered).length;
+      return { ok: body.idx === 0, correct: it.correct, delta: body.idx === 0 ? 3 : 0, me: null, learn: DEMO_LEARN };
     }
     if (path === "facts") {
       const f = (t, tip, s) => ({ id: t, text: t, tip, source: s, url: null });

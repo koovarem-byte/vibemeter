@@ -16,6 +16,7 @@ from aiohttp import web
 from aiogram.utils.web_app import safe_parse_webapp_init_data
 
 import facts
+import learn
 import partii
 import puzzles
 import rating
@@ -36,6 +37,9 @@ from database import (
     chess_period_top,
     chess_profile,
     get_user,
+    learn_answer,
+    learn_open,
+    learn_state,
     log_event,
     mark_seen,
     touch_user,
@@ -91,7 +95,7 @@ async def play_auth(request, handler):
     if not request["tester"] and request.path not in OPEN_FOR_ALL:
         return error("beta_closed", 403)
     # задача, партия и состояние считаются заходом: серия дней и last_active, как в боте
-    if request.path in ("/play/api/state", "/play/api/move", "/play/api/partiya/move"):
+    if request.path in ("/play/api/state", "/play/api/move", "/play/api/partiya/move", "/play/api/learn/quiz"):
         await touch_user(user["telegram_id"])
         user = await get_user(user["telegram_id"]) or user
     else:
@@ -277,6 +281,62 @@ async def api_facts(request):
     return web.json_response({"day": fact_json(day), "items": [fact_json(f) for f in rest]})
 
 
+async def learn_json(uid: int) -> dict:
+    st = await learn_state(uid)
+    items = []
+    for a in learn.today_set(st["read"], st["today"]):
+        fid = a["id"]
+        q = learn.QUIZ[fid]
+        answered = st["quiz"].get(fid)
+        items.append({
+            **fact_json(a),
+            "opened": fid in st["today"],
+            "answered": answered is not None,
+            "ok": answered,
+            "question": q[0],
+            "options": learn.quiz_options(fid, uid),
+            "correct": q[1] if answered is not None else None,
+            # награда ещё возможна: за эту статью не давали (и сегодня не ответил мимо)
+            "reward": learn.REWARD if fid not in st["rewarded"] and answered is None else 0,
+            "earned": fid in st["rewarded"] and answered is True,
+        })
+    return {"items": items, "per_day": learn.PER_DAY, "reward": learn.REWARD,
+            "done": sum(1 for i in items if i["answered"]), "total_read": len(st["read"]),
+            "all": len(learn.articles())}
+
+
+async def api_learn(request):
+    return web.json_response(await learn_json(request["user"]["telegram_id"]))
+
+
+async def api_learn_open(request):
+    uid = request["user"]["telegram_id"]
+    fid = str((await request.json()).get("id", ""))
+    st = await learn_state(uid)
+    if fid not in {a["id"] for a in learn.today_set(st["read"], st["today"])}:
+        return error("not_today", 400)
+    await learn_open(uid, fid)
+    return web.json_response({"ok": True})
+
+
+async def api_learn_quiz(request):
+    user = request["user"]
+    uid = user["telegram_id"]
+    body = await request.json()
+    fid, idx = str(body.get("id", "")), body.get("idx")
+    st = await learn_state(uid)
+    if fid not in {a["id"] for a in learn.today_set(st["read"], st["today"])} or idx not in (0, 1, 2):
+        return error("bad_quiz", 400)
+    prev, earned = await learn_answer(uid, fid, idx == 0, learn.REWARD)
+    ok = prev if prev is not None else idx == 0
+    if prev is None:
+        await log_event(uid, "learn_quiz", f"{fid}:{'ok' if ok else 'no'}")
+    fresh = await get_user(uid) or user
+    done = await solved_puzzles(uid)
+    return web.json_response({"ok": ok, "correct": learn.QUIZ[fid][1], "delta": earned,
+                              "me": me_json(fresh, len(done)), "learn": await learn_json(uid)})
+
+
 async def api_profile(request):
     user = request["user"]
     done = await solved_puzzles(user["telegram_id"])
@@ -394,6 +454,9 @@ def setup_play(app: web.Application):
     app.router.add_get("/play/api/top", api_top)
     app.router.add_get("/play/api/facts", api_facts)
     app.router.add_get("/play/api/profile", api_profile)
+    app.router.add_get("/play/api/learn", api_learn)
+    app.router.add_post("/play/api/learn/open", api_learn_open)
+    app.router.add_post("/play/api/learn/quiz", api_learn_quiz)
     app.router.add_post("/play/api/beta/join", api_beta_join)
     app.router.add_post("/play/api/feedback", api_feedback)
     app.router.add_get("/play/api/partii", api_partii)

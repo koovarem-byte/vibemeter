@@ -540,6 +540,18 @@ async def init_db():
                 created_at TIMESTAMPTZ DEFAULT now()
             )
         """)
+        # 18.11: обучение — 3 статьи в день, проверка после каждой (learn.py)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS learn_log (
+                user_id BIGINT NOT NULL,
+                fact_id TEXT NOT NULL,
+                day DATE NOT NULL DEFAULT (now() AT TIME ZONE 'Europe/Moscow')::date,
+                quiz_ok BOOLEAN,
+                rewarded BOOLEAN NOT NULL DEFAULT FALSE,
+                created_at TIMESTAMPTZ DEFAULT now(),
+                PRIMARY KEY (user_id, fact_id, day)
+            )
+        """)
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS beta_feedback (
                 id BIGSERIAL PRIMARY KEY,
@@ -2744,6 +2756,59 @@ async def beta_add_feedback(user_id: int, stars: int | None, text: str) -> int:
         return await conn.fetchval(
             "INSERT INTO beta_feedback (user_id, stars, text) VALUES ($1, $2, $3) RETURNING id",
             user_id, stars, text)
+
+
+async def learn_state(user_id: int) -> dict:
+    """Обучение: все прочитанные статьи, открытые сегодня (по порядку) и ответы на проверку сегодня."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        rows = await conn.fetch(f"""
+            SELECT fact_id, day = {TODAY_MSK} AS today, quiz_ok, rewarded
+            FROM learn_log WHERE user_id = $1 ORDER BY created_at
+        """, user_id)
+    return {
+        "read": list(dict.fromkeys(r["fact_id"] for r in rows)),
+        "today": [r["fact_id"] for r in rows if r["today"]],
+        "quiz": {r["fact_id"]: r["quiz_ok"] for r in rows if r["today"]},
+        "rewarded": {r["fact_id"] for r in rows if r["rewarded"]},
+    }
+
+
+async def learn_open(user_id: int, fact_id: str):
+    db = await get_pool()
+    async with db.acquire() as conn:
+        await conn.execute(f"""
+            INSERT INTO learn_log (user_id, fact_id, day) VALUES ($1, $2, {TODAY_MSK})
+            ON CONFLICT DO NOTHING
+        """, user_id, fact_id)
+
+
+async def learn_answer(user_id: int, fact_id: str, ok: bool, reward: int) -> tuple[bool | None, int]:
+    """Ответ на проверку (одна попытка). Награда — только если верно и за эту статью ещё не давали.
+    Возвращает (уже был ответ: прежний quiz_ok или None, сколько начислено)."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        async with conn.transaction():
+            row = await conn.fetchrow(f"""
+                SELECT quiz_ok FROM learn_log WHERE user_id = $1 AND fact_id = $2 AND day = {TODAY_MSK}
+                FOR UPDATE
+            """, user_id, fact_id)
+            if row is None:
+                await conn.execute(f"INSERT INTO learn_log (user_id, fact_id, day) VALUES ($1, $2, {TODAY_MSK})",
+                                   user_id, fact_id)
+            elif row["quiz_ok"] is not None:
+                return row["quiz_ok"], 0
+            earned = 0
+            if ok and not await conn.fetchval(
+                    "SELECT 1 FROM learn_log WHERE user_id = $1 AND fact_id = $2 AND rewarded", user_id, fact_id):
+                earned = reward
+                await conn.execute("UPDATE users SET chess_rating = chess_rating + $2 WHERE telegram_id = $1",
+                                   user_id, earned)
+            await conn.execute(f"""
+                UPDATE learn_log SET quiz_ok = $3, rewarded = $4
+                WHERE user_id = $1 AND fact_id = $2 AND day = {TODAY_MSK}
+            """, user_id, fact_id, ok, earned > 0)
+    return None, earned
 
 
 async def beta_feedback_recipients(hours: int = 20) -> list[int]:
