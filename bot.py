@@ -207,6 +207,8 @@ async def run_polling():
     await web.TCPSite(runner, host="0.0.0.0", port=PORT).start()
 
     print(f"HTTP server started on port {PORT}")
+    from database import db_host
+    print(f"База: {db_host()}")
 
     await init_db()
     await load_emoji_pack(bot)
@@ -244,6 +246,33 @@ async def _stop_polling():
         pass  # polling ещё не запущен — ждём перезапуска, его прервёт _stop
 
 
+_last_crash_notice = 0.0
+
+
+async def _tell_admin_crash(err: Exception):
+    """Бот не поднялся (обычно — база): пишем админу напрямую, без базы. Не чаще раза в 30 минут."""
+    global _last_crash_notice
+    import html
+    import time
+    from database import db_host
+    if time.time() - _last_crash_notice < 1800:
+        return
+    _last_crash_notice = time.time()
+    text = (
+        "⚠️ Бот не запускается и перезапускается каждые 15 секунд\n\n"
+        f"Ошибка: <code>{html.escape(type(err).__name__)}: {html.escape(str(err)[:300])}</code>\n"
+        f"База (DATABASE_URL): <code>{html.escape(db_host())}</code>"
+    )
+    try:
+        tmp = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
+        try:
+            await tmp.send_message(ADMIN_ID, text)
+        finally:
+            await tmp.session.close()
+    except Exception:
+        logging.warning("Не удалось написать админу о падении")
+
+
 async def run_forever():
     """Процесс не должен умирать: если при старте Telegram или Neon на миг
     недоступны (или что-то упало), поднимаемся заново через 15 секунд."""
@@ -256,8 +285,9 @@ async def run_forever():
     while not _stop.is_set():
         try:
             await (run_webhook() if WEBHOOK_BASE_URL else run_polling())
-        except Exception:
+        except Exception as err:
             logging.exception("Бот упал, перезапуск через 15 секунд")
+            await _tell_admin_crash(err)
         if _stop.is_set():
             return
         try:

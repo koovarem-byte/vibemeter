@@ -10,7 +10,15 @@ load_dotenv()
 def _clean_dsn(dsn: str | None) -> str | None:
     """Neon в строке подключения даёт channel_binding=require — asyncpg его не знает
     и шлёт серверу как настройку («unrecognized configuration parameter»). Убираем."""
-    if not dsn or "?" not in dsn:
+    if not dsn:
+        return dsn
+    # частые ошибки вставки в панель хостинга: кавычки, пробелы, «DATABASE_URL=» в начале
+    dsn = dsn.strip().strip("'\"").strip()
+    if dsn.upper().startswith("DATABASE_URL="):
+        dsn = dsn.split("=", 1)[1].strip().strip("'\"")
+    if dsn.startswith("psql "):
+        dsn = dsn[5:].strip().strip("'\"")
+    if "?" not in dsn:
         return dsn
     from urllib.parse import parse_qsl, urlencode
     base, _, query = dsn.partition("?")
@@ -23,6 +31,16 @@ _pool = None
 
 # «навсегда» для VIP девушек
 VIP_FOREVER = "2099-01-01"
+
+
+def db_host() -> str:
+    """Хост базы без пароля — для логов и сообщений админу."""
+    from urllib.parse import urlparse
+    try:
+        u = urlparse(DATABASE_URL or "")
+        return f"{u.hostname or '?'} / {(u.path or '/').lstrip('/') or '?'}"
+    except Exception:
+        return "?"
 
 
 async def get_pool():
