@@ -256,7 +256,15 @@ async def api_top(request):
     if mine is None and period == "all":
         place, total = await chat_place(me_id)
         mine = {"place": place, "points": user["chess_rating"] or 0, "total": total} if place else None
-    return web.json_response({"items": items, "me": mine})
+    owner = None
+    if period == "all":
+        o = await get_user(ADMIN_ID)
+        if o:
+            owner = {"name": first_name(o["full_name"]), "points": o["chess_rating"] or 0,
+                     "rank": puzzles.rank(o["chess_rating"] or 0), "me": o["telegram_id"] == me_id}
+    if me_id == ADMIN_ID:
+        mine = None
+    return web.json_response({"items": items, "me": mine, "owner": owner})
 
 
 def fact_json(f) -> dict:

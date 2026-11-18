@@ -101,6 +101,12 @@ async def finish_abandoned(game):
         await conn.execute("UPDATE chat_games SET status = 'abandoned' WHERE id = $1", game["id"])
 
 
+async def _owner():
+    """Автор игры — в топе отдельной строкой."""
+    from config import ADMIN_ID
+    return await get_user(ADMIN_ID)
+
+
 async def _registered(message: Message) -> bool:
     if await get_user(message.from_user.id):
         return True
@@ -459,7 +465,7 @@ async def top_cmd(message: Message, state: FSMContext):
     await state.clear()
     user = await get_user(message.from_user.id)
     place, total = await chat_place(message.from_user.id)
-    await message.answer(ui.trainer_top(await chat_top(20), place, total, user["chess_rating"]),
+    await message.answer(ui.trainer_top(await chat_top(20), place, total, user["chess_rating"], await _owner()),
                          reply_markup=after_game_keyboard())
 
 
@@ -469,7 +475,7 @@ async def top_cb(callback: CallbackQuery):
     user = await get_user(callback.from_user.id)
     place, total = await chat_place(callback.from_user.id)
     await callback.message.answer(
-        ui.trainer_top(await chat_top(20), place, total, (user or {}).get("chess_rating") or 0),
+        ui.trainer_top(await chat_top(20), place, total, (user or {}).get("chess_rating") or 0, await _owner()),
         reply_markup=after_game_keyboard())
 
 

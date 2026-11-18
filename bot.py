@@ -84,17 +84,68 @@ def get_bot_and_dispatcher():
     return _bot_dp
 
 
+def _emoji_vec(data: bytes):
+    """Картинка 24×24 на чёрном фоне -> вектор для сравнения."""
+    import io
+    from PIL import Image
+    im = Image.open(io.BytesIO(data)).convert("RGBA").resize((24, 24))
+    bg = Image.new("RGBA", im.size, (0, 0, 0, 255))
+    bg.alpha_composite(im)
+    return list(bg.convert("RGB").getdata())
+
+
+def _match_pack(remote: dict) -> dict:
+    """{custom_emoji_id: вектор} -> {имя: custom_emoji_id}: каждую картинку пака
+    сопоставляем с нашим файлом assets/emoji/pack_100/NN_имя.png (порядок в паке не важен)."""
+    from pathlib import Path
+    local = {}
+    for f in sorted((Path(__file__).parent / "assets" / "emoji" / "pack_100").glob("*.png")):
+        local[f.stem.split("_", 1)[1]] = _emoji_vec(f.read_bytes())
+    pairs = []
+    for name, lv in local.items():
+        for eid, rv in remote.items():
+            d = sum(abs(a - b) for p, q in zip(lv, rv) for a, b in zip(p, q))
+            pairs.append((d, name, eid))
+    pairs.sort()
+    out, used = {}, set()
+    for d, name, eid in pairs:
+        if name not in out and eid not in used:
+            out[name] = eid
+            used.add(eid)
+    return out
+
+
 async def load_emoji_pack(bot):
-    """Пак «Шах и Чат»: id эмодзи из Telegram -> ui.NEON (тексты и иконки кнопок)."""
+    """Пак «Шах и Чат»: иконки по совпадению картинок -> ui.NEON (тексты, кнопки, меню).
+    Сопоставление кэшируется в app_state, пока состав пака тот же."""
+    import io
+    import json
+    from database import get_app_state, set_app_state
     try:
         pack = await bot.get_sticker_set(ui.EMOJI_PACK)
-        n = ui.load_pack(pack.stickers)
-        logging.info("Эмодзи «%s»: %s из %s", ui.EMOJI_PACK, n, len(pack.stickers))
-        if len(pack.stickers) != len(ui.PACK_ORDER):
-            logging.warning("Эмодзи: в паке %s, ожидалось %s — старые иконки не заменены, проверь /emojiset %s",
-                            len(pack.stickers), len(ui.PACK_ORDER), ui.EMOJI_PACK)
+        ids = [st.custom_emoji_id for st in pack.stickers if st.custom_emoji_id]
+        sig = ",".join(ids)
+        cached = await get_app_state("emoji_map")
+        mapping = None
+        if cached:
+            data = json.loads(cached)
+            if data.get("sig") == sig:
+                mapping = data["map"]
+        if mapping is None:
+            remote = {}
+            for st in pack.stickers:
+                buf = io.BytesIO()
+                await bot.download(st.file_id, destination=buf)
+                try:
+                    remote[st.custom_emoji_id] = _emoji_vec(buf.getvalue())
+                except Exception:
+                    logging.warning("Эмодзи: не открылась картинка %s", st.custom_emoji_id)
+            mapping = _match_pack(remote)
+            await set_app_state("emoji_map", json.dumps({"sig": sig, "map": mapping}))
+        n = ui.load_pack_map(mapping)
+        logging.info("Эмодзи «%s»: сопоставлено %s из %s", ui.EMOJI_PACK, n, len(pack.stickers))
     except Exception:
-        logging.warning("Эмодзи: пак %s не загрузился, остаются старые", ui.EMOJI_PACK)
+        logging.exception("Эмодзи: пак %s не загрузился, остаются старые", ui.EMOJI_PACK)
 
 
 async def setup_profile(bot):

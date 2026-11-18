@@ -94,9 +94,18 @@ def vibe_hour_on_keyboard():
 
 def main_menu():
     """Главное меню тренажёра «Шах и чат» (ТЗ 16.11)."""
+    base = (os.getenv("WEBAPP_URL") or "").rstrip("/")
+    if base.endswith("/app"):
+        base = base[:-4]
+    top = [menu_btn(ui.MENU_PLAY)]
+    if base:
+        # игра в Mini App — прямо из нижнего меню
+        top.insert(0, KeyboardButton(text=ui.MENU_APP, web_app=WebAppInfo(url=f"{base}/play/"),
+                                     icon_custom_emoji_id=ui.icon(ui.MENU_ICONS.get(ui.MENU_APP, "crown")),
+                                     style=PRIMARY))
     return ReplyKeyboardMarkup(
         keyboard=[
-            [menu_btn(ui.MENU_PLAY)],
+            top,
             [menu_btn(ui.MENU_DAILY), menu_btn(ui.MENU_RAZBOR)],
             [menu_btn(ui.MENU_BAZA), menu_btn(ui.MENU_ASK)],
             [menu_btn(ui.MENU_ME), menu_btn(ui.MENU_TOP)],
@@ -485,7 +494,7 @@ def play_button():
 
 
 def situations_keyboard(items):
-    keyboard = [[btn(f"{s.get('title') or s['key']} {'★' * stars(s['difficulty'])}", f"play:{s['key']}")]
+    keyboard = [[btn(f"{ui.unquote(s.get('title') or s['key'])} {'★' * stars(s['difficulty'])}", f"play:{s['key']}")]
                 for s in sorted(items, key=lambda s: s["difficulty"])]
     keyboard.append([btn(ui.BTN_RANDOM, "play:random", neon="spark")])
     return InlineKeyboardMarkup(inline_keyboard=keyboard)

@@ -64,6 +64,12 @@ PACK_ALIASES = {
 }
 
 
+MENU_PACK_ICONS = {
+    "Играть": "knight", "Открыть игру": "board", "Задача дня": "daily", "Разбор переписки": "chat_w",
+    "База ходов": "target", "Вопрос автору": "bell", "Мой рейтинг": "rating", "Топ игроков": "trophy_w",
+}
+
+
 def load_pack(stickers) -> int:
     """id эмодзи пака по порядку загрузки -> NEON. Возвращает, сколько подставлено."""
     n = 0
@@ -72,9 +78,26 @@ def load_pack(stickers) -> int:
             NEON[name] = (st.custom_emoji_id, fallback)
             n += 1
     if n == len(PACK_ORDER):
-        for old, new in PACK_ALIASES.items():
-            NEON[old] = (NEON[new][0], NEON[old][1])
+        apply_pack()
     return n
+
+
+def apply_pack():
+    """Старые имена и меню -> иконки пака (зелёный стиль)."""
+    for old, new in PACK_ALIASES.items():
+        NEON[old] = (NEON[new][0], NEON[old][1])
+    MENU_ICONS.update(MENU_PACK_ICONS)
+
+
+def load_pack_map(mapping: dict) -> int:
+    """Пак по совпадению картинок: {имя: custom_emoji_id}."""
+    fb = dict(PACK_ORDER)
+    for name, eid in mapping.items():
+        if name in fb:
+            NEON[name] = (eid, fb[name])
+    if len(mapping) >= len(PACK_ORDER) - 2:
+        apply_pack()
+    return len(mapping)
 
 
 def e(name: str) -> str:
@@ -135,6 +158,7 @@ MENU_SETTINGS = "Настройки"
 MENU_INVITE = "Позвать подругу"
 MENU_CHESS = "Шах и чат"
 MENU_PLAY = "Играть"
+MENU_APP = "Открыть игру"
 MENU_DAILY = "Задача дня"
 MENU_RAZBOR = "Разбор переписки"
 MENU_BAZA = "База ходов"
@@ -247,7 +271,7 @@ BTN_BLOCKED = "Заблокированные"
 BTN_DELETE = "Удалить профиль"
 BTN_DELETE_YES = "Да, удалить"
 BTN_BACK = "Назад"
-BTN_ACCEPT = "Мне есть 18, поехали"
+BTN_ACCEPT = "Мне есть 14, поехали"
 BTN_POLICY = "Политика"
 BTN_MALE = "Парень"
 BTN_FEMALE = "Девушка"
@@ -272,13 +296,11 @@ REPORT_REASONS = {
 # =========================================================
 
 CONSENT = (
-    "Привет. Тут тренируют переписку\n\n"
-    "Я играю за неё, ты отвечаешь как умеешь. Каждому ходу ставлю оценку, как в шахматах: "
-    "?? зевок, ? слабый, ! хороший, !! блестящий, # мат\n\n"
-    "🤖 Это тренажёр с ИИ, а не живая девушка\n"
-    "🔞 Только 18+\n"
-    "🗑 Данные можно удалить в любой момент\n\n"
-    "Согласен с /privacy и тебе есть 18? Поехали"
+    "Привет. Тут тренируют переписку ♟\n\n"
+    "Она пишет — ты ходишь, я ставлю оценку как в шахматах: !! или ?? зевок\n\n"
+    "🤖 Это тренажёр, а не живая девушка\n"
+    "🔞 С 14 лет\n\n"
+    "Согласен с /privacy? Поехали"
 )
 
 PRIVACY = (
@@ -298,7 +320,7 @@ PRIVACY = (
     "<b>Где хранится:</b> в базе данных бота (Neon, PostgreSQL)\n\n"
     "<b>Удаление:</b> Настройки → Удалить профиль. "
     "Анкета, фото, лайки, вопросы, игры, тесты и тайные симпатии удаляются\n\n"
-    "<b>Возраст:</b> только 18+, анкеты младше 18 не сохраняем\n\n"
+    "<b>Возраст:</b> с 14 лет\n\n"
     "Вопросы по данным можно задать администратору бота"
 )
 
@@ -1186,7 +1208,7 @@ BOT_DESCRIPTION = (
     "?? зевок · ? слабый · ! хороший · !! блестящий · # мат\n"
     "🔥 Задача дня, рейтинг от Пешки до Гроссмейстера\n"
     "📋 Разбор твоей переписки и база готовых ходов\n\n"
-    "Это ИИ, а не живая девушка. Только 18+\n"
+    "Это ИИ, а не живая девушка. С 14 лет\n"
     "Канал: t.me/shahichat\n\n"
     "Жми «Старт» 👇"
 )
@@ -1215,32 +1237,25 @@ BTN_FACT = "Факт об общении"
 
 def puzzle_text(puzzle, number: int, rating: int, rank: str) -> str:
     return (
-        f"{title('crown', f'Шах и чат · задача {number}')}\n\n"
-        f"<blockquote>{esc(puzzle['chat'])}</blockquote>\n\n"
-        "Твой ход? Выбери ответ — оценю как в шахматах: !! бриллиант, ! хорошо, ?! сомнительно, ?? зевок\n\n"
-        f"{e('fire')} Рейтинг: <b>{rating}</b> · {rank}"
+        f"{title('daily', f'Задача {number}')}\n\n"
+        f"<blockquote>{esc(unquote(puzzle['chat']))}</blockquote>\n\n"
+        f"Твой ход 👇 · {rating} · {rank}"
     )
+
+
+def unquote(text: str) -> str:
+    """Без «ёлочек» и скобок-кавычек: «Она: «Ок»» -> «Она: Ок»."""
+    return text.replace("«", "").replace("»", "").replace('"', "")
 
 
 def puzzle_result(move: str, mark: str, name: str, why: str, best: str, delta: int, rating: int, rank: str,
                   others: list | None = None) -> str:
-    def q(text):
-        return esc(text) if text.startswith(("«", "(")) else f"«{esc(text)}»"
-
     sign = f"+{delta}" if delta > 0 else ("±0" if delta == 0 else str(delta))
-    lines = [
-        f"<b>{mark} {name}</b>",
-        "",
-        f"Твой ход: {q(move)}",
-        f"💡 {esc(why)}",
-    ]
-    if mark != "!!":
-        lines += ["", f"Лучший ход: {q(best)}"]
+    lines = [f"<b>{mark} {name}</b> · {sign} · {rating}", esc(unquote(why))]
     if others:
-        lines += ["", "<b>Разбор остальных ходов</b>"]
+        lines.append("")
         for text, m, w in others:
-            lines.append(f"{m} {q(text)} — {esc(w)}")
-    lines += ["", f"{e('fire')} Рейтинг: <b>{rating}</b> ({sign}) · {rank}"]
+            lines.append(f"<b>{m}</b> {esc(unquote(text))} — <i>{esc(unquote(w))}</i>")
     return "\n".join(lines)
 
 
@@ -1388,10 +1403,9 @@ BTN_ASK_FORWARD = "Передать автору"
 BTN_PLAY = "Играть"
 
 TRAINER_WELCOME = (
-    "Привет. Тут тренируют переписку\n\n"
-    "Я играю за неё, ты отвечаешь как умеешь. Каждому ходу ставлю оценку, как в шахматах\n\n"
-    "Рейтинг с 0: от Пешки до Гроссмейстера (1500)\n\n"
-    "Погнали? –> /play"
+    "Готово ♟\n\n"
+    "Жми «Открыть игру» — там партии как в шахматах и рейтинг Эло. "
+    "Или «Играть» — задачи прямо тут"
 )
 
 PLAY_CHOOSE = "Выбирай партию. Звёзды — сложность: чем больше, тем больше очков за победу"
@@ -1527,8 +1541,10 @@ def trainer_me(rating: int, rank: str, streak: int, games: int, wins: int, best:
     return "\n".join(lines)
 
 
-def trainer_top(rows, place: int, total: int, rating: int) -> str:
+def trainer_top(rows, place: int, total: int, rating: int, owner: dict | None = None) -> str:
     lines = ["🏆 <b>Топ-20</b>", ""]
+    if owner:
+        lines += [f"👑 Автор игры: {esc(owner.get('full_name') or 'Артемий')} · {owner.get('chess_rating') or 0}", ""]
     medals = ["🥇", "🥈", "🥉"]
     for i, r in enumerate(rows):
         mark = medals[i] if i < 3 else f"{i + 1}."

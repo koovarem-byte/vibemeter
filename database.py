@@ -7,6 +7,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# владелец (ADMIN_ID) в топе отдельной строкой «Автор игры», мест не занимает
+OWNER_ID = int(os.getenv("ADMIN_ID") or 0)
+
+
 def _clean_dsn(dsn: str | None) -> str | None:
     """Neon в строке подключения даёт channel_binding=require — asyncpg его не знает
     и шлёт серверу как настройку («unrecognized configuration parameter»). Убираем."""
@@ -106,6 +110,17 @@ async def _recount_elo(conn):
         marks = [m.get("badge") for m in hist if m.get("who") == "me"]
         events.append((g["finished_at"], g["user_id"], max(0, g["difficulty"] - 1000),
                        rating.game_score(marks), False, g["id"]))
+    import partii
+    for g in await conn.fetch("""
+        SELECT id, user_id, partiya, moves, finished_at FROM app_games
+        WHERE status = 'finished' AND rated AND finished_at IS NOT NULL
+    """):
+        p = partii.BY_ID.get(g["partiya"])
+        if not p:
+            continue
+        moves = g["moves"] if isinstance(g["moves"], list) else json.loads(g["moves"] or "[]")
+        events.append((g["finished_at"], g["user_id"], p["rating"],
+                       rating.game_score([m["mark"] for m in moves]), False, ("app", g["id"])))
     events.sort(key=lambda e: e[0])
     ratings: dict[int, int] = {}
     counts: dict[int, int] = {}
@@ -113,7 +128,10 @@ async def _recount_elo(conn):
         before = ratings.get(uid, 0)
         after = rating.update(before, opp, score, counts.get(uid, 0), blitz)
         ratings[uid], counts[uid] = after, counts.get(uid, 0) + 1
-        if game_id:
+        if isinstance(game_id, tuple):
+            await conn.execute("UPDATE app_games SET rating_before = $2, rating_after = $3 WHERE id = $1",
+                               game_id[1], before, after)
+        elif game_id:
             await conn.execute("UPDATE chat_games SET rating_before = $2, rating_after = $3 WHERE id = $1",
                                game_id, before, after)
     await conn.execute("UPDATE users SET chess_rating = 0")
@@ -534,6 +552,12 @@ async def init_db():
         # 17.11 (владелец): рейтинг — Эло с 0 (rating.py). Один раз пересчитываем всем по истории
         if await conn.fetchval("""
             INSERT INTO app_state (key, value) VALUES ('chess_rating_elo0', '1')
+            ON CONFLICT (key) DO NOTHING RETURNING key
+        """):
+            await _recount_elo(conn)
+        # 18.11: K меньше (20/10) — рейтинг медленнее; пересчёт всем один раз
+        if await conn.fetchval("""
+            INSERT INTO app_state (key, value) VALUES ('chess_rating_elo1', '1')
             ON CONFLICT (key) DO NOTHING RETURNING key
         """):
             await _recount_elo(conn)
@@ -2396,9 +2420,9 @@ async def chat_top(limit: int = 20) -> list[dict]:
     """Топ по рейтингу: кто сыграл хотя бы партию или задачу. Только имя (без @username)."""
     db = await get_pool()
     async with db.acquire() as conn:
-        rows = await conn.fetch("""
+        rows = await conn.fetch(f"""
             SELECT u.telegram_id, u.full_name, u.chess_rating FROM users u
-            WHERE NOT u.is_banned AND (
+            WHERE NOT u.is_banned AND u.telegram_id <> {OWNER_ID} AND (
                 EXISTS (SELECT 1 FROM chat_games g WHERE g.user_id = u.telegram_id AND g.status = 'finished')
                 OR EXISTS (SELECT 1 FROM puzzle_answers p WHERE p.user_id = u.telegram_id)
                 OR EXISTS (SELECT 1 FROM chat_daily d WHERE d.user_id = u.telegram_id))
@@ -2410,10 +2434,10 @@ async def chat_top(limit: int = 20) -> list[dict]:
 async def chat_place(user_id: int) -> tuple[int, int]:
     db = await get_pool()
     async with db.acquire() as conn:
-        row = await conn.fetchrow("""
+        row = await conn.fetchrow(f"""
             WITH players AS (
                 SELECT u.telegram_id, u.chess_rating FROM users u
-                WHERE NOT u.is_banned AND (
+                WHERE NOT u.is_banned AND u.telegram_id <> {OWNER_ID} AND (
                     EXISTS (SELECT 1 FROM chat_games g WHERE g.user_id = u.telegram_id AND g.status = 'finished')
                     OR EXISTS (SELECT 1 FROM puzzle_answers p WHERE p.user_id = u.telegram_id)
                     OR EXISTS (SELECT 1 FROM chat_daily d WHERE d.user_id = u.telegram_id))
@@ -2530,9 +2554,9 @@ async def chess_period_top(days: int | None, limit: int = 50) -> list[dict]:
     db = await get_pool()
     async with db.acquire() as conn:
         if days is None:
-            rows = await conn.fetch("""
+            rows = await conn.fetch(f"""
                 SELECT u.telegram_id, u.full_name, u.chess_rating AS points, u.chess_rating FROM users u
-                WHERE NOT u.is_banned AND (
+                WHERE NOT u.is_banned AND u.telegram_id <> {OWNER_ID} AND (
                     EXISTS (SELECT 1 FROM chat_games g WHERE g.user_id = u.telegram_id AND g.status = 'finished')
                     OR EXISTS (SELECT 1 FROM puzzle_answers p WHERE p.user_id = u.telegram_id))
                 ORDER BY u.chess_rating DESC, u.telegram_id LIMIT $1
@@ -2542,7 +2566,7 @@ async def chess_period_top(days: int | None, limit: int = 50) -> list[dict]:
                 WITH ev AS ({_POINTS_EVENTS})
                 SELECT u.telegram_id, u.full_name, SUM(ev.pts)::int AS points, u.chess_rating
                 FROM ev JOIN users u ON u.telegram_id = ev.user_id
-                WHERE NOT u.is_banned
+                WHERE NOT u.is_banned AND u.telegram_id <> {OWNER_ID}
                   AND (ev.at AT TIME ZONE 'Europe/Moscow')::date > {TODAY_MSK} - $2::int
                 GROUP BY u.telegram_id, u.full_name, u.chess_rating
                 HAVING SUM(ev.pts) > 0

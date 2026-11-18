@@ -3,3 +3,4 @@ aiohttp==3.12.15
 asyncpg==0.32.0
 python-dotenv==1.1.1
 anthropic>=2.9,<3
+Pillow>=11,<13

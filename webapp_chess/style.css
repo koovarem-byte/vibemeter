@@ -331,3 +331,6 @@ body.with-beta .screen { padding-top: 56px; }
 body.in-battle .tabs { display: none; }
 body.in-battle .screen { padding-bottom: calc(24px + var(--safe-b)); }
 .board { height: clamp(230px, 44vh, 420px); }
+
+.li.owner { margin-bottom: 10px; border-color: var(--gold) !important; background: linear-gradient(90deg, rgba(242, 201, 76, .14), var(--panel)) padding-box, linear-gradient(135deg, #f2c94c, rgba(242, 201, 76, .2)) border-box !important; }
+.li.owner .ic { width: 34px; height: 34px; }

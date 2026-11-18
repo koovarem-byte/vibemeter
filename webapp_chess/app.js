@@ -236,12 +236,13 @@
     try { data = await api("top?period=" + topPeriod); } catch (e) { $("#top-body").innerHTML = errorHtml(); return; }
     if (tab !== "top") return;
     const pts = (n) => (topPeriod === "all" ? n : (n > 0 ? "+" : "") + n);
-    if (!data.items.length) {
+    if (!data.items.length && !data.owner) {
       $("#top-body").innerHTML = `<div class="empty"><img src="${LOGO}" alt=""><p class="muted">${topPeriod === "all" ? "Пока никто не играл" : "За этот период ещё никто не набрал очков"}. Стань первым</p></div>`;
       return;
     }
     const mineVisible = data.items.some((it) => it.me);
-    $("#top-body").innerHTML = `
+    const ownerRow = data.owner ? `<div class="li owner">${icon("crown_gold", "ic")}<div class="nm"><b>${esc(data.owner.name)}${data.owner.me ? " (ты)" : ""}</b><span>Автор игры · вне рейтинга</span></div><div class="pt">${data.owner.points}</div></div>` : "";
+    $("#top-body").innerHTML = ownerRow + `
       <div class="list">${data.items.map((it) => liHtml(it, pts)).join("")}</div>
       ${!mineVisible && data.me ? `<div class="me-pin">${liHtml({ ...data.me, name: "Ты", me: true, rank: state.me.rank }, pts)}</div>` : ""}
       ${!data.me ? `<p class="muted" style="text-align:center;margin-top:16px">Реши задачу — и ты в рейтинге</p>` : ""}`;
