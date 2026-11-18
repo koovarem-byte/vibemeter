@@ -1143,7 +1143,7 @@ async def show_puzzle(message: Message, user_id: int, first: int | None = None):
     left = [i for i in order if i not in done]
     if not left:
         await message.answer(ui.PUZZLES_DONE)
-        await message.answer(facts.render(facts.random_fact()), reply_markup=puzzle_after_keyboard())
+        await message.answer(ui.fact_head(facts.render(facts.random_fact())), reply_markup=puzzle_after_keyboard())
         return
     pid = left[0]
     rating = user.get("chess_rating") or 0
@@ -1220,7 +1220,7 @@ async def puzzle_notify_on(message: Message):
 @router.callback_query(F.data == "fact")
 async def fact_callback(callback: CallbackQuery):
     await callback.answer()
-    await callback.message.answer(facts.render(facts.random_fact()), reply_markup=puzzle_after_keyboard())
+    await callback.message.answer(ui.fact_head(facts.render(facts.random_fact())), reply_markup=puzzle_after_keyboard())
 
 
 # =========================================================

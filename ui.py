@@ -72,6 +72,11 @@ MENU_PACK_ICONS = {
 }
 
 
+# имена файлов assets/emoji/pack_100 -> имена в PACK_ORDER (кэш сопоставления хранит имена файлов)
+FILE_NAMES = {"fire": "fire_g", "trophy": "trophy_w", "star": "star_w", "bolt": "bolt_g", "chat": "chat_w",
+              "crown": "crown_gold"}
+
+
 def load_pack(stickers) -> int:
     """id эмодзи пака по порядку загрузки -> NEON. Возвращает, сколько подставлено."""
     n = 0
@@ -80,34 +85,45 @@ def load_pack(stickers) -> int:
             NEON[name] = (st.custom_emoji_id, fallback)
             PACK_LOADED.add(name)
             n += 1
-    if n == len(PACK_ORDER):
+    if n:
         apply_pack()
     return n
 
 
 def apply_pack():
-    """Старые имена и меню -> иконки пака (зелёный стиль)."""
-    for old, new in PACK_ALIASES.items():
-        NEON[old] = (NEON[new][0], NEON[old][1])
+    """Меню -> иконки пака, тексты-константы пересобрать с иконками."""
     MENU_ICONS.update(MENU_PACK_ICONS)
+    refresh_texts()
 
 
 def load_pack_map(mapping: dict) -> int:
-    """Пак по совпадению картинок: {имя: custom_emoji_id}."""
+    """Пак по совпадению картинок: {имя файла или имя пака: custom_emoji_id}."""
     fb = dict(PACK_ORDER)
+    n = 0
     for name, eid in mapping.items():
+        name = FILE_NAMES.get(name, name)
         if name in fb:
             NEON[name] = (eid, fb[name])
             PACK_LOADED.add(name)
-    if len(mapping) >= len(PACK_ORDER) - 2:
+            n += 1
+    if n:
         apply_pack()
-    return len(mapping)
+    return n
+
+
+def _pack_name(name: str) -> str | None:
+    """Имя -> иконка нашего пака, если она загружена. Старый неоновый набор не используем (18.11)."""
+    n = PACK_ALIASES.get(name, name)
+    return n if n in PACK_LOADED else None
 
 
 def e(name: str) -> str:
-    """Неоновый эмодзи в тексте (HTML)."""
-    emoji_id, fallback = NEON[name]
-    return f'<tg-emoji emoji-id="{emoji_id}">{fallback}</tg-emoji>'
+    """Эмодзи в тексте (HTML): иконка пака «Шах и Чат», иначе обычный эмодзи."""
+    n = _pack_name(name)
+    fallback = NEON[name][1] if name in NEON else ""
+    if not n:
+        return fallback
+    return f'<tg-emoji emoji-id="{NEON[n][0]}">{fallback or NEON[n][1]}</tg-emoji>'
 
 
 # значки ходов -> иконки пака (01–05: !! ! ?! ?? #); «!?» и «?» рисуем ближайшими
@@ -119,7 +135,7 @@ MARK_FALLBACK = {"!!": "‼️", "!": "❗", "!?": "⁉️", "?!": "⁉️", "?"
 def mark(m: str) -> str:
     """Значок хода в тексте: иконка из пака «Шах и Чат», пока пака нет — сам знак."""
     name = MARK_ICONS.get(m)
-    if name and name in PACK_LOADED:
+    if name in PACK_LOADED:
         return f'<tg-emoji emoji-id="{NEON[name][0]}">{MARK_FALLBACK[m]}</tg-emoji>'
     return f"<b>{escape(m)}</b>"
 
@@ -135,14 +151,15 @@ RANK_ICONS = {"Пешка": "pawn", "Конь": "knight", "Слон": "bishop", 
 
 def rank_icon(rank: str) -> str:
     name = RANK_ICONS.get(rank)
-    if name and name in PACK_LOADED:
+    if name in PACK_LOADED:
         return e(name)
     return RANK_EMOJI.get(rank, "♟")
 
 
-def icon(name: str) -> str:
-    """id неонового эмодзи для иконки кнопки."""
-    return NEON[name][0]
+def icon(name: str) -> str | None:
+    """id иконки кнопки из пака; None — кнопка без иконки (старый набор не показываем)."""
+    n = _pack_name(name)
+    return NEON[n][0] if n else None
 
 
 def title(name: str, text: str) -> str:
@@ -1328,7 +1345,7 @@ PZ_ON = "Снова буду напоминать о задаче дня в 13:0
 
 def chess_reminder(rating: int, rank: str) -> str:
     return (
-        f"{title('crown', 'Задача дня ждёт')}\n\n"
+        f"{title('daily', 'Задача дня ждёт')}\n\n"
         "Новая переписка — твой ход. Минута, и рейтинг подрастёт\n\n"
         f"{e('fire')} Сейчас: <b>{rating}</b> · {rank}"
     )
@@ -1354,7 +1371,7 @@ def beta_feedback_reminder() -> str:
         "Сыграй пару партий в игре и напиши пару слов: что зашло, что сломалось, чего не хватает\n\n"
         "Читаю каждый отзыв сам — по ним и доделываем игру 🙏"
     )
-BETA_OPEN = "♟ Тест закончился — игра открыта для всех. Жми 👇"
+BETA_OPEN = e("knight") + " Тест закончился — игра открыта для всех. Жми 👇"
 
 
 def beta_in(num: int, slots: int) -> str:
@@ -1424,15 +1441,20 @@ def my_rating(rating: int, rank: str, solved: int, total: int, brilliant: int, p
         title("star", "Мой рейтинг"),
         "",
         f"{e('fire')} Рейтинг: <b>{rating}</b> · {rank}",
-        f"♟ Решено задач: <b>{solved}</b> из {total}",
-        f"💎 Бриллиантов: <b>{brilliant}</b>",
+        f"{e('board')} Решено задач: <b>{solved}</b> из {total}",
+        f"{mark('!!')} Бриллиантов: <b>{brilliant}</b>",
     ]
-    lines.append(f"🏆 Место: <b>{place}</b> из {players}" if place else "🏆 Реши первую задачу — и ты в топе")
+    lines.append(f"{e('trophy_w')} Место: <b>{place}</b> из {players}" if place else f"{e('trophy_w')} Реши первую задачу — и ты в топе")
     return "\n".join(lines)
 
 
 def fact_of_day(rendered: str) -> str:
-    return rendered.replace("🧠 <b>Факт</b>", "🧠 <b>Факт дня</b>", 1)
+    return fact_head(rendered).replace("<b>Факт</b>", "<b>Факт дня</b>", 1)
+
+
+def fact_head(rendered: str) -> str:
+    """🧠 в заголовке факта -> иконка пака."""
+    return rendered.replace("🧠", e("bolt_g") if "bolt_g" in PACK_LOADED else "🧠", 1)
 
 
 # =========================================================
@@ -1448,7 +1470,7 @@ BTN_ASK_FORWARD = "Передать автору"
 BTN_PLAY = "Играть"
 
 TRAINER_WELCOME = (
-    "Готово ♟\n\n"
+    f"Готово {e('knight')}\n\n"
     "Жми «Открыть игру» — там партии как в шахматах и рейтинг Эло. "
     "Или «Играть» — задачи прямо тут"
 )
@@ -1482,7 +1504,7 @@ RANK_EMOJI = {"Пешка": "♟", "Конь": "♞", "Слон": "♝", "Лад
 
 
 def game_intro(sit: dict) -> str:
-    lines = [f"♟ <b>{esc(sit.get('title') or sit['key'])}</b> · {'★' * stars(sit['difficulty'])}", "",
+    lines = [f"{e('knight')} <b>{esc(sit.get('title') or sit['key'])}</b> · {'★' * stars(sit['difficulty'])}", "",
              f"<i>{esc(sit['context'])}</i>", ""]
     if sit.get("opening"):
         lines += [f"она: {esc(sit['opening'])}", "", YOUR_MOVE]
@@ -1512,12 +1534,12 @@ def game_result(result: str, before: int, after: int, rank: str, best: str | Non
     return "\n".join(lines)
 
 
-DAILY_ASK = "🔥 <b>Задача дня</b>\n\n<i>{context}</i>\n\nона: {opening}\n\nТвой ход –> один ответ, пиши сюда"
+DAILY_ASK = e("daily") + " <b>Задача дня</b>\n\n<i>{context}</i>\n\nона: {opening}\n\nТвой ход –> один ответ, пиши сюда"
 
 
 def daily_result(v: dict, better: int, total: int, already: bool = False) -> str:
     head = "Ты уже сыграл задачу дня" if already else "Задача дня сыграна"
-    lines = [f"🔥 <b>{head}</b>", "", move_verdict(v)]
+    lines = [f"{e('daily')} <b>{head}</b>", "", move_verdict(v)]
     if total > 1:
         lines += ["", f"Ты ответил лучше {better}% игроков (сегодня ответили {total})"]
     else:
@@ -1529,7 +1551,7 @@ def daily_result(v: dict, better: int, total: int, already: bool = False) -> str
 
 
 RAZBOR_ASK = (
-    "📋 <b>Разбор переписки</b>\n\n"
+    f"{e('chat_w')} <b>Разбор переписки</b>\n\n"
     "Пришли скрин или текст переписки и одной строкой — чего хочешь (например: «позвать гулять»)\n\n"
     "Имена заменю на «она»/«он», картинку после разбора не храню"
 )
@@ -1537,17 +1559,17 @@ RAZBOR_LIMIT = "Бесплатный разбор — один в день. За
 RAZBOR_WAIT = "Разбираю партию… ⏳"
 RAZBOR_SOON = "Разбор с ИИ включится совсем скоро. А пока посмотри /baza — там готовые ходы"
 
-BAZA_CHOOSE = "📚 <b>База ходов</b>\n\nВыбирай ситуацию — покажу ходы со значками"
+BAZA_CHOOSE = e("target") + " <b>База ходов</b>\n\nВыбирай ситуацию — покажу ходы со значками"
 
 
 def baza_card(item: dict) -> str:
-    lines = [f"📚 <b>{esc(unquote(item['title']))}</b>", "", f"она: {esc(item['her'])}", ""]
+    lines = [f"{e('target')} <b>{esc(unquote(item['title']))}</b>", "", f"она: {esc(item['her'])}", ""]
     for text, badge, why in item["moves"]:
         lines.append(f"{mark(badge)} {esc(text)}\n    <i>{esc(why)}</i>")
     return "\n".join(lines)
 
 
-ASK_PROMPT = "✍️ <b>Вопрос автору</b>\n\nНапиши вопрос одним сообщением. Отвечу сразу, а если надо — передашь автору"
+ASK_PROMPT = e("bell") + " <b>Вопрос автору</b>\n\nНапиши вопрос одним сообщением. Отвечу сразу, а если надо — передашь автору"
 ASK_SENT = "Передал автору 👌 Ответ придёт сюда, когда он прочитает"
 ASK_ALREADY = "Этот вопрос уже у автора"
 ASK_FORWARDED_NO_LLM = "Передал вопрос автору 👌 Ответ придёт сюда"
@@ -1584,22 +1606,22 @@ def trainer_me(rating: int, rank: str, streak: int, games: int, wins: int, best:
     lines = [
         f"{rank_icon(rank)} <b>{rank}</b> · рейтинг <b>{rating}</b>",
         "",
-        f"🔥 Серия: {days(streak)}",
-        f"♟ Партий: {games} · побед: {wins}",
+        f"{e('fire_g')} Серия: {days(streak)}",
+        f"{e('board')} Партий: {games} · побед: {wins}",
     ]
     if best:
-        lines.append(f"🏆 Лучшая партия: {esc(best)}")
+        lines.append(f"{e('trophy_w')} Лучшая партия: {esc(best)}")
     if place:
-        lines.append(f"📊 Место: {place} из {total}")
+        lines.append(f"{e('rating')} Место: {place} из {total}")
     if nxt:
         lines.append(f"\nДо звания «{nxt[1]}»: {nxt[0] - rating}")
     return "\n".join(lines)
 
 
 def trainer_top(rows, place: int, total: int, rating: int, owner: dict | None = None) -> str:
-    lines = ["🏆 <b>Топ-20</b>", ""]
+    lines = [f"{e('trophy_w')} <b>Топ-20</b>", ""]
     if owner:
-        lines += [f"👑 Автор игры: {esc(owner.get('full_name') or 'Артемий')} · {owner.get('chess_rating') or 0}", ""]
+        lines += [f"{e('crown_gold')} Автор игры: {esc(owner.get('full_name') or 'Артемий')} · {owner.get('chess_rating') or 0}", ""]
     medals = ["🥇", "🥈", "🥉"]
     for i, r in enumerate(rows):
         mark = medals[i] if i < 3 else f"{i + 1}."
@@ -1609,3 +1631,22 @@ def trainer_top(rows, place: int, total: int, rating: int, owner: dict | None = 
     if place:
         lines += ["", f"Ты: {place} место из {total} · {rating}"]
     return "\n".join(lines)
+
+
+def refresh_texts():
+    """Тексты-константы считаются при импорте, когда пака ещё нет (обычные эмодзи).
+    После загрузки пака пересчитываем те, где есть e()/title()/mark(), — уже с иконками."""
+    import ast
+    import re
+    from pathlib import Path
+    g = globals()
+    src = Path(__file__).read_text(encoding="utf-8")
+    for node in ast.parse(src).body:
+        if not isinstance(node, ast.Assign) or len(node.targets) != 1 or not isinstance(node.targets[0], ast.Name):
+            continue
+        seg = ast.get_source_segment(src, node.value) or ""
+        if re.search(r"\b(e|title|mark|marks_legend|rank_icon)\(", seg):
+            try:
+                g[node.targets[0].id] = eval(compile(ast.Expression(node.value), "ui.py", "eval"), g)
+            except Exception:
+                pass

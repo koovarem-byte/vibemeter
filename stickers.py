@@ -36,10 +36,14 @@ def _key(path: Path) -> str:
     return f"{path.stem}:{digest}"
 
 
+ENABLED = False
+
+
 async def send(bot, chat_id: int, name: str | None):
     """Отправляет стикер. TelegramForbiddenError (бот заблокирован) пробрасываем:
     рассылке нужно знать, что человек недоступен. Прочие ошибки — без стикера."""
-    if not name:
+    # 18.11 (владелец): только наш пак «Шах и Чат» — старые неоновые стикеры Вайбометра не шлём
+    if not name or not ENABLED:
         return None
     name = _name(name)
     files = [p for p in _files(name) if p not in _rejected]
