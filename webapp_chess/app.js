@@ -264,7 +264,8 @@
   // ---------- Обучение: 3 статьи в день, проверка после каждой (18.11) ----------
   let learnData = null;
   const LEARN_HEAD = `<button class="back" data-go="home">‹ Главная</button><div class="title">Обучение</div>`;
-  const learnSub = (d) => `<p class="subtitle">${d.per_day} статьи в день · верный ответ на проверке +${d.reward} к рейтингу</p>`;
+  const learnSub = (d) => `<p class="subtitle">${d.per_day} статьи в день · верный ответ +${d.reward} очка знаний</p>
+    <div class="fact" style="display:flex;justify-content:space-between;align-items:center"><span>${icon("star")} Очки знаний</span><b style="font-size:22px">${d.points || 0}</b></div>`;
 
   async function renderLearn() {
     screen.innerHTML = `${LEARN_HEAD}${'<div class="skel"></div>'.repeat(3)}`;
@@ -321,7 +322,7 @@
       <div class="title">Проверка</div>
       <p class="subtitle">${esc(it.question)}</p>
       <div class="moves" id="l-opts">${it.options.map((o) => `<button class="move" data-idx="${o.idx}">${esc(o.text)}</button>`).join("")}</div>
-      <p class="muted" style="margin-top:12px">Одна попытка${it.reward ? ` · верно — +${it.reward} к рейтингу` : ""}</p>`;
+      <p class="muted" style="margin-top:12px">Одна попытка${it.reward ? ` · верно — +${it.reward} очка знаний` : ""}</p>`;
     $("#l-back").onclick = () => learnArticle(it.id);
     $("#l-opts").onclick = async (e) => {
       const b = e.target.closest("[data-idx]");
@@ -345,7 +346,7 @@
   function learnResultHtml(it) {
     return `<div class="fact ${it.ok ? "day" : ""}">
         <span class="pill ${it.ok ? "" : "no"}">${it.ok ? "ВЕРНО" : "МИМО"}</span>
-        <div class="txt">${it.ok ? (it.delta ? `+${it.delta} к рейтингу` : "Так и есть") : "Правильный ответ: " + esc(it.correct || "")}</div>
+        <div class="txt">${it.ok ? (it.delta ? `+${it.delta} очка знаний` : "Так и есть") : "Правильный ответ: " + esc(it.correct || "")}</div>
         <div class="src">${esc(it.question)}</div>
       </div><div id="l-next"></div>`;
   }
@@ -455,6 +456,7 @@
         <div class="stat"><b>${me.solved}/${me.total}</b><span>задач</span></div>
         <div class="stat"><b>${p.place || "—"}</b><span>место${p.players ? " из " + p.players : ""}</span></div>
       </div>
+      <button class="card" data-go="learn"><div class="ico">${icon("star")}</div><div class="main"><div class="t">Знания: ${me.knowledge || 0}</div><div class="s">Очки за статьи в Обучении, отдельно от рейтинга</div></div><div class="arrow">›</div></button>
       <div class="h2">Достижения <small>${achDone} / ${ach.length}</small></div>
       <div class="ach-grid" data-go="ach">${achGrid}</div>
       <div class="h2">Звания</div><div class="ranks">${ranks}</div>
@@ -745,7 +747,7 @@
   const D = { rating: 87, solved: 5, streak: 3 };
   const DEMO_ART = (id, text) => ({ id, text, tip: "После ответа спроси «а почему?»", source: "Huang и др., 2017", url: null, opened: false, answered: false, ok: null, correct: null, reward: 3, earned: false,
     question: "Кто чаще получал второе свидание?", options: [{ idx: 1, text: "кто больше и подробнее рассказывал о себе" }, { idx: 0, text: "кто задавал больше уточняющих вопросов" }, { idx: 2, text: "кто чаще шутил и делал комплименты" }] });
-  const DEMO_LEARN = { per_day: 3, reward: 3, done: 0, total_read: 4, all: 36, items: [
+  const DEMO_LEARN = { per_day: 3, reward: 3, points: 12, done: 0, total_read: 4, all: 36, items: [
     DEMO_ART("a1", "Кто задаёт больше вопросов, особенно уточняющих, тот нравится собеседнику сильнее"),
     DEMO_ART("a2", "После разговора люди стабильно недооценивают, насколько понравились собеседнику"),
     DEMO_ART("a3", "Только около 2% разговоров заканчиваются тогда, когда этого хотят оба") ] };

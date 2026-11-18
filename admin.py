@@ -964,6 +964,71 @@ async def beta_slots_cmd(message: Message):
     await message.answer("✅ Тест открыт для всех" if n == 0 else f"✅ Мест в тесте: {n}")
 
 
+async def _send_beta(message: Message, ids: list[int], text: str) -> int:
+    import asyncio
+    from aiogram.exceptions import TelegramForbiddenError
+    from keyboards import beta_keyboard
+    sent = 0
+    for uid in ids:
+        try:
+            await message.bot.send_message(uid, text, reply_markup=beta_keyboard())
+            sent += 1
+        except TelegramForbiddenError:
+            pass
+        except Exception:
+            logging.warning("Бета: не отправилось %s", uid)
+        await asyncio.sleep(0.05)
+    return sent
+
+
+@router.message(Command("beta_retest"))
+async def beta_retest_cmd(message: Message):
+    """/beta_retest — пример себе и сколько тестеров; /beta_retest go — новый раунд: всем тестерам
+    сообщение «затести ещё раз», отзыв снова нужен после 2 партий."""
+    if message.from_user.id != ADMIN_ID:
+        return
+    from database import beta_start_round, beta_testers_list
+    from keyboards import beta_keyboard
+    go = (message.text or "").split()[1:2] == ["go"]
+    if not go:
+        n = len(await beta_testers_list())
+        await message.answer(ui.beta_retest_text(), reply_markup=beta_keyboard())
+        await message.answer(f"👆 Так увидят {n} тестеров. Отправить и начать новый раунд: /beta_retest go")
+        return
+    ids = await beta_start_round()
+    sent = await _send_beta(message, ids, ui.beta_retest_text())
+    await message.answer(f"✅ Новый раунд беты. Сообщение ушло {sent} из {len(ids)}. "
+                         "Отзыв снова попросим после 2 партий")
+
+
+@router.message(Command("beta_invite"))
+async def beta_invite_cmd(message: Message):
+    """/beta_invite 30 — пример и кто первый в очереди; /beta_invite 30 go — первые 30 из очереди
+    становятся тестерами и получают сообщение. Места (/beta_slots) поднимаются сами."""
+    if message.from_user.id != ADMIN_ID:
+        return
+    import chess_api
+    from database import beta_admit, beta_waitlist_head, set_app_state
+    from keyboards import beta_keyboard
+    parts = (message.text or "").split()
+    if len(parts) < 2 or not parts[1].isdigit():
+        await message.answer("Сколько позвать из очереди? Например: /beta_invite 30")
+        return
+    n = int(parts[1])
+    ids = await beta_waitlist_head(n)
+    if len(parts) < 3 or parts[2] != "go":
+        await message.answer(ui.beta_invite_text(), reply_markup=beta_keyboard())
+        await message.answer(f"👆 Так увидят {len(ids)} человек из очереди. Отправить: /beta_invite {n} go")
+        return
+    total = await beta_admit(ids)
+    if chess_api.BETA_SLOTS and total > chess_api.BETA_SLOTS:
+        chess_api.BETA_SLOTS = total
+        await set_app_state("beta_slots", str(total))
+    sent = await _send_beta(message, ids, ui.beta_invite_text())
+    await message.answer(f"✅ Из очереди в тест: {len(ids)}, сообщение ушло {sent}. "
+                         f"Тестеров теперь {total}, мест {chess_api.BETA_SLOTS}")
+
+
 @router.message(Command("broadcast"))
 async def broadcast_cmd(message: Message):
     await message.answer(await hub_text(), reply_markup=hub_keyboard())

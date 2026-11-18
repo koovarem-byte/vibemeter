@@ -540,6 +540,7 @@ async def init_db():
                 created_at TIMESTAMPTZ DEFAULT now()
             )
         """)
+        await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS learn_points INTEGER NOT NULL DEFAULT 0")
         # 18.11: обучение — 3 статьи в день, проверка после каждой (learn.py)
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS learn_log (
@@ -2336,6 +2337,8 @@ async def chess_me(user_id: int) -> dict:
 # =========================================================
 
 TODAY_MSK = "(now() AT TIME ZONE 'Europe/Moscow')::date"
+# начало текущего раунда бета-теста (/beta_retest); отзывы и партии до него не считаются
+BETA_ROUND = "COALESCE((SELECT value FROM app_state WHERE key = 'beta_round_at')::timestamptz, 'epoch'::timestamptz)"
 
 
 async def log_event(user_id: int | None, kind: str, data: str | None = None):
@@ -2714,8 +2717,10 @@ async def app_games_summary(user_id: int) -> dict:
 async def app_games_finished(user_id: int) -> int:
     db = await get_pool()
     async with db.acquire() as conn:
-        return await conn.fetchval(
-            "SELECT COUNT(*) FROM app_games WHERE user_id = $1 AND status = 'finished'", user_id)
+        # считаем с начала текущего раунда беты (/beta_retest), до первого раунда — все
+        return await conn.fetchval(f"""
+            SELECT COUNT(*) FROM app_games WHERE user_id = $1 AND status = 'finished'
+              AND COALESCE(finished_at, created_at) >= {BETA_ROUND}""", user_id)
 
 
 async def beta_is_tester(user_id: int) -> bool:
@@ -2758,6 +2763,43 @@ async def beta_add_feedback(user_id: int, stars: int | None, text: str) -> int:
             user_id, stars, text)
 
 
+async def beta_start_round() -> list[int]:
+    """Новый раунд беты: отзыв снова нужен после 2 партий. Возвращает тестеров (кроме владельца)."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        await conn.execute("""
+            INSERT INTO app_state (key, value) VALUES ('beta_round_at', now()::text)
+            ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+        """)
+        rows = await conn.fetch("SELECT user_id FROM beta_testers WHERE user_id <> $1 ORDER BY joined_at", OWNER_ID)
+    return [r["user_id"] for r in rows]
+
+
+async def beta_testers_list() -> list[int]:
+    db = await get_pool()
+    async with db.acquire() as conn:
+        rows = await conn.fetch("SELECT user_id FROM beta_testers WHERE user_id <> $1 ORDER BY joined_at", OWNER_ID)
+    return [r["user_id"] for r in rows]
+
+
+async def beta_waitlist_head(n: int) -> list[int]:
+    db = await get_pool()
+    async with db.acquire() as conn:
+        rows = await conn.fetch("SELECT user_id FROM beta_waitlist ORDER BY created_at LIMIT $1", n)
+    return [r["user_id"] for r in rows]
+
+
+async def beta_admit(user_ids: list[int]) -> int:
+    """Из очереди — в тестеры (места не проверяем: админ сам решил)."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        async with conn.transaction():
+            for uid in user_ids:
+                await conn.execute("INSERT INTO beta_testers (user_id) VALUES ($1) ON CONFLICT DO NOTHING", uid)
+                await conn.execute("DELETE FROM beta_waitlist WHERE user_id = $1", uid)
+            return await conn.fetchval("SELECT COUNT(*) FROM beta_testers WHERE user_id <> $1", OWNER_ID)
+
+
 async def learn_state(user_id: int) -> dict:
     """Обучение: все прочитанные статьи, открытые сегодня (по порядку) и ответы на проверку сегодня."""
     db = await get_pool()
@@ -2766,11 +2808,13 @@ async def learn_state(user_id: int) -> dict:
             SELECT fact_id, day = {TODAY_MSK} AS today, quiz_ok, rewarded
             FROM learn_log WHERE user_id = $1 ORDER BY created_at
         """, user_id)
+        points = await conn.fetchval("SELECT learn_points FROM users WHERE telegram_id = $1", user_id) or 0
     return {
         "read": list(dict.fromkeys(r["fact_id"] for r in rows)),
         "today": [r["fact_id"] for r in rows if r["today"]],
         "quiz": {r["fact_id"]: r["quiz_ok"] for r in rows if r["today"]},
         "rewarded": {r["fact_id"] for r in rows if r["rewarded"]},
+        "points": points,
     }
 
 
@@ -2802,7 +2846,8 @@ async def learn_answer(user_id: int, fact_id: str, ok: bool, reward: int) -> tup
             if ok and not await conn.fetchval(
                     "SELECT 1 FROM learn_log WHERE user_id = $1 AND fact_id = $2 AND rewarded", user_id, fact_id):
                 earned = reward
-                await conn.execute("UPDATE users SET chess_rating = chess_rating + $2 WHERE telegram_id = $1",
+                # 18.11 (владелец): за статьи — отдельные очки знаний, Эло не трогаем
+                await conn.execute("UPDATE users SET learn_points = learn_points + $2 WHERE telegram_id = $1",
                                    user_id, earned)
             await conn.execute(f"""
                 UPDATE learn_log SET quiz_ok = $3, rewarded = $4
@@ -2815,14 +2860,16 @@ async def beta_feedback_recipients(hours: int = 20) -> list[int]:
     """Бета-тестеры без отзыва, в тесте больше hours часов, напоминание ещё не получали (один раз)."""
     db = await get_pool()
     async with db.acquire() as conn:
-        rows = await conn.fetch("""
+        rows = await conn.fetch(f"""
             SELECT t.user_id FROM beta_testers t
             JOIN users u ON u.telegram_id = t.user_id
             WHERE t.joined_at < now() - make_interval(hours => $1)
               AND t.user_id <> $2
               AND COALESCE(u.is_banned, FALSE) = FALSE
-              AND NOT EXISTS (SELECT 1 FROM beta_feedback f WHERE f.user_id = t.user_id)
-              AND NOT EXISTS (SELECT 1 FROM events e WHERE e.user_id = t.user_id AND e.kind = 'beta_fb_remind')
+              AND NOT EXISTS (SELECT 1 FROM beta_feedback f WHERE f.user_id = t.user_id
+                              AND f.created_at >= {BETA_ROUND})
+              AND NOT EXISTS (SELECT 1 FROM events e WHERE e.user_id = t.user_id AND e.kind = 'beta_fb_remind'
+                              AND e.created_at >= {BETA_ROUND})
         """, hours, OWNER_ID)
     return [r["user_id"] for r in rows]
 
@@ -2830,7 +2877,8 @@ async def beta_feedback_recipients(hours: int = 20) -> list[int]:
 async def beta_has_feedback(user_id: int) -> bool:
     db = await get_pool()
     async with db.acquire() as conn:
-        return bool(await conn.fetchval("SELECT 1 FROM beta_feedback WHERE user_id = $1 LIMIT 1", user_id))
+        return bool(await conn.fetchval(
+            f"SELECT 1 FROM beta_feedback WHERE user_id = $1 AND created_at >= {BETA_ROUND} LIMIT 1", user_id))
 
 
 async def beta_stats() -> dict:

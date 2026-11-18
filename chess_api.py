@@ -122,6 +122,7 @@ def me_json(user, solved: int) -> dict:
         "best_streak": max(user.get("best_streak") or 0, user["streak_days"] or 0),
         "solved": solved,
         "total": len(puzzles.PUZZLES),
+        "knowledge": user.get("learn_points") or 0,
     }
 
 
@@ -300,7 +301,7 @@ async def learn_json(uid: int) -> dict:
             "reward": learn.REWARD if fid not in st["rewarded"] and answered is None else 0,
             "earned": fid in st["rewarded"] and answered is True,
         })
-    return {"items": items, "per_day": learn.PER_DAY, "reward": learn.REWARD,
+    return {"items": items, "per_day": learn.PER_DAY, "reward": learn.REWARD, "points": st["points"],
             "done": sum(1 for i in items if i["answered"]), "total_read": len(st["read"]),
             "all": len(learn.articles())}
 
