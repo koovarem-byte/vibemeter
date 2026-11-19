@@ -30,7 +30,14 @@ def check(groups, label) -> bool:
     return ok
 
 
+def shown_groups(games=200):
+    """19.11: в партии видны 3 варианта из пула (partii.shown) — проверяем то, что видит игрок."""
+    return [[s["options"][i] for i in partii.shown(g, s, n)]
+            for g in range(1, games + 1) for p in partii.PARTII for n, s in enumerate(p["steps"])]
+
+
 if __name__ == "__main__":
     a = check([p["moves"] for p in puzzles.PUZZLES], "Задачи")
-    b = check([s["options"] for p in partii.PARTII for s in p["steps"]], "Партии")
-    sys.exit(0 if a and b else 1)
+    b = check([s["options"] for p in partii.PARTII for s in p["steps"]], "Партии (весь пул)")
+    c = check(shown_groups(), "Партии (что видно, 200 игр)")
+    sys.exit(0 if a and b and c else 1)

@@ -8,7 +8,6 @@
 import html
 import logging
 import os
-import random
 import time
 from pathlib import Path
 
@@ -350,19 +349,13 @@ async def api_profile(request):
 
 # ---------- партии без ИИ ----------
 
-def option_order(game_id: int, step: int, n: int) -> list[int]:
-    order = list(range(n))
-    random.Random(game_id * 131 + step).shuffle(order)
-    return order
-
-
 def step_json(game_id: int, p: dict, step: int) -> dict:
     st = p["steps"][step]
     return {
         "n": step + 1,
         "total": len(p["steps"]),
         "her": st["her"],
-        "options": [{"idx": i, "text": st["options"][i][0]} for i in option_order(game_id, step, len(st["options"]))],
+        "options": [{"idx": i, "text": st["options"][i][0]} for i in partii.shown(game_id, st, step)],
     }
 
 
@@ -407,17 +400,22 @@ async def api_partiya_move(request):
         return error("game_over", 409)
     p = partii.BY_ID.get(g["partiya"])
     step = g["step"]
-    if not p or step >= len(p["steps"]) or not 0 <= idx < len(p["steps"][step]["options"]):
+    if not p or step >= len(p["steps"]):
         return error("bad_request", 400)
-    opt = p["steps"][step]["options"][idx]
+    # 19.11: на ходе видны 3 варианта из пула — ходить можно только ими, разбор тоже по ним
+    visible = partii.shown(g["id"], p["steps"][step], step)
+    if idx not in visible:
+        return error("bad_request", 400)
+    opts = p["steps"][step]["options"]
+    opt = opts[idx]
     text, mark, why, reply = opt[:4]
     mated = len(opt) > 4 and opt[4] == "mate"
     moves = g["moves"] + [{"step": step, "idx": idx, "mark": mark}]
-    best = max(p["steps"][step]["options"], key=lambda o: rating.SCORE[o[1]])
+    best = max((opts[i] for i in visible), key=lambda o: rating.SCORE[o[1]])
     out = {
         "mark": mark, "name": rating.NAMES[mark], "why": why, "reply": reply,
         "best": best[0] if best[1] != mark else None,
-        "others": [{"text": o[0], "mark": o[1], "why": o[2]} for o in p["steps"][step]["options"] if o[0] != text],
+        "others": [{"text": opts[i][0], "mark": opts[i][1], "why": opts[i][2]} for i in visible if i != idx],
     }
     last = step + 1 >= len(p["steps"])
     if not (mated or last):
