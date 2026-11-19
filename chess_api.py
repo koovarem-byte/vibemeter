@@ -224,9 +224,10 @@ async def api_move(request):
     before = user["chess_rating"] or 0
     elo = rating.update(before, puzzle.get("rating", rating.PUZZLE_RATING), rating.SCORE[mark],
                         await rated_count(user["telegram_id"]), blitz=True)
-    new_rating = await solve_puzzle(user["telegram_id"], pid, mark, elo - before)
-    if new_rating is None:
+    res = await solve_puzzle(user["telegram_id"], pid, mark, elo - before)
+    if res is None:
         return error("already_solved", 409)
+    new_rating, rated = res
     await log_event(user["telegram_id"], "puzzle_app", f"{pid}:{mark}")
     best = max(puzzle["moves"], key=lambda m: puzzles.DELTA[m[1]])
     done = await solved_puzzles(user["telegram_id"])
@@ -239,6 +240,7 @@ async def api_move(request):
         "best": best[0] if best[1] != mark else None,
         "others": [{"text": t, "mark": m, "why": w} for t, m, w in puzzle["moves"] if t != move],
         "delta": new_rating - before,
+        "rated": rated,
         "rank_up": puzzles.rank(new_rating) != puzzles.rank(before),
         "me": me_json(fresh, len(done)),
         "puzzle": puzzle_json(nxt, len(done) + 1) if nxt is not None else None,

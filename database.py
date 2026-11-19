@@ -443,6 +443,20 @@ async def init_db():
                 PRIMARY KEY (user_id, puzzle_id)
             )
         """)
+        # 19.11: версия текстов задач (puzzles.VERSION) и рейтинговый ли ответ (переигровка — нет)
+        await conn.execute("ALTER TABLE puzzle_answers ADD COLUMN IF NOT EXISTS ver INTEGER NOT NULL DEFAULT 1")
+        await conn.execute("ALTER TABLE puzzle_answers ADD COLUMN IF NOT EXISTS rated BOOLEAN NOT NULL DEFAULT TRUE")
+        if not await conn.fetchval("SELECT 1 FROM app_state WHERE key = 'puzzles_v2'"):
+            # новые тексты на хостинге — с первого захода в Обучение (появилось в той же сборке);
+            # ответы раньше — на старые тексты. На пустой базе learn_log ещё нет: всё считаем новым
+            has_learn = await conn.fetchval("SELECT to_regclass('learn_log') IS NOT NULL")
+            cutoff = await conn.fetchval("SELECT min(created_at) FROM learn_log") if has_learn else None
+            if cutoff is None:
+                await conn.execute("UPDATE puzzle_answers SET ver = 2")
+            else:
+                await conn.execute("UPDATE puzzle_answers SET ver = 2 WHERE created_at >= $1", cutoff)
+            await conn.execute("INSERT INTO app_state (key, value) VALUES ('puzzles_v2', now()::text) "
+                               "ON CONFLICT (key) DO NOTHING")
         await conn.execute("""
             ALTER TABLE users
             ADD COLUMN IF NOT EXISTS chess_rating INTEGER NOT NULL DEFAULT 0,
@@ -2209,26 +2223,35 @@ async def active_profiles() -> list[dict]:
 # =========================================================
 
 async def solve_puzzle(user_id: int, puzzle_id: int, mark: str, delta: int):
-    """Записывает ход. None, если задача уже решена; иначе новый рейтинг."""
+    """Записывает ход. None, если задача уже решена в текущей версии; иначе (рейтинг, рейтинговый ли ход).
+    Решённая в старой версии текстов (puzzles.VERSION) — переигровка: ход записываем, рейтинг не меняем."""
+    from puzzles import VERSION
     db = await get_pool()
     async with db.acquire() as conn:
         async with conn.transaction():
-            ok = await conn.fetchval("""
-                INSERT INTO puzzle_answers (user_id, puzzle_id, mark) VALUES ($1, $2, $3)
-                ON CONFLICT DO NOTHING RETURNING TRUE
-            """, user_id, puzzle_id, mark)
-            if not ok:
+            row = await conn.fetchrow("""
+                INSERT INTO puzzle_answers (user_id, puzzle_id, mark, ver) VALUES ($1, $2, $3, $4)
+                ON CONFLICT (user_id, puzzle_id) DO UPDATE
+                    SET mark = EXCLUDED.mark, ver = EXCLUDED.ver, rated = FALSE, created_at = now()
+                    WHERE puzzle_answers.ver < EXCLUDED.ver
+                RETURNING (xmax = 0) AS fresh
+            """, user_id, puzzle_id, mark, VERSION)
+            if row is None:
                 return None
+            if not row["fresh"]:
+                return await conn.fetchval("SELECT chess_rating FROM users WHERE telegram_id = $1", user_id), False
             return await conn.fetchval("""
                 UPDATE users SET chess_rating = GREATEST(0, chess_rating + $2)
                 WHERE telegram_id = $1 RETURNING chess_rating
-            """, user_id, delta)
+            """, user_id, delta), True
 
 
 async def solved_puzzles(user_id: int) -> set[int]:
     db = await get_pool()
     async with db.acquire() as conn:
-        rows = await conn.fetch("SELECT puzzle_id FROM puzzle_answers WHERE user_id = $1", user_id)
+        from puzzles import VERSION
+        rows = await conn.fetch("SELECT puzzle_id FROM puzzle_answers WHERE user_id = $1 AND ver = $2",
+                                user_id, VERSION)
     return {r["puzzle_id"] for r in rows}
 
 
@@ -2295,7 +2318,7 @@ async def chess_reminder_recipients(days: int, total_puzzles: int) -> list[dict]
               AND NOT EXISTS (SELECT 1 FROM puzzle_answers p WHERE p.user_id = u.telegram_id
                               AND (p.created_at AT TIME ZONE 'Europe/Moscow')::date
                                   = (now() AT TIME ZONE 'Europe/Moscow')::date)
-              AND (SELECT COUNT(*) FROM puzzle_answers p WHERE p.user_id = u.telegram_id) < $2
+              AND (SELECT COUNT(*) FROM puzzle_answers p WHERE p.user_id = u.telegram_id AND p.ver = 2) < $2
               -- у кого серия под угрозой, тем пишем вечером (streak_save_recipients), не дважды
               AND NOT (u.streak_days >= 2 AND u.last_active = (now() AT TIME ZONE 'Europe/Moscow')::date - 1)
         """, days, total_puzzles)
@@ -2311,7 +2334,7 @@ async def streak_save_recipients(total_puzzles: int) -> list[dict]:
             WHERE u.chess_notify AND NOT u.is_banned AND u.streak_days >= 2
               AND u.last_active = (now() AT TIME ZONE 'Europe/Moscow')::date - 1
               AND EXISTS (SELECT 1 FROM puzzle_answers p WHERE p.user_id = u.telegram_id)
-              AND (SELECT COUNT(*) FROM puzzle_answers p WHERE p.user_id = u.telegram_id) < $1
+              AND (SELECT COUNT(*) FROM puzzle_answers p WHERE p.user_id = u.telegram_id AND p.ver = 2) < $1
         """, total_puzzles)
     return [dict(r) for r in rows]
 
@@ -2554,7 +2577,7 @@ async def trainer_stats() -> dict:
 _POINTS_EVENTS = """
     SELECT user_id, created_at AS at,
            CASE mark WHEN '!!' THEN 15 WHEN '!' THEN 8 WHEN '?!' THEN 0 ELSE -5 END AS pts
-    FROM puzzle_answers
+    FROM puzzle_answers WHERE rated
     UNION ALL
     SELECT user_id, finished_at AS at, COALESCE(rating_after - rating_before, 0) AS pts
     FROM chat_games WHERE status = 'finished'
@@ -2632,7 +2655,7 @@ async def rated_count(user_id: int) -> int:
     db = await get_pool()
     async with db.acquire() as conn:
         return await conn.fetchval("""
-            SELECT (SELECT COUNT(*) FROM puzzle_answers WHERE user_id = $1)
+            SELECT (SELECT COUNT(*) FROM puzzle_answers WHERE user_id = $1 AND rated)
                  + (SELECT COUNT(*) FROM chat_games WHERE user_id = $1 AND status = 'finished')
                  + (SELECT COUNT(*) FROM app_games WHERE user_id = $1 AND status = 'finished' AND rated)
         """, user_id)

@@ -1177,10 +1177,11 @@ async def puzzle_move(callback: CallbackQuery):
     import rating
     delta = rating.update(before, puzzle.get("rating", rating.PUZZLE_RATING), rating.SCORE[mark],
                           await rated_count(callback.from_user.id), blitz=True) - before
-    rating = await solve_puzzle(callback.from_user.id, int(pid), mark, delta)
-    if rating is None:
+    res = await solve_puzzle(callback.from_user.id, int(pid), mark, delta)
+    if res is None:
         await callback.answer("Эта задача уже решена", show_alert=True)
         return
+    rating, rated = res
     await callback.answer(f"{mark} {puzzles.NAMES[mark]}")
     try:
         await callback.message.edit_reply_markup(reply_markup=None)
@@ -1189,7 +1190,8 @@ async def puzzle_move(callback: CallbackQuery):
     best = max(puzzle["moves"], key=lambda m: puzzles.DELTA[m[1]])[0]
     await callback.message.answer(
         ui.puzzle_result(move, mark, puzzles.NAMES[mark], why, best, rating - before, rating, puzzles.rank(rating),
-                         others=[m for m in puzzle["moves"] if m[0] != move]),
+                         others=[m for m in puzzle["moves"] if m[0] != move])
+        + ("" if rated else "\n\n<i>Переигровка после обновления задач, без рейтинга</i>"),
         reply_markup=puzzle_after_keyboard(int(pid), (await callback.bot.me()).username),
     )
 

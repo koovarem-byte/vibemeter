@@ -58,6 +58,17 @@ from states import TrainState
 
 router = Router()
 
+
+async def commands_leave_input(handler, event, data):
+    """19.11: команда в режиме ввода (вопрос автору, партия, задача дня, разбор) — это команда,
+    а не текст. Иначе «/start play» уходил автору как вопрос. Выходим из режима и обрабатываем команду."""
+    text = event.text or ""
+    raw = data.get("raw_state") or ""
+    if text.startswith("/") and raw.startswith("TrainState:"):
+        await data["state"].clear()
+        data["raw_state"] = None
+    return await handler(event, data)
+
 GAMES_PER_DAY = int(os.getenv("GAMES_PER_DAY", "5"))
 RAZBOR_PER_DAY = int(os.getenv("RAZBOR_PER_DAY", "1"))
 MAX_MOVES = 5           # ходов игрока в партии (ТЗ: 3–5)

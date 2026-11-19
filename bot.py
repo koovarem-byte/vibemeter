@@ -65,6 +65,8 @@ def create_bot_and_dispatcher():
     for observer in (dp.message, dp.callback_query):
         observer.outer_middleware(flood_middleware)
         observer.outer_middleware(ban_middleware)
+    # команда в режиме ввода тренажёра — выход из режима (иначе «/start play» уходил как вопрос автору)
+    dp.message.outer_middleware(trainer.commands_leave_input)
     dp.include_router(admin.router)  # первым: /admin и /u_… не должны уйти в общие хендлеры
     dp.include_router(trainer.router)  # тренажёр «Шах и чат» (ТЗ 16.11)
     dp.include_router(router)

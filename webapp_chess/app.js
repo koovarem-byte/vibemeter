@@ -187,6 +187,7 @@
     haptic(res.delta > 0 ? "success" : res.delta < 0 ? "error" : "warning");
     profile = null;
     if (puzzle.daily) state.daily_done = true;
+    if (res.rated === false) toast("Переигровка после обновления, без рейтинга");
     showVerdict(puzzle, res);
   }
 
