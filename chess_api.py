@@ -349,6 +349,12 @@ async def api_profile(request):
 
 # ---------- партии без ИИ ----------
 
+# «Блиц» (19.11, отзыв #32): 30 секунд на ход, таймер на фронте. Не успел — ход ?? и партия идёт дальше.
+# Время не проверяем на сервере: рейтинг за блиц тот же, выгоды обманывать нет.
+BLITZ_SECONDS = 30
+TIMEOUT_MOVE = ("(долго думал)", "??", "30 секунд прошли. Пока ты думал, она ушла в другой чат",
+                "ладно, мне тут пишут, потом отвечу")
+
 def step_json(game_id: int, p: dict, step: int) -> dict:
     st = p["steps"][step]
     return {
@@ -376,15 +382,17 @@ async def api_partii(request):
 async def api_partiya_start(request):
     uid = request["user"]["telegram_id"]
     try:
-        p = partii.BY_ID[str((await request.json())["id"])]
-    except (ValueError, KeyError, TypeError):
+        body = await request.json()
+        p = partii.BY_ID[str(body["id"])]
+        blitz = bool(body.get("blitz"))
+    except (ValueError, KeyError, TypeError, AttributeError):
         return error("bad_request", 400)
     if await need_feedback(uid):
         return error("need_feedback", 403)
-    g = await app_game_start(uid, p["id"])
-    await log_event(uid, "partiya_start", p["id"])
-    return web.json_response({"game_id": g["id"], "rated": g["rated"], "partiya": partiya_meta(p),
-                              "step": step_json(g["id"], p, 0)})
+    g = await app_game_start(uid, p["id"], blitz)
+    await log_event(uid, "partiya_start", p["id"] + (":blitz" if blitz else ""))
+    return web.json_response({"game_id": g["id"], "rated": g["rated"], "blitz": blitz, "seconds": BLITZ_SECONDS,
+                              "partiya": partiya_meta(p), "step": step_json(g["id"], p, 0)})
 
 
 async def api_partiya_move(request):
@@ -393,8 +401,9 @@ async def api_partiya_move(request):
     try:
         body = await request.json()
         g = await app_game_get(int(body["game_id"]), uid)
-        idx = int(body["idx"])
-    except (ValueError, KeyError, TypeError):
+        timeout = bool(body.get("timeout"))
+        idx = -1 if timeout else int(body["idx"])
+    except (ValueError, KeyError, TypeError, AttributeError):
         return error("bad_request", 400)
     if not g or g["status"] != "active":
         return error("game_over", 409)
@@ -404,13 +413,15 @@ async def api_partiya_move(request):
         return error("bad_request", 400)
     # 19.11: на ходе видны 3 варианта из пула — ходить можно только ими, разбор тоже по ним
     visible = partii.shown(g["id"], p["steps"][step], step)
-    if idx not in visible:
+    if timeout and not g.get("blitz"):
+        return error("bad_request", 400)
+    if not timeout and idx not in visible:
         return error("bad_request", 400)
     opts = p["steps"][step]["options"]
-    opt = opts[idx]
+    opt = TIMEOUT_MOVE if timeout else opts[idx]
     text, mark, why, reply = opt[:4]
     mated = len(opt) > 4 and opt[4] == "mate"
-    moves = g["moves"] + [{"step": step, "idx": idx, "mark": mark}]
+    moves = g["moves"] + [{"step": step, "idx": idx, "mark": mark, **({"timeout": True} if timeout else {})}]
     best = max((opts[i] for i in visible), key=lambda o: rating.SCORE[o[1]])
     out = {
         "mark": mark, "name": rating.NAMES[mark], "why": why, "reply": reply,

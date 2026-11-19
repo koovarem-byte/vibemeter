@@ -547,6 +547,9 @@
   const RESULT = { win: ["ПОБЕДА", "Она в игре — ты провёл партию", "var(--green)"], stalemate: ["ПАТ", "Разговор угас: никто не выиграл", "var(--m-dub)"], mate: ["МАТ", "Партия проиграна — разбираем ошибки", "var(--m-blunder)"] };
   const stars = (r) => "★".repeat(Math.max(1, Math.min(5, Math.floor(r / 250) + 1)));
   let battle = null; // текущая партия
+  // «Блиц» (19.11): 30 с на ход, по желанию. Выбор помним в браузере
+  const pref = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } };
+  let blitzOn = pref("blitz") === "1";
 
   async function renderPartii() {
     screen.innerHTML = `<div class="title">Партии</div><p class="subtitle">Живые переписки. Каждый ход — оценка, как в шахматах</p>${'<div class="skel"></div>'.repeat(4)}`;
@@ -555,6 +558,8 @@
     if (tab !== "partii") return;
     if (data.beta) state.beta = data.beta;
     screen.innerHTML = `<div class="title">Партии</div><p class="subtitle">Живые переписки. Каждый ход — оценка, как в шахматах. Рейтинг соперницы — по Эло</p>
+      <button class="card toggle${blitzOn ? " on" : ""}" id="blitz-tg"><div class="ico">⏱</div>
+        <div class="main"><div class="t">Блиц</div><div class="s">30 секунд на ход. Не успел — ход ??</div></div><div class="switch"><i></i></div></button>
       ${data.items.map((p) => {
         const r = p.result && RESULT[p.result];
         return `<button class="card partiya" data-partiya="${esc(p.id)}">
@@ -569,17 +574,41 @@
   async function startPartiya(id) {
     if (state.beta && state.beta.need_feedback) return openFeedback(true);
     let g;
-    try { g = await api("partiya/start", { id }); } catch (e) {
+    try { g = await api("partiya/start", { id, blitz: blitzOn }); } catch (e) {
       if (e.code === "need_feedback") return openFeedback(true);
       toast("Не получилось начать"); return;
     }
     battle = { ...g, log: [], marks: [], busy: false };
-    battle.log.push({ who: "sys", text: g.partiya.intro });
+    battle.log.push({ who: "sys", text: g.partiya.intro + (g.blitz ? ` · Блиц: ${g.seconds} с на ход` : "") });
     go("battle");
     await herSays(g.step.her);
     battle.options = g.step.options;
     battle.n = g.step.n; battle.total = g.step.total;
+    startClock();
     drawBattle();
+  }
+
+  // таймер блица: дедлайн хода, полоска обновляется сама
+  function startClock() { if (battle && battle.blitz) battle.deadline = Date.now() + (battle.seconds || 30) * 1000; }
+  setInterval(() => {
+    if (!battle || !battle.deadline) return;
+    if (tab !== "battle") { battle.deadline = null; return; }
+    const left = battle.deadline - Date.now();
+    const bar = $("#btimer i");
+    if (bar) { bar.style.width = `${Math.max(0, left / ((battle.seconds || 30) * 10))}%`; bar.parentElement.classList.toggle("low", left < 10000); }
+    if (left <= 0) timeoutMove();
+  }, 200);
+
+  async function timeoutMove() {
+    if (!battle || battle.busy) return;
+    battle.busy = true; battle.deadline = null; haptic("error");
+    let res;
+    try { res = await api("partiya/move", { game_id: battle.game_id, timeout: true }); }
+    catch (e) { battle.busy = false; startClock(); toast("Не получилось, попробуй ещё раз"); return; }
+    battle.marks.push(res.mark);
+    battle.log.push({ who: "me", text: "⏳ долго думал…", mark: res.mark });
+    battle.pending = true; drawBattle();
+    showMoveVerdict(res);
   }
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -609,7 +638,7 @@
       : `<div class="msg me"><div class="bubble mine">${esc(m.text)}</div>${m.mark ? markIcon(m.mark, "ic msg-mark") : ""}</div>`).join("")
       + (battle.typing ? `<div class="msg her"><div class="bubble typing"><i></i><i></i><i></i></div></div>` : "");
     const opts = !battle.final && !battle.typing && battle.options && !battle.pending
-      ? `<div class="your-move">Твой ход · ${battle.n} из ${battle.total}</div>
+      ? `${battle.deadline ? '<div class="btimer"><i></i></div>' : ""}<div class="your-move">Твой ход · ${battle.n} из ${battle.total}${battle.blitz ? " · блиц" : ""}</div>
          <div class="moves" id="bmoves">${battle.options.map((o) => `<button class="move" data-idx="${o.idx}">${esc(o.text)}</button>`).join("")}</div>` : "";
     screen.innerHTML = `
       <div class="board-top">
@@ -631,7 +660,7 @@
 
   async function playMove(el) {
     if (battle.busy) return;
-    battle.busy = true; haptic("tap");
+    battle.busy = true; battle.deadline = null; haptic("tap");
     const text = el.textContent;
     let res;
     try { res = await api("partiya/move", { game_id: battle.game_id, idx: +el.dataset.idx }); }
@@ -661,7 +690,7 @@
       if (res.final) { battle.final = res.final; return showFinal(res.final); }
       await herSays(res.next.her);
       battle.options = res.next.options; battle.n = res.next.n;
-      battle.pending = false; battle.busy = false; drawBattle();
+      battle.pending = false; battle.busy = false; startClock(); drawBattle();
     };
   }
 
@@ -711,6 +740,12 @@
     const b = e.target.closest("[data-bot]");
     if (b) { openBot(b.dataset.bot); return; }
     if (e.target.closest("[data-feedback]")) { openFeedback(false); return; }
+    if (e.target.closest("#blitz-tg")) {
+      blitzOn = !blitzOn; pref("blitz", blitzOn ? "1" : "0"); haptic("tap");
+      e.target.closest("#blitz-tg").classList.toggle("on", blitzOn);
+      toast(blitzOn ? "Блиц включён: 30 секунд на ход" : "Блиц выключен");
+      return;
+    }
     const pl = e.target.closest("[data-partiya]");
     if (pl) { haptic("tap"); startPartiya(pl.dataset.partiya); return; }
     if (e.target.closest("[data-invite]")) {
@@ -780,9 +815,9 @@
       { id: "golosovoe", title: "Голосовое не тебе", rating: 600, intro: "Она отправила тебе голосовое — явно для подруги", moves: 4, result: null },
       { id: "byvshaya", title: "Бывшая в 3 ночи", rating: 1000, intro: "Вы расстались полгода назад. 03:07, приходит", moves: 4, result: "mate", accuracy: 35 },
     ] };
-    if (path === "partiya/start") { DG.step = 0; return { game_id: 1, rated: true, partiya: { id: "golosovoe", title: "Голосовое не тебе", rating: 600, intro: "Вы переписываетесь неделю. Она отправила тебе голосовое — явно для подруги", moves: 2 }, step: { n: 1, total: 2, her: DG.steps[0].her, options: DG.steps[0].options.map((o, idx) => ({ idx, text: o[0] })) } }; }
+    if (path === "partiya/start") { DG.step = 0; return { game_id: 1, rated: true, blitz: !!body.blitz, seconds: 30, partiya: { id: "golosovoe", title: "Голосовое не тебе", rating: 600, intro: "Вы переписываетесь неделю. Она отправила тебе голосовое — явно для подруги", moves: 2 }, step: { n: 1, total: 2, her: DG.steps[0].her, options: DG.steps[0].options.map((o, idx) => ({ idx, text: o[0] })) } }; }
     if (path === "partiya/move") {
-      const st = DG.steps[DG.step]; const o = st.options[body.idx]; DG.step++;
+      const st = DG.steps[DG.step]; const o = body.timeout ? ["(долго думал)", "??", "30 секунд прошли. Пока ты думал, она ушла в другой чат", "ладно, мне тут пишут, потом отвечу"] : st.options[body.idx]; DG.step++;
       const res = { mark: o[1], name: MARKS[o[1]].name, why: o[2], reply: o[3], best: o[1] === "!!" ? null : st.options.find((x) => x[1] === "!!")[0], others: st.options.filter((x) => x !== o).map((x) => ({ text: x[0], mark: x[1], why: x[2] })) };
       if (DG.step < DG.steps.length) res.next = { n: DG.step + 1, total: 2, her: DG.steps[DG.step].her, options: DG.steps[DG.step].options.map((x, idx) => ({ idx, text: x[0] })) };
       else res.final = { result: "win", rated: true, before: D.rating, after: D.rating + 31, delta: 31, accuracy: 90, marks: ["!!", "!"], expected: 23, rank_up: false, me: demoMe(), need_feedback: false };

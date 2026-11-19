@@ -541,6 +541,8 @@ async def init_db():
             )
         """)
         await conn.execute("CREATE INDEX IF NOT EXISTS app_games_user ON app_games (user_id, partiya)")
+        # 19.11: режим «Блиц» (30 с на ход), отзыв #32
+        await conn.execute("ALTER TABLE app_games ADD COLUMN IF NOT EXISTS blitz BOOLEAN NOT NULL DEFAULT FALSE")
         # закрытый бета-тест: места, очередь, отзывы
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS beta_testers (
@@ -2678,7 +2680,7 @@ async def app_game_get(game_id: int, user_id: int):
     return g
 
 
-async def app_game_start(user_id: int, partiya: str) -> dict:
+async def app_game_start(user_id: int, partiya: str, blitz: bool = False) -> dict:
     """Новая партия (старая незаконченная этой же — сбрасывается). Рейтинговая только первая."""
     db = await get_pool()
     async with db.acquire() as conn:
@@ -2691,8 +2693,8 @@ async def app_game_start(user_id: int, partiya: str) -> dict:
                 SELECT EXISTS (SELECT 1 FROM app_games WHERE user_id = $1 AND partiya = $2 AND status = 'finished')
             """, user_id, partiya)
             row = await conn.fetchrow("""
-                INSERT INTO app_games (user_id, partiya, rated) VALUES ($1, $2, $3) RETURNING *
-            """, user_id, partiya, not played)
+                INSERT INTO app_games (user_id, partiya, rated, blitz) VALUES ($1, $2, $3, $4) RETURNING *
+            """, user_id, partiya, not played, blitz)
     g = dict(row)
     g["moves"] = []
     return g

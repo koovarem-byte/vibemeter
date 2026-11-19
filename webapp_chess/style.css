@@ -338,3 +338,13 @@ body.in-battle .screen { padding-bottom: calc(24px + var(--safe-b)); }
 /* обучение: проверка прочитанного (18.11) */
 .pill.no { background: rgba(235, 87, 87, .14); color: #ff8a80; }
 .moves.locked .move:not(.picked) { opacity: .55; }
+
+/* 19.11: переключатель «Блиц» и таймер хода */
+.card.toggle { width: 100%; text-align: left; }
+.switch { width: 46px; height: 28px; border-radius: 14px; background: #1b2a20; border: 1px solid var(--line); position: relative; flex: none; transition: background .2s; }
+.switch i { position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #e9f2ec; transition: transform .2s; }
+.card.toggle.on .switch { background: var(--green); }
+.card.toggle.on .switch i { transform: translateX(18px); }
+.btimer { height: 6px; border-radius: 3px; background: #1b2a20; overflow: hidden; margin: 0 0 10px; }
+.btimer i { display: block; height: 100%; width: 100%; background: var(--green); transition: width .2s linear; }
+.btimer.low i { background: var(--m-blunder); }
