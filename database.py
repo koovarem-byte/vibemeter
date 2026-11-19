@@ -541,6 +541,8 @@ async def init_db():
             )
         """)
         await conn.execute("CREATE INDEX IF NOT EXISTS app_games_user ON app_games (user_id, partiya)")
+        # 19.11: уровень игрока (отзыв #41): start — 14–17 лет, pro — были отношения
+        await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS level TEXT NOT NULL DEFAULT 'start'")
         # 19.11: режим «Блиц» (30 с на ход), отзыв #32
         await conn.execute("ALTER TABLE app_games ADD COLUMN IF NOT EXISTS blitz BOOLEAN NOT NULL DEFAULT FALSE")
         # закрытый бета-тест: места, очередь, отзывы
@@ -905,6 +907,12 @@ async def set_daily_answer(user_id: int, answer: str) -> bool:
 
 
 # USERS
+
+async def set_level(telegram_id: int, level: str):
+    db = await get_pool()
+    async with db.acquire() as conn:
+        await conn.execute("UPDATE users SET level = $2 WHERE telegram_id = $1", telegram_id, level)
+
 
 async def get_user(telegram_id: int):
     db = await get_pool()

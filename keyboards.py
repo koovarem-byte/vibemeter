@@ -498,6 +498,12 @@ def play_button():
     return rows([btn(ui.BTN_PLAY, "play_menu", neon="crown")])
 
 
+def level_keyboard(current: str):
+    """Уровень игрока (19.11): «Начинаю» и «Опытный», текущий с галочкой."""
+    import ui
+    return rows([btn(("✓ " if current == k else "") + ui.LEVEL_NAMES[k], f"lvl:{k}") for k in ("start", "pro")])
+
+
 def situations_keyboard(items):
     keyboard = [[btn(f"{ui.unquote(s.get('title') or s['key'])} {'★' * stars(s['difficulty'])}", f"play:{s['key']}")]
                 for s in sorted(items, key=lambda s: s["difficulty"])]

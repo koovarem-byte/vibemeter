@@ -348,3 +348,8 @@ body.in-battle .screen { padding-bottom: calc(24px + var(--safe-b)); }
 .btimer { height: 6px; border-radius: 3px; background: #1b2a20; overflow: hidden; margin: 0 0 10px; }
 .btimer i { display: block; height: 100%; width: 100%; background: var(--green); transition: width .2s linear; }
 .btimer.low i { background: var(--m-blunder); }
+
+/* 19.11: уровень «Начинаю / Опытный» */
+.seg { display: flex; gap: 4px; padding: 4px; margin: 0 0 12px; border-radius: 14px; background: #0f1d14; border: 1px solid var(--line); }
+.seg button { flex: 1; padding: 10px 8px; border: 0; border-radius: 10px; background: transparent; color: var(--muted); font: inherit; font-weight: 800; font-size: 14px; }
+.seg button.on { background: var(--green); color: #06120a; }

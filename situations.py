@@ -28,7 +28,16 @@ async def get(key: str) -> dict | None:
     return next((s for s in await all_situations() if s["key"] == key), None)
 
 
-async def daily() -> dict:
-    """Задача дня: одна ситуация на всех, меняется по Москве (только с репликой от неё)."""
-    items = [s for s in await all_situations() if s.get("opening")]
+def fits(s: dict, level: str | None) -> bool:
+    """19.11: «Начинаю» не видит ситуаций уровня pro. Без уровня (добавленные /add_situation) — всем."""
+    return level != "start" or s.get("level", "start") == "start"
+
+
+async def for_level(level: str | None) -> list[dict]:
+    return [s for s in await all_situations() if fits(s, level)]
+
+
+async def daily(level: str | None = None) -> dict:
+    """Задача дня: одна ситуация на всех своего уровня, меняется по Москве (только с репликой от неё)."""
+    items = [s for s in await for_level(level) if s.get("opening")]
     return items[datetime.now(MSK).date().toordinal() % len(items)]

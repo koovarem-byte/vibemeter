@@ -32,6 +32,7 @@ from database import (
     beta_is_tester,
     beta_join,
     rated_count,
+    set_level,
     chat_place,
     chess_period_top,
     chess_profile,
@@ -107,7 +108,10 @@ def first_name(name: str | None) -> str:
     return ((name or "").strip().split() or ["Игрок"])[0][:20]
 
 
-def me_json(user, solved: int) -> dict:
+def me_json(user, done: set[int]) -> dict:
+    """done — решённые задачи; «из скольких» считаем по задачам своего уровня (19.11)."""
+    level = puzzles.user_level(user)
+    pool = puzzles.pool(level)
     r = user["chess_rating"] or 0
     nxt = puzzles.next_rank(r)
     prev = max([limit for limit, _ in puzzles.RANKS if limit <= r] or [0])
@@ -119,41 +123,45 @@ def me_json(user, solved: int) -> dict:
         "next": {"at": nxt[0], "rank": nxt[1]} if nxt else None,
         "streak": user["streak_days"] or 0,
         "best_streak": max(user.get("best_streak") or 0, user["streak_days"] or 0),
-        "solved": solved,
-        "total": len(puzzles.PUZZLES),
+        "solved": len(done & set(pool)),
+        "total": len(pool),
+        "level": level,
         "knowledge": user.get("learn_points") or 0,
     }
 
 
-def puzzle_json(pid: int, number: int) -> dict:
+def puzzle_json(pid: int, number: int, level: str) -> dict:
     p = puzzles.PUZZLES[pid]
     return {
         "id": pid,
         "number": number,
-        "daily": pid == puzzles.today_index(),
+        "daily": pid == puzzles.today_index(level),
         "chat": p["chat"],
         "moves": [{"idx": i, "text": p["moves"][i][0]} for i in puzzles.move_order(pid)],
     }
 
 
-def next_puzzle(done: set[int]):
-    total = len(puzzles.PUZZLES)
-    start = puzzles.today_index()
-    for i in range(total):
-        pid = (start + i) % total
-        if pid not in done:
-            return pid
-    return None
+def next_puzzle(done: set[int], level: str):
+    return next((pid for pid in puzzles.pool(level) if pid not in done), None)
+
+
+def puzzles_json(user, done: set[int]) -> dict:
+    """Следующая задача, задача дня и «я» — по уровню игрока."""
+    level = puzzles.user_level(user)
+    pid = next_puzzle(done, level)
+    me = me_json(user, done)
+    return {
+        "me": me,
+        "puzzle": puzzle_json(pid, me["solved"] + 1, level) if pid is not None else None,
+        "daily_done": puzzles.today_index(level) in done,
+    }
 
 
 async def api_state(request):
     user = request["user"]
     done = await solved_puzzles(user["telegram_id"])
-    pid = next_puzzle(done)
     return web.json_response({
-        "me": me_json(user, len(done)),
-        "puzzle": puzzle_json(pid, len(done) + 1) if pid is not None else None,
-        "daily_done": puzzles.today_index() in done,
+        **puzzles_json(user, done),
         "bot": (await request.app["bot"].me()).username,
         "beta": await beta_json(request),
     })
@@ -230,8 +238,8 @@ async def api_move(request):
     await log_event(user["telegram_id"], "puzzle_app", f"{pid}:{mark}")
     best = max(puzzle["moves"], key=lambda m: puzzles.DELTA[m[1]])
     done = await solved_puzzles(user["telegram_id"])
-    nxt = next_puzzle(done)
     fresh = {**user, "chess_rating": new_rating}
+    nxt = puzzles_json(fresh, done)
     return web.json_response({
         "mark": mark,
         "name": rating.NAMES[mark],
@@ -241,8 +249,8 @@ async def api_move(request):
         "delta": new_rating - before,
         "rated": rated,
         "rank_up": puzzles.rank(new_rating) != puzzles.rank(before),
-        "me": me_json(fresh, len(done)),
-        "puzzle": puzzle_json(nxt, len(done) + 1) if nxt is not None else None,
+        "me": nxt["me"],
+        "puzzle": nxt["puzzle"],
     })
 
 
@@ -336,7 +344,7 @@ async def api_learn_quiz(request):
     fresh = await get_user(uid) or user
     done = await solved_puzzles(uid)
     return web.json_response({"ok": ok, "correct": learn.QUIZ[fid][1], "delta": earned,
-                              "me": me_json(fresh, len(done)), "learn": await learn_json(uid)})
+                              "me": me_json(fresh, done), "learn": await learn_json(uid)})
 
 
 async def api_profile(request):
@@ -344,7 +352,7 @@ async def api_profile(request):
     done = await solved_puzzles(user["telegram_id"])
     prof = await chess_profile(user["telegram_id"])
     place, total = await chat_place(user["telegram_id"])
-    return web.json_response({"me": me_json(user, len(done)), **prof, "place": place, "players": total})
+    return web.json_response({"me": me_json(user, done), **prof, "place": place, "players": total})
 
 
 # ---------- партии без ИИ ----------
@@ -366,17 +374,40 @@ def step_json(game_id: int, p: dict, step: int) -> dict:
 
 
 def partiya_meta(p: dict) -> dict:
-    return {"id": p["id"], "title": p["title"], "rating": p["rating"], "intro": p["intro"], "moves": len(p["steps"])}
+    return {"id": p["id"], "title": p["title"], "rating": p["rating"], "intro": p["intro"], "moves": len(p["steps"]),
+            "level": p["level"]}
+
+
+def partii_for(level: str) -> list[dict]:
+    """«Начинаю» — только партии start; «Опытный» — сначала свои, потом школьные (19.11)."""
+    own = sorted((p for p in partii.PARTII if p["level"] == level), key=lambda p: p["rating"])
+    rest = sorted((p for p in partii.PARTII if p["level"] != level), key=lambda p: p["rating"])
+    return own + (rest if level == "pro" else [])
+
+
+async def api_level(request):
+    user = request["user"]
+    try:
+        level = str((await request.json())["level"])
+    except (ValueError, KeyError, TypeError):
+        return error("bad_request", 400)
+    if level not in puzzles.LEVELS:
+        return error("bad_request", 400)
+    await set_level(user["telegram_id"], level)
+    await log_event(user["telegram_id"], "level", level)
+    fresh = {**user, "level": level}
+    return web.json_response(puzzles_json(fresh, await solved_puzzles(user["telegram_id"])))
 
 
 async def api_partii(request):
     summary = await app_games_summary(request["user"]["telegram_id"])
     items = []
-    for p in sorted(partii.PARTII, key=lambda p: p["rating"]):
+    for p in partii_for(puzzles.user_level(request["user"])):
         done = summary.get(p["id"])
         items.append({**partiya_meta(p), "result": done and done["result"],
                       "accuracy": done and rating.accuracy(done["marks"])})
-    return web.json_response({"items": items, "beta": await beta_json(request)})
+    return web.json_response({"items": items, "level": puzzles.user_level(request["user"]),
+                              "beta": await beta_json(request)})
 
 
 async def api_partiya_start(request):
@@ -445,7 +476,7 @@ async def api_partiya_move(request):
         "accuracy": rating.accuracy(marks), "marks": marks,
         "expected": round(rating.expected(before, p["rating"]) * 100),
         "rank_up": puzzles.rank(after) != puzzles.rank(before),
-        "me": me_json({**user, "chess_rating": after}, len(done)),
+        "me": me_json({**user, "chess_rating": after}, done),
         "need_feedback": await need_feedback(uid),
     }
     return web.json_response(out)
@@ -472,6 +503,7 @@ def setup_play(app: web.Application):
     app.router.add_post("/play/api/beta/join", api_beta_join)
     app.router.add_post("/play/api/feedback", api_feedback)
     app.router.add_get("/play/api/partii", api_partii)
+    app.router.add_post("/play/api/level", api_level)
     app.router.add_post("/play/api/partiya/start", api_partiya_start)
     app.router.add_post("/play/api/partiya/move", api_partiya_move)
     app.router.add_get("/play", to_index)

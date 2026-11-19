@@ -594,8 +594,30 @@ for _i, _p in enumerate(PUZZLES):
 LEVELS = ("start", "pro")
 
 
-def today_index() -> int:
-    return datetime.now(MSK).date().toordinal() % len(PUZZLES)
+def ids(level: str | None = None) -> list[int]:
+    return [i for i, p in enumerate(PUZZLES) if level is None or p["level"] == level]
+
+
+def today_index(level: str | None = None) -> int:
+    """Задача дня: одна на всех своего уровня (без уровня — из всех задач, для ссылок другу)."""
+    own = ids(level if level in LEVELS else None)
+    return own[datetime.now(MSK).date().toordinal() % len(own)]
+
+
+def user_level(user) -> str:
+    lvl = user.get("level") if user else None
+    return lvl if lvl in LEVELS else "start"
+
+
+def pool(level: str) -> list[int]:
+    """Задачи уровня по порядку: сначала задача дня и дальше по кругу; «Опытному» после своих — школьные.
+    «Начинаю» видит только start (14–17 лет: без бывших, денег и ссор в отношениях)."""
+    own = ids(level)
+    k = own.index(today_index(level))
+    order = own[k:] + own[:k]
+    if level == "pro":
+        order += ids("start")
+    return order
 
 
 RANKS = [(1400, "Гроссмейстер"), (1000, "Ферзь"), (700, "Ладья"), (400, "Слон"), (200, "Конь")]

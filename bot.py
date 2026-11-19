@@ -174,6 +174,7 @@ async def setup_menu_button(bot):
             BotCommand(command="me", description="Мой рейтинг"),
             BotCommand(command="top", description="Таблица лидеров"),
             BotCommand(command="ask", description="Вопрос автору"),
+            BotCommand(command="level", description="Уровень: начинаю или опытный"),
             BotCommand(command="help", description="Что это и правила"),
         ])
         if WEBAPP_URL:

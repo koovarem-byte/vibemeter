@@ -1,14 +1,98 @@
 [
-  {"key": "ex_0214", "opening": "не спишь?", "context": "бывшая, 02:14 ночи", "difficulty": 2200, "title": "Бывшая в 02:14"},
-  {"key": "ex_new", "opening": "у тебя новая?", "context": "бывшая увидела твою сторис с девушкой", "difficulty": 2100, "title": "«У тебя новая?»"},
-  {"key": "ex_bday", "opening": "с днём рождения)", "context": "бывшая, 00:01 в твой день рождения", "difficulty": 1900, "title": "Бывшая поздравила"},
-  {"key": "podumayu", "opening": "я подумаю", "context": "ты позвал её гулять", "difficulty": 1500, "title": "«Я подумаю»"},
-  {"key": "six_hours", "opening": "привет, была занята", "context": "она ответила через 6 часов", "difficulty": 1400, "title": "Ответила через 6 часов"},
-  {"key": "kak_dela", "opening": "привет, как дела?", "context": "она написала первой", "difficulty": 1200, "title": "«Привет, как дела?»"},
-  {"key": "ok", "opening": "ок", "context": "ответ на твоё длинное сообщение", "difficulty": 1500, "title": "«Ок»"},
-  {"key": "paren", "opening": "мне тут один парень написал", "context": "проверка на ревность", "difficulty": 1800, "title": "«Мне парень написал»"},
-  {"key": "delay", "opening": "делай что хочешь", "context": "после спора", "difficulty": 2000, "title": "«Делай что хочешь»"},
-  {"key": "storis", "opening": "", "context": "она смотрит твои сторис, но 3 дня не отвечает. Первым пишешь ты", "difficulty": 1700, "title": "Смотрит сторис, молчит"},
-  {"key": "first", "opening": "", "context": "взаимная симпатия, вы ещё не переписывались. Первым пишешь ты", "difficulty": 1300, "title": "Первое сообщение"},
-  {"key": "nastya", "opening": "а кто такая Настя?", "context": "ревность", "difficulty": 1800, "title": "«А кто такая Настя?»"}
+  {
+    "key": "ex_0214",
+    "opening": "не спишь?",
+    "context": "бывшая, 02:14 ночи",
+    "difficulty": 2200,
+    "title": "Бывшая в 02:14",
+    "level": "pro"
+  },
+  {
+    "key": "ex_new",
+    "opening": "у тебя новая?",
+    "context": "бывшая увидела твою сторис с девушкой",
+    "difficulty": 2100,
+    "title": "«У тебя новая?»",
+    "level": "pro"
+  },
+  {
+    "key": "ex_bday",
+    "opening": "с днём рождения)",
+    "context": "бывшая, 00:01 в твой день рождения",
+    "difficulty": 1900,
+    "title": "Бывшая поздравила",
+    "level": "pro"
+  },
+  {
+    "key": "podumayu",
+    "opening": "я подумаю",
+    "context": "ты позвал её гулять",
+    "difficulty": 1500,
+    "title": "«Я подумаю»",
+    "level": "start"
+  },
+  {
+    "key": "six_hours",
+    "opening": "привет, была занята",
+    "context": "она ответила через 6 часов",
+    "difficulty": 1400,
+    "title": "Ответила через 6 часов",
+    "level": "start"
+  },
+  {
+    "key": "kak_dela",
+    "opening": "привет, как дела?",
+    "context": "она написала первой",
+    "difficulty": 1200,
+    "title": "«Привет, как дела?»",
+    "level": "start"
+  },
+  {
+    "key": "ok",
+    "opening": "ок",
+    "context": "ответ на твоё длинное сообщение",
+    "difficulty": 1500,
+    "title": "«Ок»",
+    "level": "start"
+  },
+  {
+    "key": "paren",
+    "opening": "мне тут один парень написал",
+    "context": "проверка на ревность",
+    "difficulty": 1800,
+    "title": "«Мне парень написал»",
+    "level": "pro"
+  },
+  {
+    "key": "delay",
+    "opening": "делай что хочешь",
+    "context": "после спора",
+    "difficulty": 2000,
+    "title": "«Делай что хочешь»",
+    "level": "pro"
+  },
+  {
+    "key": "storis",
+    "opening": "",
+    "context": "она смотрит твои сторис, но 3 дня не отвечает. Первым пишешь ты",
+    "difficulty": 1700,
+    "title": "Смотрит сторис, молчит",
+    "level": "start"
+  },
+  {
+    "key": "first",
+    "opening": "",
+    "context": "взаимная симпатия, вы ещё не переписывались. Первым пишешь ты",
+    "difficulty": 1300,
+    "title": "Первое сообщение",
+    "level": "start"
+  },
+  {
+    "key": "nastya",
+    "opening": "а кто такая Настя?",
+    "context": "ревность",
+    "difficulty": 1800,
+    "title": "«А кто такая Настя?»",
+    "level": "pro"
+  }
 ]

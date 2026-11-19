@@ -1137,9 +1137,10 @@ async def show_puzzle(message: Message, user_id: int, first: int | None = None):
         return
     done = await solved_puzzles(user_id)
     total = len(puzzles.PUZZLES)
-    # сначала задача от друга или задача дня, потом остальные по кругу
-    start = first if first is not None and 0 <= first < total else puzzles.today_index()
-    order = [(start + i) % total for i in range(total)]
+    # сначала задача от друга, потом задачи своего уровня с задачи дня по кругу (19.11)
+    order = puzzles.pool(puzzles.user_level(user))
+    if first is not None and 0 <= first < total:
+        order = [first] + [i for i in order if i != first]
     left = [i for i in order if i not in done]
     if not left:
         await message.answer(ui.PUZZLES_DONE)
@@ -1148,7 +1149,7 @@ async def show_puzzle(message: Message, user_id: int, first: int | None = None):
     pid = left[0]
     rating = user.get("chess_rating") or 0
     await message.answer(
-        ui.puzzle_text(puzzles.PUZZLES[pid], len(done) + 1, rating, puzzles.rank(rating)),
+        ui.puzzle_text(puzzles.PUZZLES[pid], len(done & set(order)) + 1, rating, puzzles.rank(rating)),
         reply_markup=puzzle_keyboard(pid, puzzles.PUZZLES[pid]["moves"]),
     )
 

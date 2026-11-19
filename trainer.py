@@ -40,6 +40,7 @@ from database import (
     log_event,
     log_razbor,
     razbors_today,
+    set_level,
     save_chat_daily,
     save_chat_history,
     take_author_question,
@@ -51,6 +52,7 @@ from keyboards import (
     baza_keyboard,
     fact_keyboard,
     friend_keyboard,
+    level_keyboard,
     main_menu,
     situations_keyboard,
 )
@@ -118,6 +120,10 @@ async def _owner():
     return await get_user(ADMIN_ID)
 
 
+async def _level(user_id: int) -> str:
+    return puzzles.user_level(await get_user(user_id))
+
+
 async def _registered(message: Message) -> bool:
     if await get_user(message.from_user.id):
         return True
@@ -143,7 +149,7 @@ async def open_play_menu(message: Message, user_id: int, state: FSMContext):
         await message.answer(ui.LLM_SOON, reply_markup=main_menu())
         await handlers.show_puzzle(message, user_id)
         return
-    await message.answer(ui.PLAY_CHOOSE, reply_markup=situations_keyboard(await situations.all_situations()))
+    await message.answer(ui.PLAY_CHOOSE, reply_markup=situations_keyboard(await situations.for_level(await _level(user_id))))
 
 
 @router.message(F.text.in_(ui.menu_texts(ui.MENU_PLAY)))
@@ -163,8 +169,10 @@ async def play_menu_cb(callback: CallbackQuery, state: FSMContext):
 async def play_start(callback: CallbackQuery, state: FSMContext):
     user_id = callback.from_user.id
     key = callback.data.split(":", 1)[1]
-    items = await situations.all_situations()
-    sit = random.choice(items) if key == "random" else next((s for s in items if s["key"] == key), None)
+    if key == "random":
+        sit = random.choice(await situations.for_level(await _level(user_id)))
+    else:
+        sit = await situations.get(key)
     if not sit:
         await callback.answer("Такой партии нет", show_alert=True)
         return
@@ -273,7 +281,7 @@ async def open_daily(message: Message, user_id: int, state: FSMContext):
         v = {"badge": done["badge"], "eval": done["eval"], "coach": done["coach"] or "", "best_move": ""}
         await message.answer(ui.daily_result(v, better, total, already=True), reply_markup=after_game_keyboard())
         return
-    sit = await situations.daily()
+    sit = await situations.daily(await _level(user_id))
     await state.set_state(TrainState.daily)
     await message.answer(ui.DAILY_ASK.format(context=html.escape(sit["context"]), opening=html.escape(sit["opening"])))
 
@@ -299,7 +307,7 @@ async def daily_move(message: Message, state: FSMContext):
     if len(move) > MAX_MOVE_LEN:
         await message.answer(ui.TOO_LONG)
         return
-    sit = await situations.daily()
+    sit = await situations.daily(await _level(message.from_user.id))
     await _typing(message)
     verdict = await llm.judge(sit, [{"who": "her", "text": sit["opening"]}], move)
     await state.clear()
@@ -497,6 +505,33 @@ async def help_cmd(message: Message, state: FSMContext):
 
 
 @router.message(F.text.in_(ui.menu_texts(ui.MENU_FACT)))
+# ---------- уровень (19.11, отзыв #41) ----------
+
+@router.message(Command("level"))
+async def level_cmd(message: Message, state: FSMContext):
+    if not await _registered(message):
+        return
+    await state.clear()
+    level = await _level(message.from_user.id)
+    await message.answer(ui.level_ask(level), reply_markup=level_keyboard(level))
+
+
+@router.callback_query(F.data.startswith("lvl:"))
+async def level_set(callback: CallbackQuery):
+    level = callback.data.split(":", 1)[1]
+    if level not in puzzles.LEVELS:
+        await callback.answer()
+        return
+    await set_level(callback.from_user.id, level)
+    await log_event(callback.from_user.id, "level", level)
+    await callback.answer(ui.LEVEL_NAMES[level])
+    try:
+        await callback.message.edit_text(ui.level_ask(level), reply_markup=level_keyboard(level))
+    except Exception:
+        pass
+    await callback.message.answer(ui.level_done(level))
+
+
 @router.message(Command("fact"))
 async def fact_cmd(message: Message, state: FSMContext):
     await state.clear()

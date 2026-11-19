@@ -101,6 +101,21 @@
   const hue = (s) => [...s].reduce((a, c) => (a * 31 + c.charCodeAt(0)) % 360, 7);
 
   // ---------- Главная ----------
+  // уровень (19.11): «Начинаю» — школа и первые переписки, «Опытный» — отношения
+  const LEVELS = [["start", "Начинаю"], ["pro", "Опытный"]];
+  function levelHtml(level) {
+    return `<div class="seg" id="level-seg">${LEVELS.map(([k, t]) => `<button class="${(level || "start") === k ? "on" : ""}" data-level="${k}">${t}</button>`).join("")}</div>`;
+  }
+  async function setLevel(level) {
+    if ((state.me.level || "start") === level) return;
+    haptic("tap");
+    let res;
+    try { res = await api("level", { level }); } catch (e) { toast("Не получилось, попробуй ещё раз"); return; }
+    Object.assign(state, res);
+    toast(level === "pro" ? "Опытный: отношения, бывшие, ссоры" : "Начинаю: школа, друзья, первые переписки");
+    if (tab === "partii") renderPartii(); else if (tab === "home") renderHome(); else if (tab === "game") renderGame();
+  }
+
   function renderHome() {
     const { me } = state;
     const daily = state.daily_done
@@ -112,6 +127,7 @@
         <div class="brand">Шах и <span>Чат</span></div>
         <div class="tagline">Общайся. Учись. Побеждай.</div>
       </div>
+      ${levelHtml(me.level)}
       <button class="btn big" data-go="partii">Начать партию ▶</button>
       <button class="card" data-go="top">
         <div class="ico">${icon("rating")}</div>
@@ -558,6 +574,7 @@
     if (tab !== "partii") return;
     if (data.beta) state.beta = data.beta;
     screen.innerHTML = `<div class="title">Партии</div><p class="subtitle">Живые переписки. Каждый ход — оценка, как в шахматах. Рейтинг соперницы — по Эло</p>
+      ${levelHtml(data.level)}
       <button class="card toggle${blitzOn ? " on" : ""}" id="blitz-tg"><div class="ico">⏱</div>
         <div class="main"><div class="t">Блиц</div><div class="s">30 секунд на ход. Не успел — ход ??</div></div><div class="switch"><i></i></div></button>
       ${data.items.map((p) => {
@@ -740,6 +757,8 @@
     const b = e.target.closest("[data-bot]");
     if (b) { openBot(b.dataset.bot); return; }
     if (e.target.closest("[data-feedback]")) { openFeedback(false); return; }
+    const lv = e.target.closest("[data-level]");
+    if (lv) { setLevel(lv.dataset.level); return; }
     if (e.target.closest("#blitz-tg")) {
       blitzOn = !blitzOn; pref("blitz", blitzOn ? "1" : "0"); haptic("tap");
       e.target.closest("#blitz-tg").classList.toggle("on", blitzOn);
@@ -791,7 +810,7 @@
   function demoMe() {
     const rk = demoRank(D.rating);
     const nx = RANKS.find((x) => x[2] > D.rating);
-    return { name: "Артемий", rating: D.rating, rank: rk[0], rank_from: rk[2], next: nx ? { at: nx[2], rank: nx[0] } : null, streak: D.streak, best_streak: 4, solved: D.solved, total: 36 };
+    return { name: "Артемий", rating: D.rating, rank: rk[0], rank_from: rk[2], next: nx ? { at: nx[2], rank: nx[0] } : null, streak: D.streak, best_streak: 4, solved: D.solved, total: 39, level: D.level || "start" };
   }
   const demoPuzzle = (i) => (i < DEMO_P.length ? { id: i, number: D.solved + 1, daily: i === 0, chat: DEMO_P[i].chat, moves: DEMO_P[i].moves.map((m, idx) => ({ idx, text: m[0] })) } : null);
   let demoI = 0;
@@ -810,7 +829,8 @@
     if (path === "state") return { me: demoMe(), puzzle: demoPuzzle(demoI), daily_done: false, bot: "vibemeter_bot", beta: { on: true, tester: !/closed/.test(location.search), slots: 30, feedback: false, games: 0, need_feedback: false } };
     if (path === "beta/join") return { ok: false, num: 12, total: 30, slots: 30 };
     if (path === "feedback") return { ok: true };
-    if (path === "partii") return { items: [
+    if (path === "level") { D.level = body.level; return { me: demoMe(), puzzle: demoPuzzle(demoI), daily_done: false }; }
+    if (path === "partii") return { level: D.level || "start", items: [
       { id: "povyshenie", title: "Её повысили", rating: 200, intro: "Вы общаетесь две недели. Вечер, она пишет первой", moves: 4, result: "win", accuracy: 88 },
       { id: "golosovoe", title: "Голосовое не тебе", rating: 600, intro: "Она отправила тебе голосовое — явно для подруги", moves: 4, result: null },
       { id: "byvshaya", title: "Бывшая в 3 ночи", rating: 1000, intro: "Вы расстались полгода назад. 03:07, приходит", moves: 4, result: "mate", accuracy: 35 },
