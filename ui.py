@@ -1420,6 +1420,7 @@ def beta_admin(st: dict, slots: int) -> str:
         "",
         "Ссылка для теста: t.me/&lt;бот&gt;?start=beta",
         "Места: /beta_slots N (0 — открыть всем)",
+        "Открыть N новых мест (очередь + ссылка): /beta_open 50",
         "Позвать из очереди: /beta_invite 30",
         "Повторный тест старым: /beta_retest",
     ]

@@ -1029,6 +1029,39 @@ async def beta_invite_cmd(message: Message):
                          f"Тестеров теперь {total}, мест {chess_api.BETA_SLOTS}")
 
 
+@router.message(Command("beta_open"))
+async def beta_open_cmd(message: Message):
+    """/beta_open 50 — план; /beta_open 50 go — ровно 50 новых мест: сначала очередь (с сообщением),
+    остаток — под ссылку ?start=beta (поднимаем BETA_SLOTS)."""
+    if message.from_user.id != ADMIN_ID:
+        return
+    import chess_api
+    from database import beta_admit, beta_testers_list, beta_waitlist_head, set_app_state
+    parts = (message.text or "").split()
+    if len(parts) < 2 or not parts[1].isdigit() or int(parts[1]) <= 0:
+        await message.answer("Сколько новых мест? Например: /beta_open 50")
+        return
+    n = int(parts[1])
+    testers = len(await beta_testers_list())
+    queue = await beta_waitlist_head(n)
+    free = n - len(queue)
+    if len(parts) < 3 or parts[2] != "go":
+        await message.answer(
+            f"План на {n} мест:\n"
+            f"• из очереди: {len(queue)} (им придёт сообщение)\n"
+            f"• по ссылке t.me/{(await message.bot.me()).username}?start=beta: {free}\n"
+            f"Тестеров станет до {testers + n}, сейчас {testers}\n\n"
+            f"Запустить: /beta_open {n} go")
+        return
+    total = await beta_admit(queue) if queue else testers
+    slots = total + free
+    chess_api.BETA_SLOTS = slots
+    await set_app_state("beta_slots", str(slots))
+    sent = await _send_beta(message, queue, ui.beta_invite_text()) if queue else 0
+    await message.answer(f"✅ Открыто {n} мест. Из очереди зашли {len(queue)} (сообщение ушло {sent}), "
+                         f"по ссылке свободно {free}. Всего мест: {slots}")
+
+
 @router.message(Command("broadcast"))
 async def broadcast_cmd(message: Message):
     await message.answer(await hub_text(), reply_markup=hub_keyboard())
