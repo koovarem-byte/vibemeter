@@ -549,8 +549,9 @@
     };
     if (!required) $("#fb-close").onclick = () => m.classList.add("hidden");
     $("#fb-send").onclick = async () => {
-      const text = $("#fb-text").value.trim();
-      if (text.length < 5) { toast("Напиши пару слов — это очень поможет"); return; }
+      // как на сервере: без невидимых символов и хотя бы 5 букв
+      const text = $("#fb-text").value.replace(/[\u00ad\u061c\u115f\u1160\u180e\u200b-\u200f\u202a-\u202e\u2060-\u206f\u2800\u3164\ufeff\uffa0]/g, "").replace(/\s+/g, " ").trim();
+      if ((text.match(/\p{L}/gu) || []).length < 5) { toast("Напиши пару слов — это очень поможет"); return; }
       try {
         await api("feedback", { stars: stars || null, text });
         haptic("success"); m.classList.add("hidden"); toast("Спасибо! Отзыв ушёл автору");

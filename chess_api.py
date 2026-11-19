@@ -8,7 +8,9 @@
 import html
 import logging
 import os
+import re
 import time
+import unicodedata
 from pathlib import Path
 
 from aiohttp import web
@@ -66,6 +68,22 @@ async def load_slots():
 # после стольких партий без отзыва дальше не пускаем — сначала мнение
 FEEDBACK_AFTER_GAMES = 2
 OPEN_FOR_ALL = ("/play/api/state", "/play/api/beta/join")
+
+
+# 19.11 (отзыв #40): отзыв из невидимых символов прошёл проверку длины.
+# Вырезаем «форматные» символы (zero-width, U+2060…, BOM, мягкий перенос) и пустые
+# буквы-заполнители (хангыль), пробелы схлопываем; нужно хотя бы MIN_LETTERS букв.
+FILLERS = "\u115f\u1160\u3164\uffa0\u2800"
+MIN_LETTERS = 5
+
+
+def clean_text(text: str) -> str:
+    text = "".join(ch for ch in text if unicodedata.category(ch) != "Cf" and ch not in FILLERS)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def letters(text: str) -> int:
+    return sum(ch.isalpha() for ch in text)
 
 
 def error(code: str, status: int):
@@ -197,14 +215,14 @@ async def api_feedback(request):
     user = request["user"]
     try:
         body = await request.json()
-        text = str(body.get("text") or "").strip()[:2000]
+        text = clean_text(str(body.get("text") or ""))[:2000]
         stars = body.get("stars")
         stars = int(stars) if stars is not None else None
         if stars is not None and not 1 <= stars <= 5:
             raise ValueError
     except (ValueError, TypeError):
         return error("bad_request", 400)
-    if len(text) < 5:
+    if letters(text) < MIN_LETTERS:
         return error("too_short", 400)
     fid = await beta_add_feedback(user["telegram_id"], stars, text)
     try:
