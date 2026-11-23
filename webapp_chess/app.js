@@ -268,6 +268,10 @@
       <div class="list">${data.items.map((it) => liHtml(it, pts)).join("")}</div>
       ${!mineVisible && data.me ? `<div class="me-pin">${liHtml({ ...data.me, name: "Ты", me: true, rank: state.me.rank }, pts)}</div>` : ""}
       ${!data.me ? `<p class="muted" style="text-align:center;margin-top:16px">Реши задачу — и ты в рейтинге</p>` : ""}`;
+    $("#top-body").onclick = (e) => {
+      const row = e.target.closest("[data-public-profile]");
+      if (row) renderPublicProfile(row.dataset.publicProfile);
+    };
   }
 
   function liHtml(it, pts) {
@@ -276,11 +280,28 @@
       ? `<div class="av knight"><img src="${LOGO}" alt=""></div>`
       : `<div class="av ${it.place === 1 ? "top1" : ""}" style="--h:${hue(it.name)}">${esc((it.name || "?")[0].toUpperCase())}</div>`;
     return `
-      <div class="li ${it.me ? "me" : ""}">
+      <div class="li ${it.me ? "me" : ""} ${it.public_profile ? "profile-link" : ""}" ${it.public_profile ? `data-public-profile="${esc(it.public_profile)}" role="button" tabindex="0"` : ""}>
         <div class="pl${cls}">${it.place <= 3 && !it.me ? icon("crown", "ic pl-crown") : ""}${it.place}</div>${av}
-        <div class="nm"><b>${it.me ? "Ты" : esc(it.name)}</b><span>${esc(it.rank)}</span></div>
+        <div class="nm"><b>${it.me ? "Ты" : esc(it.name)}</b><span>${esc(it.rank)}${it.public_profile ? " · профиль" : ""}</span></div>
         <div class="pt">${pts(it.points)}</div>
       </div>`;
+  }
+
+  async function renderPublicProfile(token) {
+    screen.innerHTML = `<button class="back" id="public-back">‹ К рейтингу</button><div class="skel"></div>`;
+    try {
+      const p = await api("profile/public?token=" + encodeURIComponent(token));
+      screen.innerHTML = `<button class="back" id="public-back">‹ К рейтингу</button>
+        <div class="title">Профиль игрока</div>
+        <div class="me-hero"><div class="ava"><img src="${LOGO}" alt=""></div>
+          <div class="nm">${esc(p.name)}</div><div class="rt">${esc(p.rank)} · рейтинг <b>${p.rating}</b></div></div>
+        <div class="stats"><div class="stat"><b>${p.solved}</b><span>задач решено</span></div>
+          <div class="stat"><b>${p.games}</b><span>партий</span></div><div class="stat"><b>${p.wins}</b><span>побед</span></div></div>
+        <p class="muted center" style="margin-top:16px">Игрок сам разрешил показывать эти данные в рейтинге</p>`;
+    } catch (e) {
+      screen.innerHTML = `<button class="back" id="public-back">‹ К рейтингу</button><div class="empty"><p class="muted">Профиль скрыт или больше недоступен</p></div>`;
+    }
+    $("#public-back").onclick = () => renderTop();
   }
 
   // ---------- Обучение: 3 статьи в день, проверка после каждой (18.11) ----------
@@ -490,6 +511,11 @@
         </div>
         <div class="bar"><i style="width:${Math.min(100, Math.round(((p.lessons_done_today || 0) / (p.lessons_goal || 3)) * 100))}%"></i></div>
       </div>
+      <button class="card toggle privacy-card${p.public_profile ? " on" : ""}" id="profile-public" role="switch" aria-checked="${p.public_profile ? "true" : "false"}" aria-label="Публичный профиль">
+        <div class="main"><div class="t">Профиль в рейтинге</div>
+          <div class="s">Показывать имя, звание, рейтинг и игровые итоги. Username, фото и переписки не видны.</div></div>
+        <span class="switch"><i></i></span>
+      </button>
       <button class="card" data-go="learn"><div class="ico">${icon("star")}</div><div class="main"><div class="t">Знания: ${me.knowledge || 0}</div><div class="s">Очки за статьи в Обучении, отдельно от рейтинга</div></div><div class="arrow">›</div></button>
       <div class="h2">Достижения <small>${achDone} / ${ach.length}</small></div>
       <div class="ach-grid" data-go="ach">${achGrid}</div>
@@ -498,6 +524,20 @@
       <div class="h2">Мои ходы <small>${total || ""}</small></div>
       ${total ? `<div class="marks">${marks}</div>` : '<p class="muted">Реши первую задачу — тут появится, как ты ходишь</p>'}
       ${p.games ? `<div class="h2">Партии с ИИ</div><p>${p.games} сыграно · побед: ${p.wins}</p>` : ""}`;
+    $("#profile-public").onclick = async (e) => {
+      const button = e.currentTarget;
+      if (button.dataset.busy) return;
+      const next = !profile.public_profile;
+      button.dataset.busy = "1";
+      try {
+        const saved = await api("profile/visibility", { enabled: next });
+        profile.public_profile = saved.public_profile;
+        button.classList.toggle("on", next);
+        button.setAttribute("aria-checked", String(next));
+        toast(next ? "Твой профиль будет виден в рейтинге" : "Профиль скрыт из рейтинга");
+      } catch (err) { toast("Не удалось сохранить настройку"); }
+      finally { delete button.dataset.busy; }
+    };
   }
 
   const errorHtml = () => `<div class="empty"><img src="${LOGO}" alt=""><p class="muted">Не загрузилось. Проверь интернет</p>
@@ -688,9 +728,21 @@
         <div class="evalbar"><i style="height:${evalPct()}%"></i></div>
         <div class="board-chat" id="bchat">${chat}</div>
       </div>
+      <input class="chat-scroll" id="chat-scroll" type="range" min="0" max="0" value="0" aria-label="Прокрутка переписки">
       <div class="board-bottom"><div class="player"><div class="av knight"><img src="${LOGO}" alt=""></div><div><b>Ты</b><span>Эло ${me.rating}</span></div></div></div>
       ${opts}`;
     const c = $("#bchat"); if (c) c.scrollTop = c.scrollHeight;
+    const slider = $("#chat-scroll");
+    if (c && slider) {
+      const sync = () => {
+        slider.max = Math.max(0, c.scrollHeight - c.clientHeight);
+        slider.value = c.scrollTop;
+        slider.classList.toggle("hidden", Number(slider.max) <= 0);
+      };
+      sync();
+      slider.oninput = () => { c.scrollTop = Number(slider.value); };
+      c.onscroll = sync;
+    }
     const bm = $("#bmoves");
     if (bm) bm.onclick = (e) => { const b = e.target.closest(".move"); if (b) playMove(b); };
   }

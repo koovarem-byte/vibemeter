@@ -36,9 +36,11 @@ from database import (
     beta_join,
     rated_count,
     set_level,
+    set_chess_profile_public,
     chat_place,
     chess_period_top,
     chess_profile,
+    get_chess_public_profile,
     get_user,
     learn_answer,
     learn_open,
@@ -327,6 +329,7 @@ async def api_top(request):
         "points": r["points"],
         "rank": puzzles.rank(r["chess_rating"] or 0),
         "me": r["telegram_id"] == me_id,
+        "public_profile": r["public_profile"],
     } for i, r in enumerate(rows)]
     mine = next((it for it in items if it["me"]), None)
     if mine is None and period == "all":
@@ -421,6 +424,34 @@ async def api_profile(request):
         "me": me_json(user, done), **prof, "place": place, "players": total,
         "lessons_done_today": sum(answer is not None for answer in learning["quiz"].values()),
         "lessons_goal": learn.PER_DAY,
+        "public_profile": bool(user.get("chess_profile_public", False)),
+    })
+
+
+async def api_profile_visibility(request):
+    enabled = (await request.json()).get("enabled")
+    if not isinstance(enabled, bool):
+        return error("bad_visibility", 400)
+    await set_chess_profile_public(request["user"]["telegram_id"], enabled)
+    return web.json_response({"public_profile": enabled})
+
+
+async def api_public_profile(request):
+    token = request.query.get("token", "")
+    if not token or len(token) > 80:
+        return error("not_found", 404)
+    user = await get_chess_public_profile(token)
+    if not user:
+        return error("not_found", 404)
+    done = await solved_puzzles(user["telegram_id"])
+    prof = await chess_profile(user["telegram_id"])
+    return web.json_response({
+        "name": first_name(user["full_name"]),
+        "rating": user["chess_rating"] or 0,
+        "rank": puzzles.rank(user["chess_rating"] or 0),
+        "solved": len(done),
+        "games": prof["games"],
+        "wins": prof["wins"],
     })
 
 
@@ -590,6 +621,8 @@ def setup_play(app: web.Application):
     app.router.add_get("/play/api/top", api_top)
     app.router.add_get("/play/api/facts", api_facts)
     app.router.add_get("/play/api/profile", api_profile)
+    app.router.add_post("/play/api/profile/visibility", api_profile_visibility)
+    app.router.add_get("/play/api/profile/public", api_public_profile)
     app.router.add_get("/play/api/learn", api_learn)
     app.router.add_post("/play/api/learn/open", api_learn_open)
     app.router.add_post("/play/api/learn/quiz", api_learn_quiz)

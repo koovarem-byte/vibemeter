@@ -151,6 +151,8 @@ a { color: var(--green); }
 .li .nm b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .li .nm span { color: var(--muted); font-size: 12px; }
 .li .pt { font-weight: 800; font-size: 16px; }
+.li.profile-link { cursor: pointer; }
+.li.profile-link:active { border-color: var(--green) !important; }
 .me-pin { position: sticky; bottom: calc(80px + var(--safe-b)); margin-top: 10px; }
 
 /* факты */
@@ -303,6 +305,8 @@ a { color: var(--green); }
     linear-gradient(180deg, #0e2717, #08170e) padding-box, var(--edge-soft) border-box;
   box-shadow: 0 0 18px rgba(47, 207, 92, .12);
 }
+.chat-scroll { display: block; width: calc(100% - 20px); height: 20px; margin: 3px 0 0 20px; accent-color: var(--green); touch-action: pan-x; }
+.chat-scroll.hidden { display: none; }
 .sys { text-align: center; color: var(--muted); font-size: 12.5px; margin: 0 8px 12px; padding: 8px 10px; border-radius: 12px; background: rgba(0, 0, 0, .25); }
 .msg { display: flex; align-items: flex-end; gap: 6px; margin-bottom: 8px; }
 .msg.me { justify-content: flex-end; }
@@ -347,6 +351,7 @@ body.in-battle .screen { padding-bottom: calc(24px + var(--safe-b)); }
 .switch i { position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #e9f2ec; transition: transform .2s; }
 .card.toggle.on .switch { background: var(--green); }
 .card.toggle.on .switch i { transform: translateX(18px); }
+.privacy-card { width: 100%; text-align: left; gap: 12px; }
 .btimer { height: 6px; border-radius: 3px; background: #1b2a20; overflow: hidden; margin: 0 0 10px; }
 .btimer i { display: block; height: 100%; width: 100%; background: var(--green); transition: width .2s linear; }
 .btimer.low i { background: var(--m-blunder); }
