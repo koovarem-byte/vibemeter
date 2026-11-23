@@ -2696,7 +2696,7 @@ async def app_game_start(user_id: int, partiya: str, blitz: bool = False) -> dic
             # Не даём двум параллельным запросам одновременно создать рейтинговые первые попытки.
             await conn.fetchval(
                 "SELECT pg_advisory_xact_lock(hashtextextended($1::text || ':' || $2, 0))",
-                user_id, partiya,
+                str(user_id), partiya,
             )
             await conn.execute("""
                 UPDATE app_games SET status = 'abandoned'

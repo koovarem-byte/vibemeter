@@ -57,7 +57,7 @@ async def _call(system: str, content, effort: str = "low", schema: dict | None =
         raise LLMError("модель перегружена", "anthropic_rate_limit") from e
     except anthropic.APIStatusError as e:
         # В диагностику попадают только HTTP-код и request ID, без запроса и ключа.
-        request_id = getattr(e, "request_id", None) or "unknown"
+        request_id = (getattr(e, "request_id", None) or "unknown").removeprefix("req_")
         diagnostic = f"anthropic_http_{e.status_code}_req_{request_id}"
         raise LLMError(f"ошибка модели {e.status_code}", diagnostic) from e
     if response.stop_reason == "refusal":
