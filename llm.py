@@ -54,6 +54,11 @@ async def _call(system: str, content, effort: str = "low", schema: dict | None =
     except anthropic.RateLimitError as e:
         raise LLMError("модель перегружена") from e
     except anthropic.APIStatusError as e:
+        # Диагностика ошибки API без текста запроса, ключа и содержимого скриншота.
+        logging.warning(
+            "Anthropic API status=%s type=%s request_id=%s",
+            e.status_code, type(e).__name__, getattr(e, "request_id", None),
+        )
         raise LLMError(f"ошибка модели {e.status_code}") from e
     if response.stop_reason == "refusal":
         raise LLMError("модель отказалась")

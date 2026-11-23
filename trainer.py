@@ -344,20 +344,27 @@ async def razbor_cmd(message: Message, state: FSMContext):
 async def razbor_input(message: Message, state: FSMContext):
     if await _crisis(message, state):
         return
-    await state.clear()
     await message.answer(ui.RAZBOR_WAIT)
     await _typing(message)
     try:
         if message.photo:
             # картинку держим только в памяти на время разбора и нигде не сохраняем
             buf = await message.bot.download(message.photo[-1])
-            text = await llm.razbor(message.caption or "", image=buf.read())
-            buf.close()
+            try:
+                text = await llm.razbor(message.caption or "", image=buf.read())
+            finally:
+                buf.close()
         else:
             text = await llm.razbor("", text=message.text)
-    except llm.LLMError:
-        await message.answer(ui.LLM_BUSY, reply_markup=main_menu())
+    except Exception as e:
+        # Сохраняем состояние ввода: человек может повторно прислать тот же скрин
+        # или текст, и не тратит дневную попытку, пока не получил разбор.
+        # Не логируем текст исключения: провайдер не должен случайно вывести секреты.
+        logging.error("Разбор переписки не удался (user_id=%s, error_type=%s)",
+                      message.from_user.id, type(e).__name__)
+        await message.answer(ui.LLM_BUSY)
         return
+    await state.clear()
     await log_razbor(message.from_user.id)
     await message.answer(html.escape(text)[:4000], reply_markup=after_game_keyboard())
     await log_event(message.from_user.id, "razbor_done")
