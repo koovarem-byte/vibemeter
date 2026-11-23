@@ -31,7 +31,9 @@ class TelegramAlertHandler(logging.Handler):
         # письмо админу всё равно не уйдёт (сети нет). Шлём, только если обрыв затянулся (> 10 подряд)
         msg = record.getMessage() + (str(record.exc_info[1]) if record.exc_info and record.exc_info[1] else "")
         if "Cannot connect to host api.telegram.org" in msg or "Failed to fetch updates" in msg \
-                or "ServerDisconnectedError" in msg or "Connection reset by peer" in msg:
+                or "ServerDisconnectedError" in msg or "Connection reset by peer" in msg \
+                or "ConnectionResetError" in msg or "Connection lost" in msg \
+                or "Request timeout error" in msg or "TelegramNetworkError" in msg:
             self.net_errors = getattr(self, "net_errors", 0) + 1
             if self.net_errors % 10:
                 return
