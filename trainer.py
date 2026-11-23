@@ -220,7 +220,7 @@ async def play_move(message: Message, state: FSMContext):
     if not finished:
         await _typing(message)
         try:
-            reply = await llm.girl(sit, history, verdict)
+            reply = await llm.girl(sit, history)
         except llm.LLMError:
             await save_chat_history(game["id"], history)
             await message.answer(ui.LLM_BUSY)
