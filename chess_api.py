@@ -11,6 +11,7 @@ import os
 import re
 import time
 import unicodedata
+from datetime import datetime, timezone
 from pathlib import Path
 
 from aiohttp import web
@@ -53,21 +54,59 @@ PLAY_DIR = Path(__file__).parent / "webapp_chess"
 INIT_DATA_TTL = 24 * 60 * 60
 PERIODS = {"day": 1, "week": 7, "all": None}
 
-# Закрытый бета-тест (17.11): Mini App только для первых BETA_SLOTS человек.
-# Релиз: BETA_SLOTS=0 в переменных Bothost — открыто всем.
-BETA_SLOTS = int(os.getenv("BETA_SLOTS", "30"))
+# Публичный релиз: доступ открыт всем. BETA_SLOTS оставлен для совместимости
+# с админскими командами старого бета-теста, но не ограничивает Mini App.
+BETA_SLOTS = 0
 
 
-async def load_slots():
-    """Число мест можно менять без пересборки: /beta_slots N (app_state.beta_slots)."""
+async def load_slots(bot=None):
+    """Публичный релиз отключает старое ограничение слотов, включая сохранённое в БД."""
     global BETA_SLOTS
-    from database import get_app_state
-    v = await get_app_state("beta_slots")
-    if v is not None and v.lstrip("-").isdigit():
-        BETA_SLOTS = int(v)
-# после стольких партий без отзыва дальше не пускаем — сначала мнение
-FEEDBACK_AFTER_GAMES = 2
+    from database import (
+        get_app_state, log_event, public_launch_notice_targets,
+        reset_public_ratings_once, set_app_state,
+    )
+    BETA_SLOTS = 0
+    await set_app_state("beta_slots", "0")
+    just_reset = await reset_public_ratings_once()
+    if not just_reset and await get_app_state("public_feedback_since") is None:
+        await set_app_state("public_feedback_since", datetime.now(timezone.utc).isoformat())
+    if bot is not None:
+        import asyncio
+
+        async def announce():
+            targets = await public_launch_notice_targets()
+            message = (
+                "♟️ «Шах и Чат» открыт для всех.\n\n"
+                "Перед запуском мы обнулили рейтинг, чтобы начать на равных. "
+                "Теперь очки снова набираются с нуля; твой профиль и сыгранные партии сохранены.\n\n"
+                "Разбор переписки с ИИ пока временно недоступен: с подключением модели оказалось сложнее, "
+                "мы над этим работаем. В Mini App доступны задачи и партии без ИИ.\n\n"
+                "Открыть игру: https://t.me/vibemeter_bot?start=release"
+            )
+            for uid in targets:
+                mark_done = False
+                try:
+                    await bot.send_message(uid, message)
+                    mark_done = True
+                except Exception as exc:
+                    logging.info("Не удалось отправить сообщение о запуске: user_id=%s", uid)
+                    mark_done = type(exc).__name__ in {"TelegramForbiddenError", "TelegramBadRequest"}
+                if mark_done:
+                    try:
+                        await log_event(uid, "public_launch_notice", "rating_reset_v1")
+                    except Exception:
+                        logging.exception("Не удалось отметить сообщение о запуске: user_id=%s", uid)
+                await asyncio.sleep(0.05)
+
+        asyncio.create_task(announce())
+# После 15 завершённых игровых задач просим отзыв и приостанавливаем новые задачи.
+FEEDBACK_AFTER_TASKS = 15
 OPEN_FOR_ALL = ("/play/api/state", "/play/api/beta/join")
+FEEDBACK_GATED_PATHS = {
+    "/play/api/move", "/play/api/learn/quiz",
+    "/play/api/partiya/start",
+}
 
 
 # 19.11 (отзыв #40): отзыв из невидимых символов прошёл проверку длины.
@@ -109,9 +148,11 @@ async def play_auth(request, handler):
     if user["is_banned"]:
         return error("banned", 403)
     uid = user["telegram_id"]
-    request["tester"] = BETA_SLOTS <= 0 or uid == ADMIN_ID or await beta_is_tester(uid)
+    request["tester"] = True
     if not request["tester"] and request.path not in OPEN_FOR_ALL:
         return error("beta_closed", 403)
+    if request.method == "POST" and request.path in FEEDBACK_GATED_PATHS and await need_feedback(uid):
+        return error("need_feedback", 403)
     # задача, партия и состояние считаются заходом: серия дней и last_active, как в боте
     if request.path in ("/play/api/state", "/play/api/move", "/play/api/partiya/move", "/play/api/learn/quiz"):
         await touch_user(user["telegram_id"])
@@ -198,8 +239,10 @@ async def beta_json(request) -> dict:
 
 
 async def need_feedback(uid: int) -> bool:
-    return (BETA_SLOTS > 0 and uid != ADMIN_ID and not await beta_has_feedback(uid)
-            and await app_games_finished(uid) >= FEEDBACK_AFTER_GAMES)
+    if uid == ADMIN_ID:
+        return False
+    from database import feedback_task_count
+    return await feedback_task_count(uid) >= FEEDBACK_AFTER_TASKS
 
 
 async def api_beta_join(request):
@@ -229,7 +272,7 @@ async def api_feedback(request):
         who = f"@{user['username']}" if user.get("username") else html.escape(first_name(user["full_name"]))
         await request.app["bot"].send_message(
             ADMIN_ID,
-            f"📝 Отзыв бета-теста #{fid} от {who} (<code>{user['telegram_id']}</code>)\n"
+            f"📝 Отзыв «Шах и Чат» #{fid} от {who} (<code>{user['telegram_id']}</code>)\n"
             f"{'⭐' * (stars or 0)}\n\n{html.escape(text)}",
         )
     except Exception:
@@ -269,6 +312,7 @@ async def api_move(request):
         "rank_up": puzzles.rank(new_rating) != puzzles.rank(before),
         "me": nxt["me"],
         "puzzle": nxt["puzzle"],
+        "need_feedback": await need_feedback(user["telegram_id"]),
     })
 
 
@@ -362,7 +406,8 @@ async def api_learn_quiz(request):
     fresh = await get_user(uid) or user
     done = await solved_puzzles(uid)
     return web.json_response({"ok": ok, "correct": learn.QUIZ[fid][1], "delta": earned,
-                              "me": me_json(fresh, done), "learn": await learn_json(uid)})
+                              "me": me_json(fresh, done), "learn": await learn_json(uid),
+                              "need_feedback": await need_feedback(uid)})
 
 
 async def api_profile(request):

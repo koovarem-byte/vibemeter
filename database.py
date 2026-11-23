@@ -877,6 +877,73 @@ async def set_app_state(key: str, value: str):
         """, key, value)
 
 
+async def reset_public_ratings_once() -> bool:
+    """Сбрасывает общий рейтинг при открытом запуске ровно один раз."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute("SELECT pg_advisory_xact_lock(hashtext('shahichat-public-rating-reset-v1'))")
+            already = await conn.fetchval(
+                "SELECT 1 FROM app_state WHERE key = 'public_rating_reset_at'"
+            )
+            if already:
+                return False
+            reset_at = await conn.fetchval("SELECT now()")
+            await conn.execute("UPDATE users SET chess_rating = 0 WHERE chess_rating <> 0")
+            await conn.execute("""
+                INSERT INTO app_state (key, value) VALUES ('public_rating_reset_at', $1)
+                ON CONFLICT (key) DO NOTHING
+            """, reset_at.isoformat())
+            await conn.execute("""
+                INSERT INTO app_state (key, value) VALUES ('public_feedback_since', $1)
+                ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+            """, reset_at.isoformat())
+    return True
+
+
+async def public_launch_notice_targets() -> list[int]:
+    db = await get_pool()
+    async with db.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT u.telegram_id FROM users u
+            WHERE NOT COALESCE(u.is_banned, FALSE)
+              AND NOT EXISTS (
+                  SELECT 1 FROM events e WHERE e.user_id = u.telegram_id
+                    AND e.kind = 'public_launch_notice'
+              )
+            ORDER BY u.telegram_id
+        """)
+    return [r["telegram_id"] for r in rows]
+
+
+async def feedback_task_count(user_id: int) -> int:
+    """Завершённые игровые задачи после последнего отзыва или публичного запуска."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        baseline = await conn.fetchval(
+            "SELECT value::timestamptz FROM app_state WHERE key = 'public_feedback_since'"
+        )
+        if baseline is None:
+            # Защита для локальных запусков и тестов до вызова chess_api.load_slots().
+            baseline = await conn.fetchval("SELECT now()")
+            await conn.execute("""
+                INSERT INTO app_state (key, value) VALUES ('public_feedback_since', $1)
+                ON CONFLICT (key) DO NOTHING
+            """, baseline.isoformat())
+            baseline = await conn.fetchval(
+                "SELECT value::timestamptz FROM app_state WHERE key = 'public_feedback_since'"
+            )
+        return await conn.fetchval("""
+            SELECT COUNT(*) FROM events e
+            WHERE e.user_id = $1
+              AND e.kind IN ('puzzle_app', 'learn_quiz', 'partiya_end')
+              AND e.created_at > GREATEST(
+                    $2::timestamptz,
+                    COALESCE((SELECT MAX(f.created_at) FROM beta_feedback f WHERE f.user_id = $1), $2::timestamptz)
+                  )
+        """, user_id, baseline) or 0
+
+
 # DAILY VIBE
 
 async def get_daily_answers(user_ids: list[int]) -> dict[int, str]:
@@ -2616,6 +2683,8 @@ async def chess_period_top(days: int | None, limit: int = 50) -> list[dict]:
                 FROM ev JOIN users u ON u.telegram_id = ev.user_id
                 WHERE NOT u.is_banned AND u.telegram_id <> {OWNER_ID}
                   AND (ev.at AT TIME ZONE 'Europe/Moscow')::date > {TODAY_MSK} - $2::int
+                  AND ev.at >= COALESCE((SELECT value::timestamptz FROM app_state
+                                         WHERE key = 'public_rating_reset_at'), '-infinity'::timestamptz)
                 GROUP BY u.telegram_id, u.full_name, u.chess_rating
                 HAVING SUM(ev.pts) > 0
                 ORDER BY points DESC, u.chess_rating DESC, u.telegram_id LIMIT $1
@@ -2639,6 +2708,8 @@ async def chess_profile(user_id: int) -> dict:
             WITH ev AS ({_POINTS_EVENTS})
             SELECT (at AT TIME ZONE 'Europe/Moscow')::date AS day, SUM(pts)::int AS pts
             FROM ev WHERE user_id = $1 AND (at AT TIME ZONE 'Europe/Moscow')::date > {TODAY_MSK} - 14
+              AND at >= COALESCE((SELECT value::timestamptz FROM app_state
+                                  WHERE key = 'public_rating_reset_at'), '-infinity'::timestamptz)
             GROUP BY day ORDER BY day
         """, user_id)
         games = await conn.fetchrow("""
@@ -2661,13 +2732,19 @@ async def chess_profile(user_id: int) -> dict:
 # =========================================================
 
 async def rated_count(user_id: int) -> int:
-    """Сколько рейтинговых игр сыграно (для K-фактора Эло)."""
+    """Сколько рейтинговых игр сыграно после последнего общего сброса (K-фактор Эло)."""
     db = await get_pool()
     async with db.acquire() as conn:
         return await conn.fetchval("""
-            SELECT (SELECT COUNT(*) FROM puzzle_answers WHERE user_id = $1 AND rated)
-                 + (SELECT COUNT(*) FROM chat_games WHERE user_id = $1 AND status = 'finished')
-                 + (SELECT COUNT(*) FROM app_games WHERE user_id = $1 AND status = 'finished' AND rated)
+            SELECT (SELECT COUNT(*) FROM puzzle_answers p WHERE p.user_id = $1 AND p.rated
+                    AND p.created_at >= COALESCE((SELECT value::timestamptz FROM app_state
+                                                  WHERE key = 'public_rating_reset_at'), '-infinity'::timestamptz))
+                 + (SELECT COUNT(*) FROM chat_games g WHERE g.user_id = $1 AND g.status = 'finished'
+                    AND g.finished_at >= COALESCE((SELECT value::timestamptz FROM app_state
+                                                   WHERE key = 'public_rating_reset_at'), '-infinity'::timestamptz))
+                 + (SELECT COUNT(*) FROM app_games a WHERE a.user_id = $1 AND a.status = 'finished' AND a.rated
+                    AND a.finished_at >= COALESCE((SELECT value::timestamptz FROM app_state
+                                                   WHERE key = 'public_rating_reset_at'), '-infinity'::timestamptz))
         """, user_id)
 
 

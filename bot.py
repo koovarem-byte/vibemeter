@@ -217,7 +217,7 @@ async def run_webhook():
     await init_db()
     await load_emoji_pack(bot)
     import chess_api
-    await chess_api.load_slots()
+    await chess_api.load_slots(bot)
     await setup_menu_button(bot)
     await setup_profile(bot)
     # вайб-час и засчитывание подруг — механики знакомств, с 16.11 выключены
@@ -267,7 +267,7 @@ async def run_polling():
     await init_db()
     await load_emoji_pack(bot)
     import chess_api
-    await chess_api.load_slots()
+    await chess_api.load_slots(bot)
     await setup_menu_button(bot)
     await setup_profile(bot)
     # вайб-час и засчитывание подруг — механики знакомств, с 16.11 выключены

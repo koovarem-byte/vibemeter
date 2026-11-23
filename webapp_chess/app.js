@@ -197,6 +197,7 @@
     try {
       res = await api("move", { id: puzzle.id, idx: +el.dataset.idx });
     } catch (e) {
+      if (e.code === "need_feedback") { state.beta.need_feedback = true; return openFeedback(true); }
       $("#moves").classList.remove("locked");
       el.classList.remove("picked");
       if (e.code === "already_solved") { toast("Эта задача уже решена"); return load(); }
@@ -208,6 +209,7 @@
     if (puzzle.daily) state.daily_done = true;
     if (res.rated === false) toast("Переигровка после обновления, без рейтинга");
     showVerdict(puzzle, res);
+    if (res.need_feedback) openFeedback(true);
   }
 
   function showVerdict(puzzle, res) {
@@ -351,7 +353,10 @@
       b.classList.add("picked");
       let r;
       try { r = await api("learn/quiz", { id: it.id, idx: +b.dataset.idx }); }
-      catch (err) { $("#l-opts").classList.remove("locked"); return toast("Не получилось, попробуй ещё раз"); }
+      catch (err) {
+        if (err.code === "need_feedback") { state.beta.need_feedback = true; return openFeedback(true); }
+        $("#l-opts").classList.remove("locked"); return toast("Не получилось, попробуй ещё раз");
+      }
       haptic(r.ok ? "success" : "error");
       if (r.me) state.me = r.me;
       learnData = r.learn;
@@ -360,6 +365,7 @@
       screen.innerHTML = `<button class="back" id="l-back">‹ Обучение</button>${learnResultHtml(fresh)}`;
       $("#l-back").onclick = () => learnList();
       learnNextBtn(fresh);
+      if (r.need_feedback) openFeedback(true);
     };
   }
 
@@ -511,8 +517,10 @@
   // ---------- бета-тест ----------
   function betaBar() {
     const b = $("#beta-bar");
-    if (!state.beta || !state.beta.on) return;
-    b.innerHTML = `<span>🧪 Бета-тест · что-то может быть сырым</span><button data-feedback>Отзыв</button>`;
+    if (!state.beta) return;
+    b.innerHTML = state.beta.on
+      ? `<span>🧪 Бета-тест · что-то может быть сырым</span><button data-feedback>Отзыв</button>`
+      : `<span>♟ Рейтинг обнулён — все начинают на равных</span><button data-feedback>Отзыв</button>`;
     b.classList.remove("hidden");
     document.body.classList.add("with-beta");
   }
@@ -545,8 +553,8 @@
     const m = $("#modal");
     let stars = 0;
     m.innerHTML = `<div class="verdict-in fb">
-      <div class="title">${required ? "Твоё мнение — и играем дальше" : "Отзыв о тесте"}</div>
-      <p class="muted">${required ? "Ты сыграл пару партий — это и есть твоя роль тестера. Минута:" : "Всё читаю сам и чиню по вашим отзывам"}</p>
+      <div class="title">${required ? "Как тебе «Шах и Чат»?" : "Оставить отзыв"}</div>
+      <p class="muted">${required ? "Ты прошёл 15 задач. Напиши, что оставить, что поправить и чего не хватает — и продолжай играть." : "Что улучшить в игре? Отзыв прочитает автор."}</p>
       <div class="stars" id="stars">${[1, 2, 3, 4, 5].map((n) => `<button data-s="${n}">★</button>`).join("")}</div>
       <textarea id="fb-text" rows="5" maxlength="2000" placeholder="Что понравилось? Что сырое или непонятно? Какую ситуацию добавить?"></textarea>
       <button class="btn" id="fb-send">Отправить</button>
