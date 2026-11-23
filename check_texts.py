@@ -25,7 +25,7 @@ def check(groups, label) -> bool:
         chance += 1 / len(opts)
     n = len(groups)
     ratio = sum(ratios) / n
-    ok = longest <= chance and 0.85 <= ratio <= 1.15
+    ok = longest <= chance + 1e-9 and 0.85 <= ratio <= 1.15
     print(f"{label}: лучший самый длинный {longest}/{n} (случайно было бы ~{chance:.0f}), "
           f"длина лучшего к средней {ratio:.2f} — {'ок' if ok else 'ПЛОХО'}")
     return ok

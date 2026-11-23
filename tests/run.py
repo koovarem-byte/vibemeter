@@ -85,12 +85,12 @@ async def main():
     st = await api.get(U[2], "/play/api/state")
     assert st["me"]["level"] == "start" and st["me"]["total"] == 39 and puzzles.PUZZLES[st["puzzle"]["id"]]["level"] == "start"
     pl = await api.get(U[2], "/play/api/partii")
-    assert pl["level"] == "start" and {i["level"] for i in pl["items"]} == {"start"} and len(pl["items"]) == 6
+    assert pl["level"] == "start" and {i["level"] for i in pl["items"]} == {"start"} and len(pl["items"]) == 8
     await api.post(U[2], "/play/api/level", {"level": "zzz"}, expect=400)
     lv = await api.post(U[2], "/play/api/level", {"level": "pro"})
     assert lv["me"]["level"] == "pro" and lv["me"]["total"] == 60 and puzzles.PUZZLES[lv["puzzle"]["id"]]["level"] == "pro" and lv["puzzle"]["daily"]
     pl = await api.get(U[2], "/play/api/partii")
-    assert len(pl["items"]) == 12 and pl["items"][0]["level"] == "pro" and pl["items"][-1]["level"] == "start"
+    assert len(pl["items"]) == 16 and pl["items"][0]["level"] == "pro" and pl["items"][-1]["level"] == "start"
     await api.post(U[2], "/play/api/level", {"level": "start"})
     st = await api.get(U[2], "/play/api/state"); c2 = 0; pz = st["puzzle"]
     while pz:
