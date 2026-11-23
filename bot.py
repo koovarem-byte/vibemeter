@@ -120,6 +120,9 @@ def _match_pack(remote: dict) -> dict:
 async def load_emoji_pack(bot):
     """Пак «Шах и Чат»: иконки по совпадению картинок -> ui.NEON (тексты, кнопки, меню).
     Сопоставление кэшируется в app_state, пока состав пака тот же."""
+    if not ui.CUSTOM_EMOJI_ENABLED:
+        logging.info("Кастомные эмодзи выключены; используем запасные значки")
+        return
     import io
     import json
     from database import get_app_state, set_app_state

@@ -1376,7 +1376,244 @@ async def touch_user(telegram_id: int, username: str | None = None):
                            ELSE 1
                        END AS streak
                 FROM old, d
-        …4443 tokens truncated…    FROM daily_answers d LEFT JOIN users u ON u.telegram_id = d.user_id
+            ),
+            day_log AS (
+                INSERT INTO user_days (user_id, day)
+                SELECT telegram_id, today FROM calc WHERE first_today
+                ON CONFLICT DO NOTHING
+            )
+            UPDATE users u
+            SET streak_days = calc.streak,
+                best_streak = GREATEST(u.best_streak, calc.streak),
+                last_active = calc.today,
+                last_seen = now(),
+                username = COALESCE($2, u.username)
+            FROM calc
+            WHERE u.telegram_id = calc.telegram_id
+            RETURNING u.is_banned, u.streak_days, calc.first_today
+        """, telegram_id, username)
+
+
+async def is_banned(telegram_id: int) -> bool:
+    db = await get_pool()
+    async with db.acquire() as conn:
+        return bool(await conn.fetchval(
+            "SELECT is_banned FROM users WHERE telegram_id = $1",
+            telegram_id,
+        ))
+
+
+# QUESTIONS
+
+async def add_question(from_user: int, to_user: int, text: str):
+    db = await get_pool()
+    async with db.acquire() as conn:
+        return await conn.fetchval("""
+            INSERT INTO questions (from_user, to_user, text)
+            VALUES ($1, $2, $3)
+            RETURNING id
+        """, from_user, to_user, text)
+
+
+async def get_question(question_id: int):
+    db = await get_pool()
+    async with db.acquire() as conn:
+        return await conn.fetchrow(
+            "SELECT * FROM questions WHERE id = $1",
+            question_id,
+        )
+
+
+async def answer_question(question_id: int, answer: str):
+    db = await get_pool()
+    async with db.acquire() as conn:
+        await conn.execute("""
+            UPDATE questions
+            SET answer = $1, answered = 1, answered_at = CURRENT_TIMESTAMP
+            WHERE id = $2 AND answered = 0
+        """, answer, question_id)
+
+
+# GAMES
+
+async def create_game(
+    user_one: int,
+    user_two: int,
+    questions_json: str,
+):
+    db = await get_pool()
+    async with db.acquire() as conn:
+        return await conn.fetchval("""
+            INSERT INTO games (
+                user_one, user_two, game_type,
+                question, questions_json, status
+            )
+            VALUES ($1, $2, 'vibe', '', $3, 'waiting')
+            RETURNING id
+        """, user_one, user_two, questions_json)
+
+
+async def get_latest_game(user_id: int):
+    """Последняя игра пользователя (для Mini App)."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        return await conn.fetchrow("""
+            SELECT * FROM games
+            WHERE user_one = $1 OR user_two = $1
+            ORDER BY id DESC
+            LIMIT 1
+        """, user_id)
+
+
+async def abandon_game(game_id: int):
+    """Бросить игру (статус не 'finished', в статистику не попадёт)."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        await conn.execute(
+            "UPDATE games SET status = 'abandoned' "
+            "WHERE id = $1 AND status = 'waiting'",
+            game_id,
+        )
+
+
+async def get_game(game_id: int):
+    db = await get_pool()
+    async with db.acquire() as conn:
+        return await conn.fetchrow(
+            "SELECT * FROM games WHERE id = $1",
+            game_id,
+        )
+
+
+async def add_game_answer(
+    game_id: int,
+    user_id: int,
+    question_index: int,
+    answer: str,
+):
+    db = await get_pool()
+
+    async with db.acquire() as conn:
+        try:
+            await conn.execute("""
+                INSERT INTO game_answers (
+                    game_id, user_id, question_index, answer
+                )
+                VALUES ($1, $2, $3, $4)
+            """, game_id, user_id, question_index, answer)
+
+            return True
+
+        except asyncpg.UniqueViolationError:
+            return False
+
+
+async def get_game_answers(game_id: int, user_id: int):
+    db = await get_pool()
+    async with db.acquire() as conn:
+        return await conn.fetch("""
+            SELECT * FROM game_answers
+         …2443 tokens truncated…======================================
+
+async def mark_seen(telegram_id: int):
+    """Отметка «в сети» из Mini App, не чаще раза в минуту."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        await conn.execute("""
+            UPDATE users SET last_seen = now()
+            WHERE telegram_id = $1
+              AND (last_seen IS NULL OR last_seen < now() - interval '1 minute')
+        """, telegram_id)
+
+
+async def count_online(minutes: int) -> int:
+    db = await get_pool()
+    async with db.acquire() as conn:
+        return await conn.fetchval("""
+            SELECT COUNT(*) FROM users
+            WHERE age IS NOT NULL AND NOT is_banned
+              AND last_seen > now() - make_interval(mins => $1)
+        """, minutes)
+
+
+async def claim_once(key: str, value: str) -> bool:
+    """True только для первого, кто записал value: защита от двойной рассылки."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        row = await conn.fetchrow("""
+            INSERT INTO app_state (key, value) VALUES ($1, $2)
+            ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+            WHERE app_state.value <> EXCLUDED.value
+            RETURNING key
+        """, key, value)
+    return row is not None
+
+
+async def vibe_hour_recipients(days: int) -> list[int]:
+    """Кому напоминать: анкета есть, не забанен, не отключал, заходил недавно."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT telegram_id FROM users
+            WHERE age IS NOT NULL AND NOT is_banned AND vibe_hour_notify
+              AND last_active >= (now() AT TIME ZONE 'Europe/Moscow')::date - $1::int
+        """, days)
+    return [r["telegram_id"] for r in rows]
+
+
+async def set_vibe_hour_notify(telegram_id: int, value: bool):
+    db = await get_pool()
+    async with db.acquire() as conn:
+        await conn.execute(
+            "UPDATE users SET vibe_hour_notify = $2 WHERE telegram_id = $1",
+            telegram_id, value,
+        )
+
+
+# =========================================================
+# ПРОГРЕСС ГОРОДА
+# =========================================================
+
+async def city_counts() -> list[tuple[str, int]]:
+    """Сколько анкет в каждом городе (как написали, без нормализации)."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT city, COUNT(*) AS n FROM users
+            WHERE age IS NOT NULL AND NOT is_banned AND city IS NOT NULL
+            GROUP BY city
+        """)
+    return [(r["city"], r["n"]) for r in rows]
+
+
+# =========================================================
+# НАГРАДА ЗА ДРУГА
+# =========================================================
+
+async def add_boost(telegram_id: int, hours: int):
+    """Продлевает «анкета первой» на hours часов (складывается)."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        return await conn.fetchval("""
+            UPDATE users
+            SET boost_until = GREATEST(COALESCE(boost_until, now()), now())
+                              + make_interval(hours => $2)
+            WHERE telegram_id = $1
+            RETURNING boost_until
+        """, telegram_id, hours)
+
+
+# =========================================================
+# НЕДЕЛЬНАЯ СТАТИСТИКА (анонимно, для роликов)
+# =========================================================
+
+async def week_answers(days: int) -> dict:
+    """Сырые ответы «а/б» за последние дни: без имён и id наружу."""
+    db = await get_pool()
+    async with db.acquire() as conn:
+        daily = await conn.fetch("""
+            SELECT d.day, d.answer, u.gender
+            FROM daily_answers d LEFT JOIN users u ON u.telegram_id = d.user_id
             WHERE d.day >= (now() AT TIME ZONE 'Europe/Moscow')::date - $1::int
         """, days)
         games = await conn.fetch("""

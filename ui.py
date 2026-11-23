@@ -12,6 +12,7 @@
 """
 
 from html import escape
+import os
 
 import vip
 from puzzles import stars
@@ -46,6 +47,9 @@ NEON = {
 # assets/emoji/pack_100 (01_m_brilliant … 33_flag). При старте bot.load_emoji_pack
 # берёт id из Telegram и кладёт сюда; до загрузки — запасные из старого набора.
 EMOJI_PACK = "shahichat"
+# Custom emoji in Bot API messages and button icons require Premium for the bot owner.
+# Keep safe fallbacks by default; set BOT_CUSTOM_EMOJI=true after Premium is active.
+CUSTOM_EMOJI_ENABLED = os.getenv("BOT_CUSTOM_EMOJI", "false").strip().lower() in {"1", "true", "yes", "on"}
 PACK_ORDER = [
     ("m_brilliant", "💎"), ("m_good", "✅"), ("m_dubious", "🤔"), ("m_blunder", "❌"), ("m_mate", "🟣"),
     ("pawn", "♟"), ("knight", "🐴"), ("bishop", "♝"), ("rook", "🏰"), ("queen", "👸"), ("king", "🤴"),
