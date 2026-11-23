@@ -36,13 +36,13 @@ def _key(path: Path) -> str:
     return f"{path.stem}:{digest}"
 
 
-ENABLED = False
+ENABLED = True
 
 
 async def send(bot, chat_id: int, name: str | None):
     """Отправляет стикер. TelegramForbiddenError (бот заблокирован) пробрасываем:
     рассылке нужно знать, что человек недоступен. Прочие ошибки — без стикера."""
-    # 18.11 (владелец): только наш пак «Шах и Чат» — старые неоновые стикеры Вайбометра не шлём
+    # Фирменные стикеры отправляем при событиях, где они подключены (например, взаимный вайб).
     if not name or not ENABLED:
         return None
     name = _name(name)

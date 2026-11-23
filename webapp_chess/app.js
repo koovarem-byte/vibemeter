@@ -520,7 +520,7 @@
     if (!state.beta) return;
     b.innerHTML = state.beta.on
       ? `<span>🧪 Бета-тест · что-то может быть сырым</span><button data-feedback>Отзыв</button>`
-      : `<span>♟ Рейтинг обнулён — все начинают на равных</span><button data-feedback>Отзыв</button>`;
+      : `<span>${icon("knight")} Рейтинг обнулён — все начинают на равных</span><button data-feedback>Отзыв</button>`;
     b.classList.remove("hidden");
     document.body.classList.add("with-beta");
   }

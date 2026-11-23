@@ -278,6 +278,8 @@ a { color: var(--green); }
 .center { text-align: center; }
 .beta-bar { position: sticky; top: 0; z-index: 9; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 16px; background: linear-gradient(90deg, #13361f, #0b2014); border-bottom: 1px solid rgba(47, 207, 92, .35); font-size: 12.5px; font-weight: 800; color: #bfe8cb; }
 .beta-bar button { padding: 6px 12px; border-radius: 10px; background: var(--green); color: #fff; font-weight: 800; font-size: 12px; }
+.beta-bar span { display: flex; align-items: center; gap: 5px; }
+.beta-bar .ic { width: 18px; height: 18px; flex: none; }
 .board-top, .board-bottom { display: flex; align-items: center; gap: 10px; }
 .board-top { margin-bottom: 8px; }
 .board-bottom { margin-top: 8px; margin-bottom: 14px; }
