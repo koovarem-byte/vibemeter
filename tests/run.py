@@ -133,6 +133,8 @@ async def main():
                 g, fin, marks = await play(p["id"], best)
             else: raise
         assert fin["result"] == "win", (p["id"], fin)
+        assert len(fin["review"]) == len(marks), (p["id"], fin.get("review"))
+        assert all(len(turn["options"]) == 3 and turn["reply"] for turn in fin["review"]), p["id"]
         g2, fin2, _ = await play(p["id"], rnd)
         assert not fin2["rated"]
         print(f"  {p['id']:12} {p['level']:5} лучшие: {fin['result']} {fin['before']}→{fin['after']} | случайно: {fin2['result']}")
@@ -160,10 +162,18 @@ async def main():
     for _ in range(3):
         r = await api.post(uid, "/play/api/partiya/move", {"game_id": g["game_id"], "timeout": True})
     assert r["final"]["result"] == "mate" and r["final"]["marks"] == ["??"] * 4, r["final"]
+    assert len(r["final"]["review"]) == 4 and all(not any(o["selected"] for o in t["options"])
+                                                    for t in r["final"]["review"])
     g = await api.post(uid, "/play/api/partiya/start", {"id": "gulyat"})
     assert not g["blitz"]
     await api.post(uid, "/play/api/partiya/move", {"game_id": g["game_id"], "timeout": True}, expect=400)
     print("блиц: ок")
+    # Брошенную до финала партию нельзя снова начать как рейтинговую первую попытку.
+    g1 = await api.post(U[0], "/play/api/partiya/start", {"id": "povyshenie"})
+    assert g1["rated"]
+    g2 = await api.post(U[0], "/play/api/partiya/start", {"id": "povyshenie"})
+    assert not g2["rated"], (g1, g2)
+    print("брошенная партия: повтор без рейтинга")
     pr = await api.get(uid, "/play/api/profile"); print("профиль:", pr["me"]["rating"], pr["me"]["rank"])
     # отзыв: невидимые и короткие
     for uid2 in [U[2]]:

@@ -2689,20 +2689,25 @@ async def app_game_get(game_id: int, user_id: int):
 
 
 async def app_game_start(user_id: int, partiya: str, blitz: bool = False) -> dict:
-    """Новая партия (старая незаконченная этой же — сбрасывается). Рейтинговая только первая."""
+    """Новая партия. Рейтинг даётся только за первую попытку, даже если её бросили."""
     db = await get_pool()
     async with db.acquire() as conn:
         async with conn.transaction():
+            # Не даём двум параллельным запросам одновременно создать рейтинговые первые попытки.
+            await conn.fetchval(
+                "SELECT pg_advisory_xact_lock(hashtextextended($1::text || ':' || $2, 0))",
+                user_id, partiya,
+            )
             await conn.execute("""
                 UPDATE app_games SET status = 'abandoned'
                 WHERE user_id = $1 AND partiya = $2 AND status = 'active'
             """, user_id, partiya)
-            played = await conn.fetchval("""
-                SELECT EXISTS (SELECT 1 FROM app_games WHERE user_id = $1 AND partiya = $2 AND status = 'finished')
+            attempted = await conn.fetchval("""
+                SELECT EXISTS (SELECT 1 FROM app_games WHERE user_id = $1 AND partiya = $2)
             """, user_id, partiya)
             row = await conn.fetchrow("""
                 INSERT INTO app_games (user_id, partiya, rated, blitz) VALUES ($1, $2, $3, $4) RETURNING *
-            """, user_id, partiya, not played, blitz)
+            """, user_id, partiya, not attempted, blitz)
     g = dict(row)
     g["moves"] = []
     return g
