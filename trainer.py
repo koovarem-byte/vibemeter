@@ -363,7 +363,8 @@ async def razbor_input(message: Message, state: FSMContext):
         code = e.diagnostic if isinstance(e, llm.LLMError) else f"input_{type(e).__name__}"
         logging.error("Разбор переписки не удался (user_id=%s, code=%s)",
                       message.from_user.id, code)
-        await message.answer(ui.LLM_BUSY)
+        permanent_api_error = code.startswith(("anthropic_http_401", "anthropic_http_402", "anthropic_http_403"))
+        await message.answer(ui.LLM_SETUP_ERROR if permanent_api_error else ui.LLM_BUSY)
         return
     await state.clear()
     await log_razbor(message.from_user.id)

@@ -910,7 +910,7 @@ async def trainer_stats_cmd(message: Message):
         f" ({_pct(t['finished_today'], t['games_today'])})\n"
         f"🔥 Задача дня: {t['daily_today']} · 📋 разборов: {t['razbor_today']} · ✍️ вопросов: {t['ask_today']}\n\n"
         f"Средний рейтинг игравших: <b>{t['avg_rating'] or '—'}</b> · всего игроков: {t['players']}\n"
-        f"ИИ: {'включён (' + llm.MODEL + ')' if llm.available() else '⚠️ нет ANTHROPIC_API_KEY — режимы с ИИ выключены'}",
+        f"ИИ: {'ключ задан (' + llm.MODEL + '), доступ API не проверен' if llm.available() else '⚠️ нет ANTHROPIC_API_KEY — режимы с ИИ выключены'}",
         reply_markup=_kb([BACK]),
     )
 
