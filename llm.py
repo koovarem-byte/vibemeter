@@ -31,7 +31,9 @@ def client() -> anthropic.AsyncAnthropic:
 
 
 class LLMError(Exception):
-    pass
+    def __init__(self, message: str, diagnostic: str = "llm_error"):
+        super().__init__(message)
+        self.diagnostic = diagnostic
 
 
 async def _call(system: str, content, effort: str = "low", schema: dict | None = None,
@@ -50,21 +52,19 @@ async def _call(system: str, content, effort: str = "low", schema: dict | None =
             messages=[{"role": "user", "content": content}],
         )
     except anthropic.APIConnectionError as e:
-        raise LLMError("нет связи с моделью") from e
+        raise LLMError("нет связи с моделью", "anthropic_connection") from e
     except anthropic.RateLimitError as e:
-        raise LLMError("модель перегружена") from e
+        raise LLMError("модель перегружена", "anthropic_rate_limit") from e
     except anthropic.APIStatusError as e:
-        # Диагностика ошибки API без текста запроса, ключа и содержимого скриншота.
-        logging.warning(
-            "Anthropic API status=%s type=%s request_id=%s",
-            e.status_code, type(e).__name__, getattr(e, "request_id", None),
-        )
-        raise LLMError(f"ошибка модели {e.status_code}") from e
+        # В диагностику попадают только HTTP-код и request ID, без запроса и ключа.
+        request_id = getattr(e, "request_id", None) or "unknown"
+        diagnostic = f"anthropic_http_{e.status_code}_req_{request_id}"
+        raise LLMError(f"ошибка модели {e.status_code}", diagnostic) from e
     if response.stop_reason == "refusal":
-        raise LLMError("модель отказалась")
+        raise LLMError("модель отказалась", "anthropic_refusal")
     text = next((b.text for b in response.content if b.type == "text"), "").strip()
     if not text:
-        raise LLMError("пустой ответ")
+        raise LLMError("пустой ответ", "anthropic_empty_response")
     return text
 
 

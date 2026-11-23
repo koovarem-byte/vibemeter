@@ -360,8 +360,9 @@ async def razbor_input(message: Message, state: FSMContext):
         # Сохраняем состояние ввода: человек может повторно прислать тот же скрин
         # или текст, и не тратит дневную попытку, пока не получил разбор.
         # Не логируем текст исключения: провайдер не должен случайно вывести секреты.
-        logging.error("Разбор переписки не удался (user_id=%s, error_type=%s)",
-                      message.from_user.id, type(e).__name__)
+        code = e.diagnostic if isinstance(e, llm.LLMError) else f"input_{type(e).__name__}"
+        logging.error("Разбор переписки не удался (user_id=%s, code=%s)",
+                      message.from_user.id, code)
         await message.answer(ui.LLM_BUSY)
         return
     await state.clear()
