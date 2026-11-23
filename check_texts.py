@@ -6,6 +6,7 @@
 """
 
 import sys
+import unicodedata
 
 import partii
 import puzzles
@@ -36,8 +37,35 @@ def shown_groups(games=200):
             for g in range(1, games + 1) for p in partii.PARTII for n, s in enumerate(p["steps"])]
 
 
+def check_style_cues(groups) -> bool:
+    """Проверяет, не выделяется ли лучший ход единственной скобкой, вопросом, эмодзи или длиной."""
+    exposed = 0
+    for opts in groups:
+        best = max(opts, key=lambda o: ORDER[o[1]])
+        features = (
+            lambda text: ")" in text,
+            lambda text: "?" in text,
+            lambda text: any(unicodedata.category(ch) == "So" for ch in text),
+        )
+        for feature in features:
+            values = [feature(o[0]) for o in opts]
+            if (sum(values) == 1 and feature(best[0])) or (sum(values) == len(values) - 1 and not feature(best[0])):
+                exposed += 1
+                break
+        else:
+            lengths = [len(o[0]) for o in opts]
+            if len(set(lengths)) == len(lengths) and len(best[0]) == max(lengths):
+                exposed += 1
+    rate = exposed / len(groups) if groups else 0
+    ok = rate <= 0.08
+    print(f"Подсказка по оформлению в {exposed}/{len(groups)} видимых троек ({rate:.1%}) — {'ок' if ok else 'ПЛОХО'}")
+    return ok
+
+
 if __name__ == "__main__":
     a = check([p["moves"] for p in puzzles.PUZZLES], "Задачи")
     b = check([s["options"] for p in partii.PARTII for s in p["steps"]], "Партии (весь пул)")
-    c = check(shown_groups(), "Партии (что видно, 200 игр)")
-    sys.exit(0 if a and b and c else 1)
+    visible = shown_groups()
+    c = check(visible, "Партии (что видно, 200 игр)")
+    d = check_style_cues(visible)
+    sys.exit(0 if a and b and c and d else 1)

@@ -364,6 +364,46 @@ PARTII = [
                  "Снова поддел её за голосовое. Она уже извинилась",
                  "ну хватит("),
             ]},
+            {"her": ["короче я после этого голосового вообще не знала куда глаза девать ахах"], "options": [
+                ("да я заметил) но выглядело это мило", "!",
+                 "Поддержал её и не стал раздувать неловкий момент",
+                 "ну всё, ты меня окончательно засмущал 😭"),
+                ("ахах, теперь у нас есть секретный аудиокомпромат", "?!",
+                 "Пошутил, но слово «компромат» может опять напомнить ей о неловкости",
+                 "так, звучит уже страшно 😅"),
+                ("я уже забыл, не переживай", "?!",
+                 "Хотел успокоить, но звучит так, будто разговор хочется закрыть",
+                 "да я вроде и не переживаю)"),
+                ("зато теперь знаю, как ты говоришь с подругой", "?",
+                 "Вернул внимание к случайно услышанному, хотя она уже отпустила ситуацию",
+                 "так, всё, забыли про это"),
+                ("у меня тоже бывают такие неловкие моменты, честно", "!!",
+                 "Снял с неё ощущение, что она одна так попадает",
+                 "ладно, тогда я не одна такая ахах"),
+                ("да забей, ничего такого не было", "!",
+                 "Не осудил, но ответил немного формально",
+                 "окей)"),
+            ]},
+            {"her": ["ладно, пойду уроки доделаю. завтра ещё поболтаем?"], "options": [
+                ("давай) завтра после школы напишу", "!!",
+                 "Согласился и предложил понятный момент, без давления",
+                 "договорились) жду"),
+                ("конечно, удачи с уроками) спокойной", "!",
+                 "Тепло закончил разговор, хотя время следующего осталось размытым",
+                 "спокойной ночи 😊"),
+                ("ну ок, пока", "?!",
+                 "Согласился, но короткий ответ можно принять за обиду",
+                 "ты чего, всё нормально?"),
+                ("а ещё минутку не можешь?", "??",
+                 "Не услышал, что ей пора заниматься, и просишь остаться",
+                 "мне правда надо уроки доделать"),
+                ("да, напиши как освободишься", "!",
+                 "Ответил прямо и оставил следующий шаг за ней",
+                 "хорошо)"),
+                ("ты всегда так поздно уроки делаешь?", "?",
+                 "Задал новый вопрос вместо ответа на её предложение",
+                 "иногда ахах, ладно, я побежала"),
+            ]},
         ],
     },
     {
@@ -1090,17 +1130,44 @@ GOOD = ("!!", "!")
 
 def shown(game_id: int, step: dict, n: int) -> list[int]:
     """Какие варианты хода n видны в игре game_id и в каком порядке (одинаково при каждом запросе).
-    Один хороший (!! или !) всегда есть, остальные — случайные из пула."""
+    Один лучший всегда есть. Остальные выбираются так, чтобы скобки, вопросительные знаки,
+    эмодзи и длина по возможности не выдавали правильный ход."""
+    import itertools
     import random
+    import unicodedata
+    import rating
+
     rnd = random.Random(game_id * 131 + n)
     opts = step["options"]
     idx = list(range(len(opts)))
     if len(idx) <= SHOW:
         rnd.shuffle(idx)
         return idx
-    good = [i for i in idx if opts[i][1] in GOOD]
-    first = rnd.choice(good or idx)
-    rest = [i for i in idx if i != first]
-    pick = [first] + rnd.sample(rest, SHOW - 1)
+    good = {i for i in idx if opts[i][1] in GOOD}
+    features = (
+        lambda text: ")" in text,
+        lambda text: "?" in text,
+        lambda text: any(unicodedata.category(ch) == "So" for ch in text),
+    )
+
+    def clue_penalty(combo):
+        selected = [opts[i] for i in combo]
+        best = max(selected, key=lambda option: rating.SCORE[option[1]])
+        penalty = 0
+        for feature in features:
+            values = [feature(option[0]) for option in selected]
+            # Если у лучшего единственный стильный маркер (или только у него его нет),
+            # игрок может вычислить ответ по оформлению, а не по смыслу.
+            if (sum(values) == 1 and feature(best[0])) or (sum(values) == len(values) - 1 and not feature(best[0])):
+                penalty += 1
+        lengths = [len(option[0]) for option in selected]
+        if len(set(lengths)) == len(lengths) and len(best[0]) == max(lengths):
+            penalty += 1
+        return penalty
+
+    combinations = [combo for combo in itertools.combinations(idx, SHOW) if not good or good.intersection(combo)]
+    penalties = [clue_penalty(combo) for combo in combinations]
+    least = min(penalties)
+    pick = list(rnd.choice([combo for combo, penalty in zip(combinations, penalties) if penalty == least]))
     rnd.shuffle(pick)
     return pick
