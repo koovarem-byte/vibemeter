@@ -353,3 +353,25 @@ body.in-battle .screen { padding-bottom: calc(24px + var(--safe-b)); }
 .seg { display: flex; gap: 4px; padding: 4px; margin: 0 0 12px; border-radius: 14px; background: #0f1d14; border: 1px solid var(--line); }
 .seg button { flex: 1; padding: 10px 8px; border: 0; border-radius: 10px; background: transparent; color: var(--muted); font: inherit; font-weight: 800; font-size: 14px; }
 .seg button.on { background: var(--green); color: #06120a; }
+.seg button.on { outline: 2px solid #a7ffc0; outline-offset: 1px; box-shadow: 0 0 0 3px rgba(47, 207, 92, .22), 0 0 18px rgba(47, 207, 92, .35); }
+.seg button.on::after { content: "✓"; margin-left: 6px; }
+.seg button:not(.on) { color: #a8b7ac; opacity: .72; }
+
+.reward-widget { margin-top: 12px; padding: 14px; border-radius: 16px; background: linear-gradient(180deg, #102719, #0b2014); border: 1px solid rgba(90, 240, 130, .4); box-shadow: 0 0 16px rgba(47, 207, 92, .12); }
+.rw-title { color: #cfe9d6; font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 10px; }
+.rw-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.rw-grid > div { display: grid; gap: 3px; min-width: 0; }
+.rw-grid b { display: flex; align-items: center; gap: 5px; font-size: 15px; }
+.rw-grid span { color: var(--muted); font-size: 12px; }
+.reward-widget .bar { margin-top: 10px; }
+
+/* Итог партии: можно спокойно разобрать каждый ход после финала */
+.recap summary { cursor: pointer; color: #d8ffe2; font-weight: 800; padding: 2px 0 8px; }
+.recap-turn { border-top: 1px solid rgba(47, 207, 92, .22); padding-top: 12px; margin-top: 12px; }
+.recap-her { color: #bdd0c2; font-size: 13px; line-height: 1.4; margin: 8px 0; }
+.recap-options { display: grid; gap: 7px; }
+.recap-option { border: 1px solid var(--line); border-radius: 12px; padding: 9px 10px; font-size: 14px; line-height: 1.4; }
+.recap-option.selected { border-color: var(--green); background: rgba(47, 207, 92, .09); }
+.recap-option-head { display: flex; justify-content: space-between; gap: 8px; color: #d8ffe2; font-size: 12px; margin-bottom: 4px; }
+.recap-option-head span { color: var(--green); white-space: nowrap; }
+.recap-option .muted { font-size: 12px; margin-top: 4px; }

@@ -367,10 +367,16 @@ async def api_learn_quiz(request):
 
 async def api_profile(request):
     user = request["user"]
-    done = await solved_puzzles(user["telegram_id"])
+    uid = user["telegram_id"]
+    done = await solved_puzzles(uid)
     prof = await chess_profile(user["telegram_id"])
-    place, total = await chat_place(user["telegram_id"])
-    return web.json_response({"me": me_json(user, done), **prof, "place": place, "players": total})
+    place, total = await chat_place(uid)
+    learning = await learn_state(uid)
+    return web.json_response({
+        "me": me_json(user, done), **prof, "place": place, "players": total,
+        "lessons_done_today": sum(answer is not None for answer in learning["quiz"].values()),
+        "lessons_goal": learn.PER_DAY,
+    })
 
 
 # ---------- партии без ИИ ----------
@@ -483,6 +489,30 @@ async def api_partiya_move(request):
         out["next"] = step_json(g["id"], p, step + 1)
         return web.json_response(out)
     marks = [m["mark"] for m in moves]
+    review = []
+    for turn, move in enumerate(moves):
+        step_data = p["steps"][move["step"]]
+        visible = partii.shown(g["id"], step_data, move["step"])
+        options = step_data["options"]
+        best_idx = max(visible, key=lambda i: rating.SCORE[options[i][1]])
+        selected = TIMEOUT_MOVE if move.get("timeout") else options[move["idx"]]
+        review.append({
+            "turn": turn + 1,
+            "her": step_data["her"],
+            "move": selected[0],
+            "mark": selected[1],
+            "name": rating.NAMES[selected[1]],
+            "why": selected[2],
+            "reply": selected[3],
+            "best": options[best_idx][0] if options[best_idx][1] != selected[1] else None,
+            "options": [{
+                "text": options[i][0],
+                "mark": options[i][1],
+                "name": rating.NAMES[options[i][1]],
+                "why": options[i][2],
+                "selected": i == move["idx"],
+            } for i in visible],
+        })
     result = rating.result_of(marks, mated)
     before = user["chess_rating"] or 0
     after = rating.update(before, p["rating"], rating.game_score(marks), await rated_count(uid)) if g["rated"] else before
@@ -491,7 +521,7 @@ async def api_partiya_move(request):
     done = await solved_puzzles(uid)
     out["final"] = {
         "result": result, "rated": g["rated"], "before": before, "after": after, "delta": after - before,
-        "accuracy": rating.accuracy(marks), "marks": marks,
+        "accuracy": rating.accuracy(marks), "marks": marks, "review": review,
         "expected": round(rating.expected(before, p["rating"]) * 100),
         "rank_up": puzzles.rank(after) != puzzles.rank(before),
         "me": me_json({**user, "chess_rating": after}, done),

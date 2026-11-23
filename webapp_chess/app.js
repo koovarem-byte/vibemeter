@@ -104,7 +104,10 @@
   // уровень (19.11): «Начинаю» — школа и первые переписки, «Опытный» — отношения
   const LEVELS = [["start", "Начинаю"], ["pro", "Опытный"]];
   function levelHtml(level) {
-    return `<div class="seg" id="level-seg">${LEVELS.map(([k, t]) => `<button class="${(level || "start") === k ? "on" : ""}" data-level="${k}">${t}</button>`).join("")}</div>`;
+    return `<div class="seg" id="level-seg">${LEVELS.map(([k, t]) => {
+      const active = (level || "start") === k;
+      return `<button class="${active ? "on" : ""}" aria-pressed="${active}" data-level="${k}">${t}</button>`;
+    }).join("")}</div>`;
   }
   async function setLevel(level) {
     if ((state.me.level || "start") === level) return;
@@ -473,6 +476,14 @@
         <div class="stat"><b>${me.solved}/${me.total}</b><span>задач</span></div>
         <div class="stat"><b>${p.place || "—"}</b><span>место${p.players ? " из " + p.players : ""}</span></div>
       </div>
+      <div class="reward-widget">
+        <div class="rw-title">Прогресс дня</div>
+        <div class="rw-grid">
+          <div><b>${icon("fire")} ${me.streak} дн.</b><span>рекорд ${me.best_streak}</span></div>
+          <div><b>Уроки ${p.lessons_done_today || 0}/${p.lessons_goal || 3}</b><span>пройдено сегодня</span></div>
+        </div>
+        <div class="bar"><i style="width:${Math.min(100, Math.round(((p.lessons_done_today || 0) / (p.lessons_goal || 3)) * 100))}%"></i></div>
+      </div>
       <button class="card" data-go="learn"><div class="ico">${icon("star")}</div><div class="main"><div class="t">Знания: ${me.knowledge || 0}</div><div class="s">Очки за статьи в Обучении, отдельно от рейтинга</div></div><div class="arrow">›</div></button>
       <div class="h2">Достижения <small>${achDone} / ${ach.length}</small></div>
       <div class="ach-grid" data-go="ach">${achGrid}</div>
@@ -716,6 +727,18 @@
     state.me = f.me;
     const r = RESULT[f.result] || RESULT.stalemate;
     const sign = f.delta > 0 ? "+" : "";
+    const reviewHtml = (f.review || []).map((turn) => `
+      <article class="recap-turn">
+        <div class="lbl">Ход ${turn.turn}</div>
+        ${(turn.her || []).map((line) => `<div class="recap-her">Она: ${esc(line)}</div>`).join("")}
+        ${turn.options.every((o) => !o.selected) ? `<div class="recap-option selected"><div class="recap-option-head"><b>${esc(turn.name)}</b><span>твой ответ</span></div><div>«${esc(turn.move)}»</div><div class="muted">${esc(turn.why)}</div></div>` : ""}
+        <div class="recap-options">${(turn.options || []).map((o) => `
+          <div class="recap-option ${o.selected ? "selected" : ""}">
+            <div class="recap-option-head"><b>${esc(o.name)}</b>${o.selected ? '<span>твой ответ</span>' : ""}</div>
+            <div>«${esc(o.text)}»</div><div class="muted">${esc(o.why)}</div>
+          </div>`).join("")}</div>
+        <div class="recap-her">Она ответила: ${esc(turn.reply)}</div>
+      </article>`).join("");
     const v = $("#verdict");
     v.innerHTML = `<div class="verdict-in final">
       <div class="result" style="color:${r[2]}">${r[0]}</div>
@@ -727,6 +750,7 @@
       </div>
       ${f.rank_up ? `<div class="rankup">${piece(f.me.rank)} Новое звание: ${esc(f.me.rank)}</div>` : ""}
       <div class="v-card"><div class="lbl">Ходы партии</div><div class="notation big">${f.marks.map((m, i) => `<span class="nt" style="--c:${(MARKS[m] || MARKS["?!"]).c}">${i + 1}. ${esc(m)}</span>`).join("")}</div></div>
+      ${reviewHtml ? `<details class="v-card recap"><summary>Разбор всех ходов</summary>${reviewHtml}</details>` : ""}
       <button class="btn" id="f-next">К партиям</button>
       <div class="row"><button class="btn ghost" id="f-again">Переиграть</button><button class="btn ghost" data-feedback>Отзыв</button></div>
     </div>`;
